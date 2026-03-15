@@ -1,0 +1,55 @@
+{
+  "name": "@majikah/majik-signature",
+  "type": "module",
+  "description": "",
+  "version": "0.0.1",
+  "license": "Apache-2.0",
+  "author": "Zelijah",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Majikah/majik-signature.git"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/jedlsf"
+  },
+  "keywords": [
+    "seed-phrase",
+    "mnemonic",
+    "bip39",
+    "crypto",
+    "cryptography",
+    "account",
+    "key-generation",
+    "deterministic",
+    "seed",
+    "keypair",
+    "majik-signature",
+    "blockchain",
+    "authentication",
+    "security",
+    "ed25519",
+    "key-derivation"
+  ],
+  "homepage": "https://github.com/Majikah/majik-signature#readme",
+  "bugs": {
+    "url": "https://github.com/Majikah/majik-signature/issues"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@majikah/majik-key": "^0.2.0",
+    "@noble/post-quantum": "^0.5.4",
+    "@stablelib/ed25519": "^2.0.2",
+    "@stablelib/sha256": "^2.0.1"
+  }
+}
