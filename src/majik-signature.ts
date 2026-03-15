@@ -37,6 +37,7 @@ import type {
   SignOptions,
   VerificationResult,
 } from "./core/types";
+import { MajikSignatureEmbed } from "./core/embed/majik-embed";
 
 // ─── MajikSignature ───────────────────────────────────────────────────────────
 
@@ -462,5 +463,152 @@ export class MajikSignature {
   ): VerificationResult {
     const publicKeys = MajikSignature.publicKeysFromMajikKey(key);
     return MajikSignature.verify(content, signature, publicKeys);
+  }
+
+  // ── FILE-AWARE METHODS ────────────────────────────────────────────────────
+  //
+  // These delegate to MajikSignatureEmbed, passing `MajikSignature` itself
+  // as the `MajikSig` adapter argument. This breaks the circular import:
+  //
+  //   majik-signature  →  majik-embed            (one-way, static import ✓)
+  //   majik-embed      →  MajikSignatureAdapter   (interface only, no import)
+  //
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Sign a file and embed the signature into it in one call.
+   *
+   * Strips any existing signature before signing (idempotent re-signing).
+   * The returned blob is the same format as the input — PDF stays PDF, etc.
+   *
+   * @example
+   *   const { blob, signature } = await MajikSignature.signFile(file, key);
+   */
+  static async signFile(
+    file: Blob,
+    key: MajikKey,
+    options?: {
+      contentType?: string;
+      timestamp?: string;
+      mimeType?: string;
+    },
+  ): Promise<{
+    blob: Blob;
+    signature: MajikSignature;
+    handler: string;
+    mimeType: string;
+  }> {
+    return MajikSignatureEmbed.signAndEmbed<MajikSignature>(
+      file,
+      key,
+      MajikSignature, // ← passed as adapter, not imported by embed
+      options,
+    );
+  }
+
+  /**
+   * Verify a file's embedded signature against a MajikKey or raw public keys.
+   *
+   * Accepts either a MajikKey instance (locked or unlocked — only public
+   * fields are used) or a raw MajikSignerPublicKeys object.
+   *
+   * @example
+   *   const result = await MajikSignature.verifyFile(signedBlob, key);
+   *   if (result.valid) console.log("Signed by", result.signerId);
+   */
+  static async verifyFile(
+    file: Blob,
+    keyOrPublicKeys: MajikKey | MajikSignerPublicKeys,
+    options?: {
+      expectedSignerId?: string;
+      mimeType?: string;
+    },
+  ): Promise<VerificationResult & { handler?: string }> {
+    if (MajikSignature._isMajikKey(keyOrPublicKeys)) {
+      return MajikSignatureEmbed.verifyWithKey(
+        file,
+        keyOrPublicKeys,
+        MajikSignature, // ← adapter
+        options,
+      );
+    }
+    return MajikSignatureEmbed.verify(
+      file,
+      keyOrPublicKeys,
+      MajikSignature, // ← adapter
+      options,
+    );
+  }
+
+  /**
+   * Embed this MajikSignature instance into a file.
+   *
+   * The signature must cover the original file bytes BEFORE embedding.
+   * Use signFile() if you want signing + embedding together.
+   *
+   * @example
+   *   const sig = await MajikSignature.sign(originalBytes, key);
+   *   const signedBlob = await sig.embedIn(file);
+   */
+  async embedIn(file: Blob, options?: { mimeType?: string }): Promise<Blob> {
+    const { blob } = await MajikSignatureEmbed.embed(file, this, options);
+    return blob;
+  }
+
+  /**
+   * Extract the embedded MajikSignature from a file.
+   * Returns a fully typed instance, not raw JSON. Returns null if not found.
+   *
+   * @example
+   *   const sig = await MajikSignature.extractFrom(signedBlob);
+   *   if (sig) console.log(sig.signerId, sig.timestamp);
+   */
+  static async extractFrom(
+    file: Blob,
+    options?: { mimeType?: string },
+  ): Promise<MajikSignature | null> {
+    const result = await MajikSignatureEmbed.extract(file, options);
+    if (!result) return null;
+    return MajikSignature.fromJSON(result.signatureJson);
+  }
+
+  /**
+   * Return the file with any embedded signature removed.
+   * The returned bytes are exactly what was originally signed.
+   *
+   * @example
+   *   const cleanBlob = await MajikSignature.stripFrom(signedBlob);
+   */
+  static async stripFrom(
+    file: Blob,
+    options?: { mimeType?: string },
+  ): Promise<Blob> {
+    return MajikSignatureEmbed.strip(file, options);
+  }
+
+  /**
+   * Check whether a file contains an embedded MajikSignature.
+   * Does not verify — purely a structural presence check.
+   *
+   * @example
+   *   if (await MajikSignature.isSigned(file)) { ... }
+   */
+  static async isSigned(
+    file: Blob,
+    options?: { mimeType?: string },
+  ): Promise<boolean> {
+    return MajikSignatureEmbed.hasSignature(file, options);
+  }
+
+  // ── Private helpers ───────────────────────────────────────────────────────
+
+  /**
+   * Duck-type check to distinguish MajikKey from MajikSignerPublicKeys.
+   * MajikKey always has a `fingerprint` string property.
+   */
+  private static _isMajikKey(
+    v: MajikKey | MajikSignerPublicKeys,
+  ): v is MajikKey {
+    return typeof (v as MajikKey).fingerprint === "string";
   }
 }
