@@ -48,7 +48,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@majikah/majik-key": "^0.2.0",
+    "@majikah/majik-key": "^0.2.1",
     "@noble/post-quantum": "^0.5.4",
     "@stablelib/ed25519": "^2.0.2",
     "@stablelib/sha256": "^2.0.1",

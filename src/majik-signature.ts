@@ -111,6 +111,7 @@ export class MajikSignature {
     content: Uint8Array | string,
     key: MajikKey,
     options?: SignOptions,
+    debug: boolean = false,
   ): Promise<MajikSignature> {
     try {
       // ── Input validation ──
@@ -152,11 +153,27 @@ export class MajikSignature {
         contentType,
       });
 
+      if (debug) {
+        console.log("Signing Payload:", payload);
+      }
+
       // ── Sign with Ed25519 ──
       const edSigBytes = ed25519.sign(edSecretKey, payload);
 
+      if (debug) {
+        console.log("mlDsaSecretKey type:", mlDsaSecretKey?.constructor?.name);
+        console.log("mlDsaSecretKey length:", mlDsaSecretKey?.length);
+        console.log("mlDsaSecretKey byteLength:", mlDsaSecretKey?.byteLength);
+        console.log("mlDsaSecretKey byteOffset:", mlDsaSecretKey?.byteOffset);
+        console.log(
+          "mlDsaSecretKey buffer.byteLength:",
+          mlDsaSecretKey?.buffer?.byteLength,
+        );
+        console.log("is Uint8Array:", mlDsaSecretKey instanceof Uint8Array);
+      }
+
       // ── Sign with ML-DSA-87 ──
-      const mlDsaSigBytes = ml_dsa87.sign(mlDsaSecretKey, payload);
+      const mlDsaSigBytes = ml_dsa87.sign(payload, mlDsaSecretKey);
 
       // ── Assemble envelope ──
       const envelope: MajikSignatureJSON = {
@@ -173,6 +190,9 @@ export class MajikSignature {
 
       return new MajikSignature(envelope);
     } catch (err) {
+      if (debug) {
+        console.error("Raw Signing Error:", err);
+      }
       if (err instanceof MajikSignatureError) throw err;
       throw new MajikSignatureError("Failed to sign content", err);
     }
@@ -246,9 +266,9 @@ export class MajikSignature {
       let mlDsaOk: boolean;
       try {
         mlDsaOk = ml_dsa87.verify(
-          publicKeys.mlDsaPublicKey,
-          payload,
-          base64ToBytes(env.mlDsaSignature),
+          base64ToBytes(env.mlDsaSignature), // sig
+          payload, // msg
+          publicKeys.mlDsaPublicKey, // publicKey
         );
       } catch {
         return invalid();
