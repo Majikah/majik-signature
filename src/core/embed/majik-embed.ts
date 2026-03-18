@@ -43,6 +43,7 @@ import { MkvHandler } from "./handlers/mkv";
 import { OfficeHandler } from "./handlers/office";
 import { TextHandler } from "./handlers/text";
 import { FallbackHandler } from "./fallback";
+import { bytesToBase64, hashContent } from "../hash";
 
 // ─── Adapter interface ────────────────────────────────────────────────────────
 //
@@ -182,6 +183,7 @@ export class MajikSignatureEmbed {
     publicKeys: MajikSignerPublicKeys,
     MajikSig: MajikSignatureStaticAdapter,
     options?: ExtractOptions & { expectedSignerId?: string },
+    debug: boolean = false,
   ): Promise<EmbedVerifyResult> {
     const bytes = await blobToBytes(file);
     const mimeType = options?.mimeType ?? detectMimeType(bytes, file.type);
@@ -189,6 +191,7 @@ export class MajikSignatureEmbed {
 
     const signatureJson = await handler.extract(bytes);
     if (!signatureJson) {
+      if (debug) console.error("No embedded signature found");
       return {
         valid: false,
         reason: "No embedded signature found",
@@ -208,6 +211,13 @@ export class MajikSignatureEmbed {
     }
 
     const originalBytes = await handler.strip(bytes);
+
+    if (debug) {
+      const recomputedHash = bytesToBase64(hashContent(originalBytes));
+      console.log("Verify-side hash:", recomputedHash);
+      console.log("Embedded hash:  ", parsedSig.contentHash);
+      console.log("match:", recomputedHash === parsedSig.contentHash);
+    }
 
     if (
       options?.expectedSignerId &&
@@ -236,9 +246,16 @@ export class MajikSignatureEmbed {
     key: MajikKey,
     MajikSig: MajikSignatureStaticAdapter,
     options?: ExtractOptions & { expectedSignerId?: string },
+    debug: boolean = false,
   ): Promise<EmbedVerifyResult> {
     const publicKeys = MajikSig.publicKeysFromMajikKey(key);
-    return MajikSignatureEmbed.verify(file, publicKeys, MajikSig, options);
+    return MajikSignatureEmbed.verify(
+      file,
+      publicKeys,
+      MajikSig,
+      options,
+      debug,
+    );
   }
 
   /**

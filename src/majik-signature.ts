@@ -543,20 +543,25 @@ export class MajikSignature {
       expectedSignerId?: string;
       mimeType?: string;
     },
+    debug: boolean = false,
   ): Promise<VerificationResult & { handler?: string }> {
     if (MajikSignature._isMajikKey(keyOrPublicKeys)) {
+      if (debug) console.log("Verifying with MajikKey");
       return MajikSignatureEmbed.verifyWithKey(
         file,
         keyOrPublicKeys,
         MajikSignature, // ← adapter
         options,
+        debug,
       );
     }
+    if (debug) console.log("Verifying with public keys");
     return MajikSignatureEmbed.verify(
       file,
       keyOrPublicKeys,
       MajikSignature, // ← adapter
       options,
+      debug,
     );
   }
 
