@@ -39,6 +39,17 @@ import type {
 } from "./core/types";
 import { MajikSignatureEmbed } from "./core/embed/majik-embed";
 
+// ── Stamp (image signing) imports ─────────────────────────────────────────────
+// One-way import: majik-signature → core/stamp/image-signature.
+// MajikImageSignature receives MajikSignature back as an adapter at call time
+// (typed as MajikSignatureStaticAdapter) — no circular dependency.
+import { MajikImageSignature } from "./core/stamp/image-signature";
+import type {
+  ImageVerificationResult,
+  ImageSignOptions,
+  ImageSignatureStub,
+} from "./core/stamp";
+
 // ─── MajikSignature ───────────────────────────────────────────────────────────
 
 export class MajikSignature {
@@ -623,6 +634,141 @@ export class MajikSignature {
     options?: { mimeType?: string },
   ): Promise<boolean> {
     return MajikSignatureEmbed.hasSignature(file, options);
+  }
+
+  // ── STAMP (compression-resistant image signing) ───────────────────────────
+  //
+  // These methods delegate to MajikImageSignature, passing `MajikSignature`
+  // itself as the adapter — the same pattern used by signFile → MajikSignatureEmbed.
+  //
+  // The adapter is typed as MajikSignatureStaticAdapter (an interface defined
+  // in core/stamp/image-signature.ts) so no circular import is introduced:
+  //
+  //   majik-signature → core/stamp/image-signature → (adapter interface only)
+  //
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Sign an image with dual-layer embedding.
+   *
+   * @experimental
+   * ⚠️ This API is not stable yet and may change without notice.
+   * 
+   * Every signed image carries two independent proofs:
+   *
+   *   Layer 1 — Pixel rows appended at the bottom (+~6px height)
+   *     Full MajikSignature: Ed25519 + ML-DSA-87 (post-quantum)
+   *     Survives: direct sharing, email attachments, Slack, internal tools
+   *     Stripped by: platforms that crop/resize (Gmail, LinkedIn, Facebook)
+   *
+   *   Layer 2 — DCT coefficient steganography (invisible, no size change)
+   *     Ed25519-only stub + Reed-Solomon ECC (205 bytes)
+   *     Survives: Q70+ JPEG recompression, WebP conversion, platform uploads
+   *     Does not survive: screenshots, heavy crop, below-Q70 recompression
+   *
+   * Output is PNG by default. When uploaded to a platform, Layer 1 may be
+   * stripped but Layer 2 survives — verifyStamp() handles both automatically.
+   *
+   * Minimum image size: 600×600px (smaller images are padded with white).
+   *
+   * @param image    Any image format the browser supports (JPEG, PNG, WebP…)
+   * @param key      Unlocked MajikKey with signing keys
+   * @param options  Output MIME type, JPEG quality, timestamp override
+   * @returns        blob (signed image), stub (DCT layer metadata),
+   *                 fullEnvelope (complete MajikSignatureJSON for Layer 1)
+   *
+   * @example
+   *   const { blob, stub } = await MajikSignature.stampImage(imageBlob, key);
+   *   // blob  → upload or attach; visually identical to the original
+   *   // stub  → signerId, timestamp, pHash for display
+   */
+  static async stampImage(
+    image: Blob,
+    key: MajikKey,
+    options?: ImageSignOptions,
+  ): Promise<{
+    blob: Blob;
+    stub: ImageSignatureStub;
+    fullEnvelope: MajikSignatureJSON;
+  }> {
+    return MajikImageSignature.sign(image, key, MajikSignature, options);
+  }
+
+  /**
+   * Verify a stamped image's embedded MajikImageSignature.
+   *
+   * @experimental
+   * ⚠️ This API is not stable yet and may change without notice.
+   * 
+   * Tries both layers automatically:
+   *   - Both present → both must pass (maximum integrity, post-quantum proof)
+   *   - Pixel row only → pixel row must pass (full Ed25519 + ML-DSA-87)
+   *   - DCT only → DCT must pass (Ed25519 fallback, typical after platform upload)
+   *   - Neither → invalid
+   *
+   * The `layer` field in the result communicates the trust level so callers
+   * can surface it in UI: 'both' > 'pixel-row' > 'dct-only'.
+   *
+   * @param image    The image to verify — may be platform-compressed
+   * @param options  hammingThreshold override (default 8 — strict)
+   *
+   * @example
+   *   const result = await MajikSignature.verifyStamp(imageBlob);
+   *   if (result.valid) {
+   *     console.log(`✓ Signed by ${result.signerId}`);
+   *     console.log(`  Verified via: ${result.layer}`);
+   *     // result.layer: 'both' | 'pixel-row' | 'dct-only'
+   *   }
+   */
+  static async verifyStamp(
+    image: Blob,
+    options?: { hammingThreshold?: number },
+  ): Promise<ImageVerificationResult> {
+    return MajikImageSignature.verify(image, MajikSignature, options);
+  }
+
+  /**
+   * Inspect which stamp layers are present without verifying.
+   *
+   * @experimental
+   * ⚠️ This API is not stable yet and may change without notice.
+   * 
+   * Fast — useful for rendering a "Signed by X on Y" badge in a UI before
+   * committing to a full cryptographic verify call.
+   *
+   * Does NOT confirm the signatures are valid — call verifyStamp() for that.
+   *
+   * @example
+   *   const info = await MajikSignature.inspectStamp(imageBlob);
+   *   if (info.hasPixelRow) console.log('Full post-quantum proof present');
+   *   if (info.hasDct)      console.log('Compression-resistant stub present');
+   *   info.dctMeta?.signerId        // signer ID (unverified — display only)
+   *   info.pixelRowMeta?.timestamp  // timestamp (unverified — display only)
+   */
+  static async inspectStamp(image: Blob): Promise<{
+    hasPixelRow: boolean;
+    hasDct: boolean;
+    pixelRowMeta?: { signerId: string; timestamp: string };
+    dctMeta?: { signerId: string; timestamp: string; pHash: string };
+  }> {
+    return MajikImageSignature.inspect(image);
+  }
+
+  /**
+   * Returns true if the image contains any MajikImageSignature layer.
+   *
+   * @experimental
+   * ⚠️ This API is not stable yet and may change without notice.
+   * 
+   * Does not verify — structural presence check only.
+   * Use verifyStamp() to confirm the signature is cryptographically valid.
+   *
+   * @example
+   *   if (await MajikSignature.isStamped(imageBlob)) { ... }
+   * 
+   */
+  static async isStamped(image: Blob): Promise<boolean> {
+    return MajikImageSignature.isSigned(image);
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
