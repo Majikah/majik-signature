@@ -459,12 +459,15 @@ export class MajikSignatureEmbed {
     //   );
     // }
 
-    // Only the issuer may seal
-    if (key.fingerprint !== envelope.allowlistSignerId) {
-      throw new MajikSignatureKeyError(
-        `Only the issuer ("${envelope.allowlistSignerId}") may seal this file. ` +
-          `Provided key fingerprint: "${key.fingerprint}".`,
-      );
+    // Must be a restricted multi-sig file (has an allowlist)
+    if (!!envelope.allowlist && !!envelope.allowlistSignerId?.trim()) {
+      // Only the issuer may seal
+      if (key.fingerprint !== envelope.allowlistSignerId) {
+        throw new MajikSignatureKeyError(
+          `Only the issuer ("${envelope.allowlistSignerId}") may seal this file. ` +
+            `Provided key fingerprint: "${key.fingerprint}".`,
+        );
+      }
     }
 
     // Already sealed
