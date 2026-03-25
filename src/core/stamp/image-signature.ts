@@ -89,7 +89,7 @@ export interface MajikSignatureStaticAdapter {
     keyOrPublicKeys: MajikSignerPublicKeys,
     options?: { expectedSignerId?: string; mimeType?: string },
     debug?: boolean,
-  ): Promise<{ valid: boolean; reason?: string }>;
+  ): Promise<Array<{ valid: boolean; reason?: string }>>; // ← was single object
 }
 
 import { computePHash, pHashMatches, hammingDistance } from "./core/phash";
@@ -416,11 +416,12 @@ export class MajikImageSignature {
           },
         );
 
-        const verifyResult = await MajikSig.verifyFile(dctBlob, {
+        const verifyResults = await MajikSig.verifyFile(dctBlob, {
           signerId: parsedEnvelope.signerId,
           edPublicKey: base64ToBytes(parsedEnvelope.signerEdPublicKey),
           mlDsaPublicKey: base64ToBytes(parsedEnvelope.signerMlDsaPublicKey),
         });
+        const verifyResult = verifyResults[0]; // stamp signs with one key, first result is the one
 
         if (verifyResult.valid) {
           pixelRowValid = true;

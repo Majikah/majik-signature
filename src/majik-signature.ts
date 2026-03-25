@@ -12,9 +12,27 @@
  *   - Both cover the same canonical payload (domain + JSON metadata)
  *   - Verification requires BOTH to pass — hybrid security
  *
+ * Multi-sig support:
+ *   - Files embed a MultiSigEnvelope containing an array of MajikSignatureJSON
+ *   - Each signer's entry is identified by their signerId (fingerprint)
+ *   - Re-signing with the same key overwrites that signer's existing entry
+ *   - Old single-sig files are promoted transparently — no migration needed
+ *
+ * Allowlist:
+ *   - The first signer may optionally restrict future signers via expectedSigners
+ *   - The allowlist is cryptographically committed to via allowlistHash in the
+ *     establishing signer's canonical payload (covered by Ed25519 + ML-DSA-87)
+ *   - Non-listed signers are rejected before any cryptographic operation
+ *
+ * Seal:
+ *   - Only the issuer (allowlistSignerId) may seal a restricted multi-sig file
+ *   - Sealing computes a SHA3-512 hash over all current signatories + timestamp
+ *   - A sealed envelope rejects all further signing attempts
+ *
  * Canonical payload:
- *   "majik-signature-v1:" + JSON({ v, id, ts, ct, hash })
- *   where hash = SHA-256(content), base64
+ *   "majik-signature-v1:" + JSON({ v, id, ts, ct, hash[, alh] })
+ *   where hash = SHA-256(content), alh = SHA-256(canonical allowlist) — omitted
+ *   when no allowlist is set, preserving backward compat with old signatures.
  */
 
 import * as ed25519 from "@stablelib/ed25519";
@@ -32,17 +50,21 @@ import { MajikSignatureValidator } from "./core/validator";
 import { buildSigningPayload } from "./core/payload";
 import { hashContent, bytesToBase64, base64ToBytes } from "./core/hash";
 import type {
+  EnvelopeInfo,
+  ExpectedSigner,
   MajikSignatureJSON,
   MajikSignerPublicKeys,
+  SealInfo,
+  SealVerificationResult,
+  SignatoriesFilter,
+  SignatoriesResult,
+  SignatoryInfo,
   SignOptions,
   VerificationResult,
 } from "./core/types";
 import { MajikSignatureEmbed } from "./core/embed/majik-embed";
 
 // ── Stamp (image signing) imports ─────────────────────────────────────────────
-// One-way import: majik-signature → core/stamp/image-signature.
-// MajikImageSignature receives MajikSignature back as an adapter at call time
-// (typed as MajikSignatureStaticAdapter) — no circular dependency.
 import { MajikImageSignature } from "./core/stamp/image-signature";
 import type {
   ImageVerificationResult,
@@ -62,6 +84,7 @@ export class MajikSignature {
   private readonly _timestamp: string;
   private readonly _edSignature: string;
   private readonly _mlDsaSignature: string;
+  private readonly _allowlistHash?: string;
 
   private constructor(data: MajikSignatureJSON) {
     this._version = data.version;
@@ -73,6 +96,7 @@ export class MajikSignature {
     this._timestamp = data.timestamp;
     this._edSignature = data.edSignature;
     this._mlDsaSignature = data.mlDsaSignature;
+    this._allowlistHash = data.allowlistHash;
   }
 
   // ── Getters ─────────────────────────────────────────────────────────────────
@@ -105,27 +129,31 @@ export class MajikSignature {
     return this._mlDsaSignature;
   }
 
+  /**
+   * SHA-256 hash of the canonical allowlist, base64.
+   * Present only on the envelope of the signer who established the allowlist.
+   * Undefined on all other signers and on pre-allowlist signatures.
+   */
+  get allowlistHash(): string | undefined {
+    return this._allowlistHash;
+  }
+
   // ── SIGN ────────────────────────────────────────────────────────────────────
 
   /**
    * Sign content with an unlocked MajikKey.
    *
-   * The key must be unlocked and must have signing keys (hasSigningKeys === true).
    * Both Ed25519 and ML-DSA-87 sign the same canonical payload.
-   *
-   * @param content   - Raw bytes or UTF-8 string to sign
-   * @param key       - Unlocked MajikKey with signing keys
-   * @param options   - Optional content type label and timestamp override
-   * @returns         - MajikSignature instance (ready to serialize)
+   * When options.allowlistHash is provided (injected internally by signAndEmbed),
+   * it is included in the payload so both algorithms cover the allowlist.
    */
   static async sign(
     content: Uint8Array | string,
     key: MajikKey,
-    options?: SignOptions,
+    options?: SignOptions & { allowlistHash?: string },
     debug: boolean = false,
   ): Promise<MajikSignature> {
     try {
-      // ── Input validation ──
       MajikSignatureValidator.validateContent(content);
       MajikSignatureValidator.assertDefined(key, "key");
       MajikSignatureValidator.validateContentType(options?.contentType);
@@ -140,7 +168,6 @@ export class MajikSignature {
           "MajikKey has no signing keys. Re-import via importFromMnemonicBackup() to enable signing.",
         );
 
-      // ── Retrieve secret keys (throws if locked or missing) ──
       const edSecretKey = key.getEdSecretKey();
       const mlDsaSecretKey = key.getMlDsaSecretKey();
       const edPublicKey = key.edPublicKey!;
@@ -149,44 +176,33 @@ export class MajikSignature {
       MajikSignatureValidator.validateEdSecretKey(edSecretKey);
       MajikSignatureValidator.validateMlDsaSecretKey(mlDsaSecretKey);
 
-      // ── Hash content ──
       const contentHashBytes = hashContent(content);
       const contentHash = bytesToBase64(contentHashBytes);
       const timestamp = options?.timestamp ?? new Date().toISOString();
       const signerId = key.fingerprint;
       const contentType = options?.contentType;
+      const allowlistHash = options?.allowlistHash;
 
-      // ── Build canonical payload ──
       const payload = buildSigningPayload({
         signerId,
         timestamp,
         contentHash,
         contentType,
+        allowlistHash,
       });
 
-      if (debug) {
-        console.log("Signing Payload:", payload);
-      }
+      if (debug) console.log("Signing Payload:", payload);
 
-      // ── Sign with Ed25519 ──
       const edSigBytes = ed25519.sign(edSecretKey, payload);
 
       if (debug) {
         console.log("mlDsaSecretKey type:", mlDsaSecretKey?.constructor?.name);
         console.log("mlDsaSecretKey length:", mlDsaSecretKey?.length);
-        console.log("mlDsaSecretKey byteLength:", mlDsaSecretKey?.byteLength);
-        console.log("mlDsaSecretKey byteOffset:", mlDsaSecretKey?.byteOffset);
-        console.log(
-          "mlDsaSecretKey buffer.byteLength:",
-          mlDsaSecretKey?.buffer?.byteLength,
-        );
         console.log("is Uint8Array:", mlDsaSecretKey instanceof Uint8Array);
       }
 
-      // ── Sign with ML-DSA-87 ──
       const mlDsaSigBytes = ml_dsa87.sign(payload, mlDsaSecretKey);
 
-      // ── Assemble envelope ──
       const envelope: MajikSignatureJSON = {
         version: MAJIK_SIGNATURE_VERSION,
         signerId,
@@ -197,13 +213,12 @@ export class MajikSignature {
         timestamp,
         edSignature: bytesToBase64(edSigBytes),
         mlDsaSignature: bytesToBase64(mlDsaSigBytes),
+        ...(allowlistHash !== undefined ? { allowlistHash } : {}),
       };
 
       return new MajikSignature(envelope);
     } catch (err) {
-      if (debug) {
-        console.error("Raw Signing Error:", err);
-      }
+      if (debug) console.error("Raw Signing Error:", err);
       if (err instanceof MajikSignatureError) throw err;
       throw new MajikSignatureError("Failed to sign content", err);
     }
@@ -213,14 +228,7 @@ export class MajikSignature {
 
   /**
    * Verify a MajikSignature against content and the signer's public keys.
-   *
-   * No private key is needed. Safe to call in any public context.
    * Both Ed25519 AND ML-DSA-87 must verify — if either fails, returns invalid.
-   *
-   * @param content   - The original content that was signed
-   * @param signature - The MajikSignature to verify (instance or JSON)
-   * @param publicKeys - Signer's Ed25519 + ML-DSA-87 public keys
-   * @returns VerificationResult with valid: true/false and envelope metadata
    */
   static verify(
     content: Uint8Array | string,
@@ -246,21 +254,18 @@ export class MajikSignature {
           ...(reason ? { reason } : {}),
         }) as VerificationResult;
 
-      // ── Step 1: Recompute content hash and compare ──
-      const recomputedHashBytes = hashContent(content);
-      const recomputedHash = bytesToBase64(recomputedHashBytes);
-
+      const recomputedHash = bytesToBase64(hashContent(content));
       if (recomputedHash !== env.contentHash) return invalid();
 
-      // ── Step 2: Rebuild canonical payload ──
+      // allowlistHash omitted when undefined — preserves backward compat
       const payload = buildSigningPayload({
         signerId: env.signerId,
         timestamp: env.timestamp,
         contentHash: env.contentHash,
         contentType: env.contentType,
+        allowlistHash: env.allowlistHash,
       });
 
-      // ── Step 3: Verify Ed25519 ──
       let edOk: boolean;
       try {
         edOk = ed25519.verify(
@@ -273,20 +278,18 @@ export class MajikSignature {
       }
       if (!edOk) return invalid();
 
-      // ── Step 4: Verify ML-DSA-87 ──
       let mlDsaOk: boolean;
       try {
         mlDsaOk = ml_dsa87.verify(
-          base64ToBytes(env.mlDsaSignature), // sig
-          payload, // msg
-          publicKeys.mlDsaPublicKey, // publicKey
+          base64ToBytes(env.mlDsaSignature),
+          payload,
+          publicKeys.mlDsaPublicKey,
         );
       } catch {
         return invalid();
       }
       if (!mlDsaOk) return invalid();
 
-      // ── Both passed ──
       return {
         valid: true,
         signerId: env.signerId,
@@ -305,19 +308,10 @@ export class MajikSignature {
 
   // ── SELF-VALIDATE ───────────────────────────────────────────────────────────
 
-  /**
-   * Validate this envelope's internal structure without verifying signatures.
-   * Useful for a quick integrity check before storing or transmitting.
-   * Throws MajikSignatureValidationError on any structural problem.
-   */
   validate(): void {
     MajikSignatureValidator.validateJSON(this.toJSON());
   }
 
-  /**
-   * Returns true if the envelope is structurally valid, false otherwise.
-   * Never throws — safe to use as a boolean guard.
-   */
   isValid(): boolean {
     try {
       this.validate();
@@ -329,15 +323,6 @@ export class MajikSignature {
 
   // ── EXTRACT PUBLIC KEYS ─────────────────────────────────────────────────────
 
-  /**
-   * Extract the signer's public keys from the envelope.
-   * Useful when you want to verify without maintaining a separate key store.
-   *
-   * NOTE: The public keys embedded in the envelope are self-reported by the
-   * signer. You should cross-check signerEdPublicKey + signerId against a
-   * trusted source (e.g. a MajikKey fingerprint or a registry) before trusting
-   * the extracted keys for verification.
-   */
   extractPublicKeys(): MajikSignerPublicKeys {
     try {
       const edPublicKey = base64ToBytes(this._signerEdPublicKey);
@@ -354,11 +339,7 @@ export class MajikSignature {
         2592,
       );
 
-      return {
-        signerId: this._signerId,
-        edPublicKey,
-        mlDsaPublicKey,
-      };
+      return { signerId: this._signerId, edPublicKey, mlDsaPublicKey };
     } catch (err) {
       if (err instanceof MajikSignatureError) throw err;
       throw new MajikSignatureKeyError(
@@ -381,20 +362,18 @@ export class MajikSignature {
       timestamp: this._timestamp,
       edSignature: this._edSignature,
       mlDsaSignature: this._mlDsaSignature,
+      ...(this._allowlistHash !== undefined
+        ? { allowlistHash: this._allowlistHash }
+        : {}),
     };
   }
 
-  /**
-   * Serialize to a base64 string suitable for embedding in files,
-   * database fields, HTTP headers, or QR codes.
-   */
   serialize(): string {
     try {
       const bytes = new TextEncoder().encode(JSON.stringify(this.toJSON()));
       let binary = "";
-      for (let i = 0; i < bytes.length; i++) {
+      for (let i = 0; i < bytes.length; i++)
         binary += String.fromCharCode(bytes[i]);
-      }
       return btoa(binary);
     } catch (err) {
       throw new MajikSignatureSerializationError(
@@ -410,10 +389,6 @@ export class MajikSignature {
 
   // ── DESERIALIZATION ──────────────────────────────────────────────────────────
 
-  /**
-   * Reconstruct a MajikSignature from its JSON representation.
-   * Validates structure on parse — throws on any invalid field.
-   */
   static fromJSON(json: MajikSignatureJSON | string): MajikSignature {
     try {
       const parsed: unknown =
@@ -429,19 +404,13 @@ export class MajikSignature {
     }
   }
 
-  /**
-   * Reconstruct a MajikSignature from a base64 serialized string.
-   */
   static deserialize(base64: string): MajikSignature {
     try {
       MajikSignatureValidator.assertNonEmptyString(base64, "base64");
       const binary = atob(base64);
       const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i);
-      }
-      const json = new TextDecoder().decode(bytes);
-      return MajikSignature.fromJSON(json);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return MajikSignature.fromJSON(new TextDecoder().decode(bytes));
     } catch (err) {
       if (err instanceof MajikSignatureError) throw err;
       throw new MajikSignatureSerializationError(
@@ -451,69 +420,78 @@ export class MajikSignature {
     }
   }
 
-  // ── STATIC HELPERS ───────────────────────────────────────────────────────────
+  // ── STATIC KEY HELPERS ───────────────────────────────────────────────────────
 
-  /**
-   * Convenience: extract public keys from a MajikKey for use in verify().
-   * Works on both locked and unlocked keys — only needs public key fields.
-   */
   static publicKeysFromMajikKey(key: MajikKey): MajikSignerPublicKeys {
     MajikSignatureValidator.assertDefined(key, "key");
-
     if (!key.hasSigningKeys)
       throw new MajikSignatureKeyError(
         "MajikKey has no signing public keys. Key may need re-import via importFromMnemonicBackup().",
       );
-
     const edPublicKey = key.edPublicKey!;
     const mlDsaPublicKey = key.mlDsaPublicKey!;
-
     MajikSignatureValidator.assertUint8Array(edPublicKey, "edPublicKey", 32);
     MajikSignatureValidator.assertUint8Array(
       mlDsaPublicKey,
       "mlDsaPublicKey",
       2592,
     );
-
-    return {
-      signerId: key.fingerprint,
-      edPublicKey,
-      mlDsaPublicKey,
-    };
+    return { signerId: key.fingerprint, edPublicKey, mlDsaPublicKey };
   }
 
-  /**
-   * Convenience: verify content directly against a MajikKey instance.
-   * Extracts public keys from the key automatically.
-   * Works on locked keys — only public fields are used.
-   */
   static verifyWithKey(
     content: Uint8Array | string,
     signature: MajikSignature | MajikSignatureJSON,
     key: MajikKey,
   ): VerificationResult {
-    const publicKeys = MajikSignature.publicKeysFromMajikKey(key);
-    return MajikSignature.verify(content, signature, publicKeys);
+    return MajikSignature.verify(
+      content,
+      signature,
+      MajikSignature.publicKeysFromMajikKey(key),
+    );
+  }
+
+  /**
+   * Build an ExpectedSigner entry from a MajikKey.
+   * Used to construct the expectedSigners array for signFile().
+   * The key does not need to be unlocked.
+   *
+   * @example
+   *   expectedSigners: [
+   *     MajikSignature.expectedSignerFromKey(aliceKey),
+   *     MajikSignature.expectedSignerFromKey(bobKey),
+   *   ]
+   */
+  static expectedSignerFromKey(key: MajikKey): ExpectedSigner {
+    MajikSignatureValidator.assertDefined(key, "key");
+    if (!key.hasSigningKeys)
+      throw new MajikSignatureKeyError(
+        "MajikKey has no signing public keys — cannot build ExpectedSigner.",
+      );
+    return {
+      signerId: key.fingerprint,
+      edPublicKey: bytesToBase64(key.edPublicKey!),
+      mlDsaPublicKey: bytesToBase64(key.mlDsaPublicKey!),
+    };
   }
 
   // ── FILE-AWARE METHODS ────────────────────────────────────────────────────
-  //
-  // These delegate to MajikSignatureEmbed, passing `MajikSignature` itself
-  // as the `MajikSig` adapter argument. This breaks the circular import:
-  //
-  //   majik-signature  →  majik-embed            (one-way, static import ✓)
-  //   majik-embed      →  MajikSignatureAdapter   (interface only, no import)
-  //
-  // ─────────────────────────────────────────────────────────────────────────
 
   /**
-   * Sign a file and embed the signature into it in one call.
+   * Sign a file and embed the signature.
    *
-   * Strips any existing signature before signing (idempotent re-signing).
-   * The returned blob is the same format as the input — PDF stays PDF, etc.
+   * On first sign: pass options.expectedSigners to restrict future signers.
+   * On re-sign: the signer's existing entry is overwritten; others untouched.
+   * Non-allowlisted signers are rejected before any crypto (MajikSignatureAllowlistError).
+   * Sealed files are always rejected.
    *
    * @example
-   *   const { blob, signature } = await MajikSignature.signFile(file, key);
+   *   const { blob } = await MajikSignature.signFile(file, aliceKey, {
+   *     expectedSigners: [
+   *       MajikSignature.expectedSignerFromKey(aliceKey),
+   *       MajikSignature.expectedSignerFromKey(bobKey),
+   *     ],
+   *   });
    */
   static async signFile(
     file: Blob,
@@ -522,6 +500,7 @@ export class MajikSignature {
       contentType?: string;
       timestamp?: string;
       mimeType?: string;
+      expectedSigners?: ExpectedSigner[];
     },
   ): Promise<{
     blob: Blob;
@@ -532,45 +511,35 @@ export class MajikSignature {
     return MajikSignatureEmbed.signAndEmbed<MajikSignature>(
       file,
       key,
-      MajikSignature, // ← passed as adapter, not imported by embed
+      MajikSignature,
       options,
     );
   }
 
   /**
-   * Verify a file's embedded signature against a MajikKey or raw public keys.
-   *
-   * Accepts either a MajikKey instance (locked or unlocked — only public
-   * fields are used) or a raw MajikSignerPublicKeys object.
-   *
-   * @example
-   *   const result = await MajikSignature.verifyFile(signedBlob, key);
-   *   if (result.valid) console.log("Signed by", result.signerId);
+   * Verify a file's embedded signatures.
+   * Returns one VerificationResult per signer. Old single-sig files return a single-item array.
+   * Pass options.expectedSignerId to verify only a specific signer.
    */
   static async verifyFile(
     file: Blob,
     keyOrPublicKeys: MajikKey | MajikSignerPublicKeys,
-    options?: {
-      expectedSignerId?: string;
-      mimeType?: string;
-    },
+    options?: { expectedSignerId?: string; mimeType?: string },
     debug: boolean = false,
-  ): Promise<VerificationResult & { handler?: string }> {
+  ): Promise<VerificationResult[]> {
     if (MajikSignature._isMajikKey(keyOrPublicKeys)) {
-      if (debug) console.log("Verifying with MajikKey");
       return MajikSignatureEmbed.verifyWithKey(
         file,
         keyOrPublicKeys,
-        MajikSignature, // ← adapter
+        MajikSignature,
         options,
         debug,
       );
     }
-    if (debug) console.log("Verifying with public keys");
     return MajikSignatureEmbed.verify(
       file,
       keyOrPublicKeys,
-      MajikSignature, // ← adapter
+      MajikSignature,
       options,
       debug,
     );
@@ -578,13 +547,8 @@ export class MajikSignature {
 
   /**
    * Embed this MajikSignature instance into a file.
-   *
    * The signature must cover the original file bytes BEFORE embedding.
    * Use signFile() if you want signing + embedding together.
-   *
-   * @example
-   *   const sig = await MajikSignature.sign(originalBytes, key);
-   *   const signedBlob = await sig.embedIn(file);
    */
   async embedIn(file: Blob, options?: { mimeType?: string }): Promise<Blob> {
     const { blob } = await MajikSignatureEmbed.embed(file, this, options);
@@ -592,28 +556,24 @@ export class MajikSignature {
   }
 
   /**
-   * Extract the embedded MajikSignature from a file.
-   * Returns a fully typed instance, not raw JSON. Returns null if not found.
-   *
-   * @example
-   *   const sig = await MajikSignature.extractFrom(signedBlob);
-   *   if (sig) console.log(sig.signerId, sig.timestamp);
+   * Extract all embedded MajikSignature instances from a file.
+   * Returns an array — old single-sig files return a single-item array.
+   * Returns an empty array if no signatures are found.
    */
   static async extractFrom(
     file: Blob,
     options?: { mimeType?: string },
-  ): Promise<MajikSignature | null> {
+  ): Promise<MajikSignature[]> {
     const result = await MajikSignatureEmbed.extract(file, options);
-    if (!result) return null;
-    return MajikSignature.fromJSON(result.signatureJson);
+    if (!result) return [];
+    return result.envelope.signatures.map((json) =>
+      MajikSignature.fromJSON(json),
+    );
   }
 
   /**
-   * Return the file with any embedded signature removed.
+   * Return the file with any embedded signatures removed.
    * The returned bytes are exactly what was originally signed.
-   *
-   * @example
-   *   const cleanBlob = await MajikSignature.stripFrom(signedBlob);
    */
   static async stripFrom(
     file: Blob,
@@ -623,11 +583,8 @@ export class MajikSignature {
   }
 
   /**
-   * Check whether a file contains an embedded MajikSignature.
-   * Does not verify — purely a structural presence check.
-   *
-   * @example
-   *   if (await MajikSignature.isSigned(file)) { ... }
+   * Check whether a file contains any embedded signatures.
+   * Does not verify — structural presence check only.
    */
   static async isSigned(
     file: Blob,
@@ -636,52 +593,210 @@ export class MajikSignature {
     return MajikSignatureEmbed.hasSignature(file, options);
   }
 
-  // ── STAMP (compression-resistant image signing) ───────────────────────────
-  //
-  // These methods delegate to MajikImageSignature, passing `MajikSignature`
-  // itself as the adapter — the same pattern used by signFile → MajikSignatureEmbed.
-  //
-  // The adapter is typed as MajikSignatureStaticAdapter (an interface defined
-  // in core/stamp/image-signature.ts) so no circular import is introduced:
-  //
-  //   majik-signature → core/stamp/image-signature → (adapter interface only)
-  //
-  // ─────────────────────────────────────────────────────────────────────────
+  /**
+   * Get the allowlist from a file without verifying any signatures.
+   * Returns null for open-signing files or unsigned files.
+   */
+  static async getAllowlist(
+    file: Blob,
+    options?: { mimeType?: string },
+  ): Promise<ExpectedSigner[] | null> {
+    return MajikSignatureEmbed.getAllowlist(file, options);
+  }
+
+  // ── SEAL METHODS ──────────────────────────────────────────────────────────
 
   /**
-   * Sign an image with dual-layer embedding.
+   * Seal a restricted multi-sig file, preventing any further signatures.
    *
-   * @experimental
-   * ⚠️ This API is not stable yet and may change without notice.
-   * 
-   * Every signed image carries two independent proofs:
-   *
-   *   Layer 1 — Pixel rows appended at the bottom (+~6px height)
-   *     Full MajikSignature: Ed25519 + ML-DSA-87 (post-quantum)
-   *     Survives: direct sharing, email attachments, Slack, internal tools
-   *     Stripped by: platforms that crop/resize (Gmail, LinkedIn, Facebook)
-   *
-   *   Layer 2 — DCT coefficient steganography (invisible, no size change)
-   *     Ed25519-only stub + Reed-Solomon ECC (205 bytes)
-   *     Survives: Q70+ JPEG recompression, WebP conversion, platform uploads
-   *     Does not survive: screenshots, heavy crop, below-Q70 recompression
-   *
-   * Output is PNG by default. When uploaded to a platform, Layer 1 may be
-   * stripped but Layer 2 survives — verifyStamp() handles both automatically.
-   *
-   * Minimum image size: 600×600px (smaller images are padded with white).
-   *
-   * @param image    Any image format the browser supports (JPEG, PNG, WebP…)
-   * @param key      Unlocked MajikKey with signing keys
-   * @param options  Output MIME type, JPEG quality, timestamp override
-   * @returns        blob (signed image), stub (DCT layer metadata),
-   *                 fullEnvelope (complete MajikSignatureJSON for Layer 1)
+   * Only the issuer (the signer who established the allowlist) may seal.
+   * The seal is a SHA3-512 hash of all current signatories + the seal timestamp,
+   * stored in the envelope. It does not produce a new cryptographic signature.
    *
    * @example
-   *   const { blob, stub } = await MajikSignature.stampImage(imageBlob, key);
-   *   // blob  → upload or attach; visually identical to the original
-   *   // stub  → signerId, timestamp, pHash for display
+   *   const { blob, sealInfo } = await MajikSignature.seal(signedBlob, issuerKey);
+   *   console.log("Sealed at", sealInfo.sealTimestamp);
    */
+  static async seal(
+    file: Blob,
+    key: MajikKey,
+    options?: { mimeType?: string; timestamp?: string },
+  ): Promise<{
+    blob: Blob;
+    sealInfo: SealInfo;
+    handler: string;
+    mimeType: string;
+  }> {
+    return MajikSignatureEmbed.seal(file, key, options);
+  }
+
+  /**
+   * Verify the seal hash against the current signatories and seal timestamp.
+   * Returns invalid if the envelope is not sealed.
+   * Does NOT verify individual cryptographic signatures — call verifyFile() for that.
+   *
+   * @example
+   *   const result = await MajikSignature.verifySeal(sealedBlob);
+   *   if (result.valid) console.log("Sealed by", result.sealedBy, "at", result.sealTimestamp);
+   */
+  static async verifySeal(
+    file: Blob,
+    options?: { mimeType?: string },
+  ): Promise<SealVerificationResult> {
+    return MajikSignatureEmbed.verifySeal(file, options);
+  }
+
+  /**
+   * Get seal metadata without verifying.
+   * Returns null if the file is not sealed or has no envelope.
+   *
+   * @example
+   *   const info = await MajikSignature.getSealInfo(blob);
+   *   if (info) console.log("Sealed by", info.sealedBy);
+   */
+  static async getSealInfo(
+    file: Blob,
+    options?: { mimeType?: string },
+  ): Promise<SealInfo | null> {
+    return MajikSignatureEmbed.getSealInfo(file, options);
+  }
+
+  /**
+   * Returns true if the file has a sealed envelope (structural check, no crypto).
+   */
+  static async isSealed(
+    file: Blob,
+    options?: { mimeType?: string },
+  ): Promise<boolean> {
+    return MajikSignatureEmbed.isSealed(file, options);
+  }
+
+  // ── MULTI-SIG QUERY METHODS ───────────────────────────────────────────────
+
+  /**
+   * Returns true when the file has a restricted multi-sig envelope
+   * (allowlist with more than one expected signer).
+   * Returns false for unsigned, open-signing, or single-signer files.
+   */
+  static async isMultiSig(
+    file: Blob,
+    options?: { mimeType?: string },
+  ): Promise<boolean> {
+    return MajikSignatureEmbed.isMultiSig(file, options);
+  }
+
+  /**
+   * Check whether a MajikKey is permitted to add a signature to this file.
+   * Accounts for seal status and allowlist membership (full three-field check).
+   *
+   * @example
+   *   const { permitted, reason } = await MajikSignature.canSign(blob, key);
+   *   if (!permitted) console.warn(reason);
+   */
+  static async canSign(
+    file: Blob,
+    key: MajikKey,
+    options?: { mimeType?: string },
+  ): Promise<{ permitted: boolean; reason?: string }> {
+    return MajikSignatureEmbed.canSign(file, key, options);
+  }
+
+  /**
+   * Core signatories method — returns all, signed, and pending arrays.
+   *
+   * When an allowlist is present:
+   *   - all     = every expected signer with their signing status
+   *   - signed  = those who have already signed
+   *   - pending = those who are expected but have not yet signed
+   *
+   * When no allowlist is present:
+   *   - all / signed = actual signers (everyone has signed by definition)
+   *   - pending      = always empty
+   *
+   * Returns null if the file has no envelope.
+   *
+   * @example
+   *   const result = await MajikSignature.getSignatories(blob);
+   *   console.log(result.pending.map(s => s.signerId));
+   */
+  static async getSignatories(
+    file: Blob,
+    options?: { mimeType?: string },
+    filter?: SignatoriesFilter,
+  ): Promise<SignatoriesResult | null> {
+    return MajikSignatureEmbed.getSignatories(file, options, filter);
+  }
+
+  /**
+   * Returns only signatories who have already signed.
+   * Alias for getSignatories(file, options, "signed").
+   */
+  static async getSignedSignatories(
+    file: Blob,
+    options?: { mimeType?: string },
+  ): Promise<SignatoriesResult | null> {
+    return MajikSignatureEmbed.getSignatories(file, options, "signed");
+  }
+
+  /**
+   * Returns only signatories who are expected but have not yet signed.
+   * Alias for getSignatories(file, options, "pending").
+   */
+  static async getPendingSignatories(
+    file: Blob,
+    options?: { mimeType?: string },
+  ): Promise<SignatoriesResult | null> {
+    return MajikSignatureEmbed.getSignatories(file, options, "pending");
+  }
+
+  /**
+   * Returns all signatories with full status information.
+   * Alias for getSignatories(file, options, "all").
+   */
+  static async getAllSignatories(
+    file: Blob,
+    options?: { mimeType?: string },
+  ): Promise<SignatoriesResult | null> {
+    return MajikSignatureEmbed.getSignatories(file, options, "all");
+  }
+
+  /**
+   * Returns the issuer — the signer who established the allowlist and controls sealing.
+   * Returns null for open-signing files or unsigned files.
+   *
+   * @example
+   *   const issuer = await MajikSignature.getIssuer(blob);
+   *   if (issuer) console.log("Issued by", issuer.signerId, "| signed:", issuer.hasSigned);
+   */
+  static async getIssuer(
+    file: Blob,
+    options?: { mimeType?: string },
+  ): Promise<SignatoryInfo | null> {
+    return MajikSignatureEmbed.getIssuer(file, options);
+  }
+
+  /**
+   * Return a complete summary of the envelope state in one file read.
+   * Covers: isMultiSig, isSealed, issuer, all signatories, allowlist, seal info.
+   * Useful for rendering a signing status UI without making multiple separate calls.
+   *
+   * Returns null if the file has no envelope.
+   *
+   * @example
+   *   const info = await MajikSignature.getEnvelopeInfo(blob);
+   *   if (info?.isSealed) console.log("Sealed by", info.sealInfo?.sealedBy);
+   *   console.log(`${info?.signatories?.signed.length} of ${info?.signatories?.all.length} signed`);
+   */
+  static async getEnvelopeInfo(
+    file: Blob,
+    options?: { mimeType?: string },
+  ): Promise<EnvelopeInfo | null> {
+    return MajikSignatureEmbed.getEnvelopeInfo(file, options);
+  }
+
+  // ── STAMP (compression-resistant image signing) ───────────────────────────
+
+  /** @experimental ⚠️ API not stable. */
   static async stampImage(
     image: Blob,
     key: MajikKey,
@@ -694,32 +809,7 @@ export class MajikSignature {
     return MajikImageSignature.sign(image, key, MajikSignature, options);
   }
 
-  /**
-   * Verify a stamped image's embedded MajikImageSignature.
-   *
-   * @experimental
-   * ⚠️ This API is not stable yet and may change without notice.
-   * 
-   * Tries both layers automatically:
-   *   - Both present → both must pass (maximum integrity, post-quantum proof)
-   *   - Pixel row only → pixel row must pass (full Ed25519 + ML-DSA-87)
-   *   - DCT only → DCT must pass (Ed25519 fallback, typical after platform upload)
-   *   - Neither → invalid
-   *
-   * The `layer` field in the result communicates the trust level so callers
-   * can surface it in UI: 'both' > 'pixel-row' > 'dct-only'.
-   *
-   * @param image    The image to verify — may be platform-compressed
-   * @param options  hammingThreshold override (default 8 — strict)
-   *
-   * @example
-   *   const result = await MajikSignature.verifyStamp(imageBlob);
-   *   if (result.valid) {
-   *     console.log(`✓ Signed by ${result.signerId}`);
-   *     console.log(`  Verified via: ${result.layer}`);
-   *     // result.layer: 'both' | 'pixel-row' | 'dct-only'
-   *   }
-   */
+  /** @experimental ⚠️ API not stable. */
   static async verifyStamp(
     image: Blob,
     options?: { hammingThreshold?: number },
@@ -727,24 +817,7 @@ export class MajikSignature {
     return MajikImageSignature.verify(image, MajikSignature, options);
   }
 
-  /**
-   * Inspect which stamp layers are present without verifying.
-   *
-   * @experimental
-   * ⚠️ This API is not stable yet and may change without notice.
-   * 
-   * Fast — useful for rendering a "Signed by X on Y" badge in a UI before
-   * committing to a full cryptographic verify call.
-   *
-   * Does NOT confirm the signatures are valid — call verifyStamp() for that.
-   *
-   * @example
-   *   const info = await MajikSignature.inspectStamp(imageBlob);
-   *   if (info.hasPixelRow) console.log('Full post-quantum proof present');
-   *   if (info.hasDct)      console.log('Compression-resistant stub present');
-   *   info.dctMeta?.signerId        // signer ID (unverified — display only)
-   *   info.pixelRowMeta?.timestamp  // timestamp (unverified — display only)
-   */
+  /** @experimental ⚠️ API not stable. */
   static async inspectStamp(image: Blob): Promise<{
     hasPixelRow: boolean;
     hasDct: boolean;
@@ -754,29 +827,13 @@ export class MajikSignature {
     return MajikImageSignature.inspect(image);
   }
 
-  /**
-   * Returns true if the image contains any MajikImageSignature layer.
-   *
-   * @experimental
-   * ⚠️ This API is not stable yet and may change without notice.
-   * 
-   * Does not verify — structural presence check only.
-   * Use verifyStamp() to confirm the signature is cryptographically valid.
-   *
-   * @example
-   *   if (await MajikSignature.isStamped(imageBlob)) { ... }
-   * 
-   */
+  /** @experimental ⚠️ API not stable. */
   static async isStamped(image: Blob): Promise<boolean> {
     return MajikImageSignature.isSigned(image);
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
 
-  /**
-   * Duck-type check to distinguish MajikKey from MajikSignerPublicKeys.
-   * MajikKey always has a `fingerprint` string property.
-   */
   private static _isMajikKey(
     v: MajikKey | MajikSignerPublicKeys,
   ): v is MajikKey {

@@ -41,3 +41,18 @@ export class MajikSignatureSerializationError extends MajikSignatureError {
     this.name = "MajikSignatureSerializationError";
   }
 }
+
+/**
+ * Thrown when a signer attempts to sign a file that has an allowlist
+ * and their key (fingerprint + edPublicKey + mlDsaPublicKey) is not on it.
+ * Raised before any cryptographic operation — the key is never used.
+ */
+export class MajikSignatureAllowlistError extends MajikSignatureError {
+  /** The fingerprint of the signer that was rejected. */
+  readonly signerId: string;
+  constructor(message: string, signerId: string, cause?: unknown) {
+    super(message, cause);
+    this.name = "MajikSignatureAllowlistError";
+    this.signerId = signerId;
+  }
+}

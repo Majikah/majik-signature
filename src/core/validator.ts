@@ -5,16 +5,24 @@
 
 import {
   MAJIK_SIGNATURE_VERSION,
+  MAJIK_ENVELOPE_VERSION,
   MIN_ED_PUBLIC_KEY_B64_LEN,
   MIN_DSA_PUBLIC_KEY_B64_LEN,
   MIN_SIGNATURE_B64_LEN,
   CONTENT_HASH_B64_LEN,
+  ALLOWLIST_HASH_B64_LEN,
+  SEAL_HASH_HEX_LEN,
 } from "./constants";
 import {
   MajikSignatureValidationError,
   MajikSignatureKeyError,
 } from "./errors";
-import type { MajikSignatureJSON, MajikSignerPublicKeys } from "./types";
+import type {
+  ExpectedSigner,
+  MajikSignatureJSON,
+  MajikSignerPublicKeys,
+  MultiSigEnvelope,
+} from "./types";
 
 export class MajikSignatureValidator {
   // ── Assertions ──────────────────────────────────────────────────────────────
@@ -98,7 +106,7 @@ export class MajikSignatureValidator {
     contentType: unknown,
     field = "contentType",
   ): void {
-    if (contentType === undefined || contentType === null) return; // optional
+    if (contentType === undefined || contentType === null) return;
     if (typeof contentType !== "string" || contentType.trim().length === 0)
       throw new MajikSignatureValidationError(
         `${field} must be a non-empty string if provided`,
@@ -129,7 +137,6 @@ export class MajikSignatureValidator {
   }
 
   static validateEdSecretKey(key: Uint8Array): void {
-    // @stablelib/ed25519 secretKey is 64 bytes (seed || publicKey)
     if (!(key instanceof Uint8Array) || key.length !== 64)
       throw new MajikSignatureKeyError(
         `Ed25519 secret key must be 64 bytes (got ${key?.length ?? "undefined"})`,
@@ -137,14 +144,13 @@ export class MajikSignatureValidator {
   }
 
   static validateMlDsaSecretKey(key: Uint8Array): void {
-    // ML-DSA-87 secret key is 4896 bytes
     if (!(key instanceof Uint8Array) || key.length !== 4896)
       throw new MajikSignatureKeyError(
         `ML-DSA-87 secret key must be 4896 bytes (got ${key?.length ?? "undefined"})`,
       );
   }
 
-  // ── Envelope validators ──────────────────────────────────────────────────────
+  // ── Per-signer envelope validator ────────────────────────────────────────────
 
   static validateJSON(json: unknown): asserts json is MajikSignatureJSON {
     if (typeof json !== "object" || json === null)
@@ -181,7 +187,6 @@ export class MajikSignatureValidator {
         );
     }
 
-    // Sanity-check base64 lengths
     const edPub = j.signerEdPublicKey as string;
     if (edPub.length < MIN_ED_PUBLIC_KEY_B64_LEN)
       throw new MajikSignatureValidationError(
@@ -210,7 +215,6 @@ export class MajikSignatureValidator {
         "edSignature",
       );
 
-    // Validate ISO timestamp
     const ts = new Date(j.timestamp as string);
     if (isNaN(ts.getTime()))
       throw new MajikSignatureValidationError(
@@ -218,7 +222,6 @@ export class MajikSignatureValidator {
         "timestamp",
       );
 
-    // contentType is optional — validate only if present
     if (j.contentType !== undefined) {
       if (
         typeof j.contentType !== "string" ||
@@ -229,5 +232,178 @@ export class MajikSignatureValidator {
           "contentType",
         );
     }
+
+    if (j.allowlistHash !== undefined) {
+      if (
+        typeof j.allowlistHash !== "string" ||
+        j.allowlistHash.length !== ALLOWLIST_HASH_B64_LEN
+      )
+        throw new MajikSignatureValidationError(
+          `allowlistHash must be exactly ${ALLOWLIST_HASH_B64_LEN} base64 chars (SHA-256) if present`,
+          "allowlistHash",
+        );
+    }
+  }
+
+  // ── ExpectedSigner validator ─────────────────────────────────────────────────
+
+  static validateExpectedSigner(
+    entry: unknown,
+    index?: number,
+  ): asserts entry is ExpectedSigner {
+    const label =
+      index !== undefined ? `allowlist[${index}]` : "allowlist entry";
+
+    if (typeof entry !== "object" || entry === null)
+      throw new MajikSignatureValidationError(
+        `${label} must be an object`,
+        label,
+      );
+
+    const e = entry as Record<string, unknown>;
+
+    if (typeof e.signerId !== "string" || e.signerId.trim().length === 0)
+      throw new MajikSignatureValidationError(
+        `${label}.signerId must be a non-empty string`,
+        `${label}.signerId`,
+      );
+
+    if (
+      typeof e.edPublicKey !== "string" ||
+      e.edPublicKey.length < MIN_ED_PUBLIC_KEY_B64_LEN
+    )
+      throw new MajikSignatureValidationError(
+        `${label}.edPublicKey is too short to be a valid Ed25519 public key`,
+        `${label}.edPublicKey`,
+      );
+
+    if (
+      typeof e.mlDsaPublicKey !== "string" ||
+      e.mlDsaPublicKey.length < MIN_DSA_PUBLIC_KEY_B64_LEN
+    )
+      throw new MajikSignatureValidationError(
+        `${label}.mlDsaPublicKey is too short to be a valid ML-DSA-87 public key`,
+        `${label}.mlDsaPublicKey`,
+      );
+  }
+
+  // ── Seal validator ───────────────────────────────────────────────────────────
+
+  /**
+   * Validate that a seal is structurally complete.
+   * All three seal fields must be present together — partial seals are invalid.
+   * Does NOT verify the seal hash cryptographically — call verifySeal() for that.
+   */
+  static validateSeal(env: MultiSigEnvelope): void {
+    const hasSealHash = env.sealHash !== undefined;
+    const hasSealTimestamp = env.sealTimestamp !== undefined;
+    const hasSealedBy = env.sealedBy !== undefined;
+
+    // All three must be present or all three must be absent
+    const count = [hasSealHash, hasSealTimestamp, hasSealedBy].filter(
+      Boolean,
+    ).length;
+
+    if (count > 0 && count < 3)
+      throw new MajikSignatureValidationError(
+        "Seal is incomplete — sealHash, sealTimestamp, and sealedBy must all be present together",
+        "seal",
+      );
+
+    if (!hasSealHash) return; // no seal — nothing more to check
+
+    if (
+      typeof env.sealHash !== "string" ||
+      env.sealHash.length !== SEAL_HASH_HEX_LEN
+    )
+      throw new MajikSignatureValidationError(
+        `sealHash must be exactly ${SEAL_HASH_HEX_LEN} hex chars (SHA3-512)`,
+        "sealHash",
+      );
+
+    if (
+      typeof env.sealTimestamp !== "string" ||
+      isNaN(new Date(env.sealTimestamp).getTime())
+    )
+      throw new MajikSignatureValidationError(
+        "sealTimestamp must be a valid ISO 8601 date string",
+        "sealTimestamp",
+      );
+
+    if (typeof env.sealedBy !== "string" || env.sealedBy.trim().length === 0)
+      throw new MajikSignatureValidationError(
+        "sealedBy must be a non-empty string",
+        "sealedBy",
+      );
+  }
+
+  // ── MultiSigEnvelope validator ───────────────────────────────────────────────
+
+  static validateMultiSigEnvelope(
+    env: unknown,
+  ): asserts env is MultiSigEnvelope {
+    if (typeof env !== "object" || env === null)
+      throw new MajikSignatureValidationError(
+        "MultiSigEnvelope must be an object",
+      );
+
+    const e = env as Record<string, unknown>;
+
+    if (e.version !== MAJIK_ENVELOPE_VERSION)
+      throw new MajikSignatureValidationError(
+        `Unsupported envelope version: ${e.version}`,
+        "version",
+      );
+
+    if (!Array.isArray(e.signatures))
+      throw new MajikSignatureValidationError(
+        "MultiSigEnvelope.signatures must be an array",
+        "signatures",
+      );
+
+    for (let i = 0; i < (e.signatures as unknown[]).length; i++) {
+      try {
+        MajikSignatureValidator.validateJSON((e.signatures as unknown[])[i]);
+      } catch (err) {
+        throw new MajikSignatureValidationError(
+          `signatures[${i}] is invalid: ${(err as Error).message}`,
+          `signatures[${i}]`,
+          err,
+        );
+      }
+    }
+
+    if (e.allowlist !== undefined) {
+      if (!Array.isArray(e.allowlist))
+        throw new MajikSignatureValidationError(
+          "MultiSigEnvelope.allowlist must be an array if present",
+          "allowlist",
+        );
+
+      if ((e.allowlist as unknown[]).length === 0)
+        throw new MajikSignatureValidationError(
+          "MultiSigEnvelope.allowlist must not be empty if present — omit the field for open signing",
+          "allowlist",
+        );
+
+      for (let i = 0; i < (e.allowlist as unknown[]).length; i++) {
+        MajikSignatureValidator.validateExpectedSigner(
+          (e.allowlist as unknown[])[i],
+          i,
+        );
+      }
+
+      if (
+        typeof e.allowlistSignerId !== "string" ||
+        e.allowlistSignerId.trim().length === 0
+      )
+        throw new MajikSignatureValidationError(
+          "MultiSigEnvelope.allowlistSignerId must be a non-empty string when allowlist is present",
+          "allowlistSignerId",
+        );
+    }
+
+    // Validate seal fields if any are present
+    MajikSignatureValidator.validateSeal(env as MultiSigEnvelope);
   }
 }
