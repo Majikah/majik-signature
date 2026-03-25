@@ -708,24 +708,40 @@ export class MajikSignatureEmbed {
     if (!result) return null;
 
     const { envelope } = result;
-    if (!envelope.allowlistSignerId) return null;
 
-    const issuerEntry = envelope.allowlist?.find(
-      (e) => e.signerId === envelope.allowlistSignerId,
-    );
-    const issuerSig = envelope.signatures.find(
-      (s) => s.signerId === envelope.allowlistSignerId,
-    );
+    // 1. Check strict allowlist issuer first
+    if (envelope.allowlistSignerId) {
+      const issuerEntry = envelope.allowlist?.find(
+        (e) => e.signerId === envelope.allowlistSignerId,
+      );
+      const issuerSig = envelope.signatures.find(
+        (s) => s.signerId === envelope.allowlistSignerId,
+      );
 
-    if (!issuerEntry) return null;
+      if (issuerEntry) {
+        return {
+          signerId: issuerEntry.signerId,
+          edPublicKey: issuerEntry.edPublicKey,
+          mlDsaPublicKey: issuerEntry.mlDsaPublicKey,
+          hasSigned: issuerSig !== undefined,
+          signedAt: issuerSig?.timestamp,
+        };
+      }
+    }
 
-    return {
-      signerId: issuerEntry.signerId,
-      edPublicKey: issuerEntry.edPublicKey,
-      mlDsaPublicKey: issuerEntry.mlDsaPublicKey,
-      hasSigned: issuerSig !== undefined,
-      signedAt: issuerSig?.timestamp,
-    };
+    // 2. FALLBACK: The very first signer is the issuer (Open Signing)
+    if (envelope.signatures.length > 0) {
+      const firstSig = envelope.signatures[0];
+      return {
+        signerId: firstSig.signerId,
+        edPublicKey: firstSig.signerEdPublicKey,
+        mlDsaPublicKey: firstSig.signerMlDsaPublicKey,
+        hasSigned: true,
+        signedAt: firstSig.timestamp,
+      };
+    }
+
+    return null;
   }
 
   // ── getEnvelopeInfo ────────────────────────────────────────────────────────
@@ -763,6 +779,8 @@ export class MajikSignatureEmbed {
 
     // Build issuer info
     let issuer: import("../../core/types").SignatoryInfo | null = null;
+
+    // 1. Check strict allowlist issuer first
     if (envelope.allowlistSignerId) {
       const issuerEntry = envelope.allowlist?.find(
         (e) => e.signerId === envelope.allowlistSignerId,
@@ -770,6 +788,7 @@ export class MajikSignatureEmbed {
       const issuerSig = envelope.signatures.find(
         (s) => s.signerId === envelope.allowlistSignerId,
       );
+
       if (issuerEntry) {
         issuer = {
           signerId: issuerEntry.signerId,
@@ -779,6 +798,18 @@ export class MajikSignatureEmbed {
           signedAt: issuerSig?.timestamp,
         };
       }
+    }
+
+    // 2. FALLBACK: The very first signer is the issuer (Open Signing)
+    if (envelope.signatures.length > 0) {
+      const firstSig = envelope.signatures[0];
+      issuer = {
+        signerId: firstSig.signerId,
+        edPublicKey: firstSig.signerEdPublicKey,
+        mlDsaPublicKey: firstSig.signerMlDsaPublicKey,
+        hasSigned: true,
+        signedAt: firstSig.timestamp,
+      };
     }
 
     return {

@@ -233,6 +233,8 @@ export function computeSealHash(
  *
  * Returns null when the envelope has no allowlist AND no signatures.
  */
+// Inside multi-sig.ts
+
 export function buildSignatoriesResult(
   envelope: MultiSigEnvelope,
 ): SignatoriesResult | null {
@@ -240,19 +242,35 @@ export function buildSignatoriesResult(
     envelope.signatures.map((s) => [s.signerId, s]),
   );
 
-  // ── With allowlist: cross-reference expected vs actual ────────────────────
   if (envelope.allowlist && envelope.allowlist.length > 0) {
-    const all: SignatoryInfo[] = envelope.allowlist.map((entry) => {
+    const allMap = new Map<string, SignatoryInfo>();
+
+    // 1. Add everyone from the allowlist (Expected)
+    for (const entry of envelope.allowlist) {
       const sig = signedMap.get(entry.signerId);
-      return {
+      allMap.set(entry.signerId, {
         signerId: entry.signerId,
         edPublicKey: entry.edPublicKey,
         mlDsaPublicKey: entry.mlDsaPublicKey,
         hasSigned: sig !== undefined,
         signedAt: sig?.timestamp,
-      };
-    });
+      });
+    }
 
+    // 2. Add actual signers who might not be in the allowlist (e.g., the Issuer)
+    for (const sig of envelope.signatures) {
+      if (!allMap.has(sig.signerId)) {
+        allMap.set(sig.signerId, {
+          signerId: sig.signerId,
+          edPublicKey: sig.signerEdPublicKey,
+          mlDsaPublicKey: sig.signerMlDsaPublicKey,
+          hasSigned: true,
+          signedAt: sig.timestamp,
+        });
+      }
+    }
+
+    const all = Array.from(allMap.values());
     return {
       all,
       signed: all.filter((s) => s.hasSigned),
@@ -260,7 +278,7 @@ export function buildSignatoriesResult(
     };
   }
 
-  // ── Without allowlist: actual signatures only ─────────────────────────────
+  // Without allowlist: actual signatures only
   if (envelope.signatures.length === 0) return null;
 
   const all: SignatoryInfo[] = envelope.signatures.map((sig) => ({
