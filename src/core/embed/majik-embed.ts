@@ -452,12 +452,12 @@ export class MajikSignatureEmbed {
 
     const envelope = parseEnvelope(raw);
 
-    // Must be a restricted multi-sig file (has an allowlist)
-    if (!envelope.allowlist || !envelope.allowlistSignerId) {
-      throw new MajikSignatureError(
-        "Cannot seal an open-signing file. Sealing is only available for files with an allowlist.",
-      );
-    }
+    // // Must be a restricted multi-sig file (has an allowlist)
+    // if (!envelope.allowlist || !envelope.allowlistSignerId) {
+    //   throw new MajikSignatureError(
+    //     "Cannot seal an open-signing file. Sealing is only available for files with an allowlist.",
+    //   );
+    // }
 
     // Only the issuer may seal
     if (key.fingerprint !== envelope.allowlistSignerId) {
