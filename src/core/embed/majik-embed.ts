@@ -208,14 +208,19 @@ export class MajikSignatureEmbed {
       );
     }
 
-    // ── Step 3: Allowlist enforcement ──────────────────────────────────────
-    const allowlistCheck = checkAllowlist(envelope, key);
-    if (!allowlistCheck.permitted) {
-      throw new MajikSignatureAllowlistError(
-        `Signer "${key.fingerprint}" is not permitted to sign this file. ` +
-          `The file has a signing allowlist established by "${envelope.allowlistSignerId}".`,
-        key.fingerprint,
-      );
+    // ── Step 3: Allowlist enforcement ──────────────────────────────────────────
+    // Issuer always bypasses the allowlist — they established it and control sealing
+    const isIssuer = envelope.allowlistSignerId === key.fingerprint;
+
+    if (!isIssuer) {
+      const allowlistCheck = checkAllowlist(envelope, key);
+      if (!allowlistCheck.permitted) {
+        throw new MajikSignatureAllowlistError(
+          `Signer "${key.fingerprint}" is not permitted to sign this file. ` +
+            `The file has a signing allowlist established by "${envelope.allowlistSignerId}".`,
+          key.fingerprint,
+        );
+      }
     }
 
     // ── Step 4: Get clean original bytes ───────────────────────────────────
@@ -648,6 +653,11 @@ export class MajikSignatureEmbed {
 
     // No allowlist — open signing
     if (!envelope.allowlist || envelope.allowlist.length === 0) {
+      return { permitted: true };
+    }
+
+    // Issuer bypass — always permitted regardless of allowlist membership
+    if (envelope.allowlistSignerId === key.fingerprint) {
       return { permitted: true };
     }
 
