@@ -4,7 +4,7 @@
 
 **Majik Signature** is a hybrid post-quantum content signing and verification library for the Majikah ecosystem. Built on top of **Majik Key**, it provides tamper-proof, forgery-resistant digital signatures for any content format — plaintext, JSON, PDF, audio, video, binary — using a dual-algorithm architecture that combines classical Ed25519 with post-quantum ML-DSA-87 (FIPS-204).
 
-**Majik Signature now includes built-in file embedding** — sign any file and embed the signature directly into it. No sidecar files needed. PDFs stay PDFs, WAVs stay WAVs, MP4s stay MP4s.
+**Majik Signature now includes built-in file embedding** — sign any file and embed the signature directly into its native metadata. No sidecar files needed. PDFs stay PDFs, WAVs stay WAVs, MP4s stay MP4s.
 
 ![npm](https://img.shields.io/npm/v/@majikah/majik-signature) ![npm downloads](https://img.shields.io/npm/dm/@majikah/majik-signature) ![npm bundle size](https://img.shields.io/bundlephobia/min/%40majikah%2Fmajik-signature) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) ![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue)
 
@@ -96,7 +96,7 @@ Verification is fully **public** — anyone with the signer's public keys can ve
 - **File Integrity**: Detect any tampering or modification to distributed files
 - **API Payload Signing**: Sign JSON responses or requests for non-repudiation
 - **Document Authentication**: Certify legal documents, contracts, or records
-- **Media Certification**: Stamp audio, video, or image files as authentic originals — with the signature embedded directly in the file
+- **Media Certification**: Stamp audio, video, or image files as authentic originals — with the signature embedded directly in the file's metadata
 - **Software Distribution**: Sign release artifacts to prove they come from the original author
 - **Majikah Ecosystem**: Integrate with Majik Message and other Majikah products for identity-bound content
 
@@ -116,8 +116,7 @@ Verification is fully **public** — anyone with the signer's public keys can ve
 ### Content Format Support
 
 - **Plain text**, **JSON**, **Binary** — `Uint8Array` or `string`
-- **PDF** — Signature appended as a clean trailer after the PDF's `%%EOF` marker; file remains valid and openable
-- **PNG, JPEG** — Embedded in native chunk/marker metadata
+- **PDF, PNG, JPEG** — Signature embedded in native metadata (visible in File → Properties for PDF)
 - **WAV, MP3, FLAC** — Embedded in RIFF/ID3/Vorbis metadata
 - **MP4, MOV, M4A, M4V** — Embedded in `moov/udta` box
 - **DOCX, XLSX, PPTX, ODF** — Embedded as a file entry inside the ZIP container
@@ -206,6 +205,7 @@ import { MajikSignature } from '@majikah/majik-signature';
 // ── Sign a file and embed the signature into it ───────────────────────────────
 const { blob: signedBlob } = await MajikSignature.signFile(file, key);
 // signedBlob is the same format as file — PDF stays PDF, WAV stays WAV, etc.
+// The signature is embedded in the file's native metadata.
 
 // ── Verify the embedded signature later ──────────────────────────────────────
 const result = await MajikSignature.verifyFile(signedBlob, key);
@@ -272,7 +272,6 @@ Verify a signature against content and the signer's public keys. Both Ed25519 an
   contentHash: string;
   timestamp: string;
   contentType?: string;
-  reason?: string;      // present when valid is false
 }
 ```
 
@@ -333,7 +332,7 @@ Sign a file and embed the signature into it in one call. Strips any existing sig
 **Example:**
 ```typescript
 const { blob: signedPdf } = await MajikSignature.signFile(pdfBlob, key);
-// signedPdf is a valid PDF with the signature appended after its %%EOF marker
+// signedPdf is a valid PDF with the signature in its /Info dict + XMP metadata
 ```
 
 ---
@@ -488,23 +487,24 @@ Alias for `serialize()`.
 
 ## Supported File Formats
 
-### Tier 1 — Native or format-aware embedding
+### Tier 1 — Native metadata
 
-The signature is stored using each format's established extension point or a spec-compliant append location. The file remains structurally valid and openable with standard tools.
+The signature is stored in each format's built-in metadata container. The file remains structurally valid and the signature survives round-trips through standard tools.
 
-| Format                                    | Embedding mechanism                                                                                                                                                                                                                                                           |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **PDF**                                   | Binary trailer appended after the final `%%EOF` marker (`\n%%MajikSig%%\n` sentinel). PDF spec §7.5.6 permits trailing data; the file opens normally in all viewers. Human-readable display metadata can be added separately via `MajikSignatureClient.addDisplayMetadata()`. |
-| **PNG**                                   | `iTXt` chunk with keyword `majik-signature`                                                                                                                                                                                                                                   |
-| **JPEG / JPG**                            | Custom `APP15` marker segment                                                                                                                                                                                                                                                 |
-| **WAV / WAVE**                            | RIFF `LIST INFO` chunk — `ISIG` entry                                                                                                                                                                                                                                         |
-| **MP3**                                   | ID3v2 `TXXX` frame with description `MAJIK-SIGNATURE`                                                                                                                                                                                                                         |
-| **MP4 / MOV / M4A / M4V**                 | `moov → udta → majk` box                                                                                                                                                                                                                                                      |
-| **FLAC**                                  | `VORBIS_COMMENT` block — `MAJIK-SIGNATURE=` field                                                                                                                                                                                                                             |
-| **MKV / WebM**                            | Append-safe binary trailer                                                                                                                                                                                                                                                    |
-| **DOCX / XLSX / PPTX / ODF**              | `majik-signature.json` entry inside the ZIP container                                                                                                                                                                                                                         |
-| **HTML / XML / SVG / Markdown**           | `<!-- MAJIK-SIGNATURE-BEGIN -->` block appended at end                                                                                                                                                                                                                        |
-| **Plain text / JSON / CSV / source code** | Same comment block                                                                                                                                                                                                                                                            |
+| Format                                    | Embedding mechanism                                                                                    |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **PDF**                                   | `/Info` dictionary custom key + XMP metadata stream. Visible in File → Properties in most PDF viewers. |
+| **PNG**                                   | `iTXt` chunk with keyword `majik-signature`                                                            |
+| **JPEG / JPG**                            | Custom `APP15` marker segment                                                                          |
+| **WAV / WAVE**                            | RIFF `LIST INFO` chunk — `ISIG` entry                                                                  |
+| **MP3**                                   | ID3v2 `TXXX` frame with description `MAJIK-SIGNATURE`                                                  |
+| **MP4 / MOV / M4A / M4V**                 | `moov → udta → majk` box                                                                               |
+| **FLAC**                                  | `VORBIS_COMMENT` block — `MAJIK-SIGNATURE=` field                                                      |
+| **MKV / WebM**                            | Append-safe binary trailer                                                                             |
+| **DOCX / XLSX / PPTX**                    | `majik-signature.json` entry inside the ZIP container                                                  |
+| **ODF (ODT/ODS/ODP)**                     | Same as OOXML — ZIP entry                                                                              |
+| **HTML / XML / SVG / Markdown**           | `<!-- MAJIK-SIGNATURE-BEGIN -->` block appended at end                                                 |
+| **Plain text / JSON / CSV / source code** | Same comment block                                                                                     |
 
 ### Tier 2 — Universal trailer
 
@@ -516,7 +516,7 @@ For any format not covered above, a self-describing binary trailer is appended:
 
 The magic bytes at the end allow detection and clean stripping from any file without knowing its format. Most parsers and players ignore trailing bytes.
 
-> **Re-mux warning:** For MKV/WebM and the Tier-2 fallback, the embedded signature will be stripped if the file is re-encoded or re-muxed through a tool that rewrites the container. For MP4, DOCX, and all other Tier-1 native-metadata formats, the signature survives standard open → save round-trips.
+> **Re-mux warning:** For MKV/WebM and the Tier-2 fallback, the embedded signature will be stripped if the file is re-encoded or re-muxed through a tool that rewrites the container. For MP4, DOCX, and all Tier-1 native-metadata formats, the signature survives standard open → save round-trips.
 
 ---
 

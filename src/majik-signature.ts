@@ -273,10 +273,11 @@ export class MajikSignature {
           payload,
           base64ToBytes(env.edSignature),
         );
-      } catch {
-        return invalid();
+      } catch (e) {
+        console.error(e);
+        return invalid("Failed to verify Ed25519 signature");
       }
-      if (!edOk) return invalid();
+      if (!edOk) return invalid("Invalid Ed25519 signature");
 
       let mlDsaOk: boolean;
       try {
@@ -285,10 +286,11 @@ export class MajikSignature {
           payload,
           publicKeys.mlDsaPublicKey,
         );
-      } catch {
-        return invalid();
+      } catch (e) {
+        console.error(e);
+        return invalid("Failed to verify ML-DSA-87 signature");
       }
-      if (!mlDsaOk) return invalid();
+      if (!mlDsaOk) return invalid("Invalid ML-DSA-87 signature");
 
       return {
         valid: true,
