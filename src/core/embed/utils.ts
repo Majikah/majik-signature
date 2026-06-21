@@ -2,7 +2,11 @@
  * utils.ts — Byte manipulation, MIME sniffing, and encoding helpers
  */
 
-import { TRAILER_MAGIC, TRAILER_SUFFIX_LENGTH } from "./constants";
+import {
+  CANONICAL_MTIME,
+  TRAILER_MAGIC,
+  TRAILER_SUFFIX_LENGTH,
+} from "./constants";
 
 // ─── Encoding ─────────────────────────────────────────────────────────────────
 
@@ -281,4 +285,12 @@ export function crc32(data: Uint8Array): number {
     crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
   }
   return (crc ^ 0xffffffff) >>> 0;
+}
+
+export function toZippable(files: Record<string, Uint8Array>) {
+  const out: Record<string, [Uint8Array, { mtime: Date }]> = {};
+  for (const name of Object.keys(files)) {
+    out[name] = [files[name], { mtime: CANONICAL_MTIME }];
+  }
+  return out;
 }

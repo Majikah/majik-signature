@@ -36,3 +36,10 @@ export const MP4_BOX_TYPE = "majk";
 
 /** Custom metadata key for MKV/WebM */
 export const MKV_TAG_NAME = "MAJIK_SIGNATURE";
+
+// fflate stamps each entry's DOS date/time from `mtime`, defaulting to
+// "now" if omitted. Without pinning this, rezipping identical content
+// at two different times produces two different byte streams — which
+// breaks the hash comparison between sign-time and verify-time even
+// after fixing the strip() asymmetry below.
+export const CANONICAL_MTIME = new Date(0);

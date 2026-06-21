@@ -16,6 +16,7 @@
 import { unzipSync, zipSync, strToU8, strFromU8 } from "fflate";
 import { OFFICE_ZIP_ENTRY } from "../constants";
 import { FormatHandler } from "../../types";
+import { toZippable } from "../utils";
 
 const OFFICE_MIME_TYPES = [
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -57,14 +58,9 @@ export class OfficeHandler implements FormatHandler {
   async embed(bytes: Uint8Array, signatureJson: string): Promise<Uint8Array> {
     try {
       const files = unzipSync(bytes);
-
-      // Remove any existing signature entry
       delete files[OFFICE_ZIP_ENTRY];
-
-      // Add new signature entry
       files[OFFICE_ZIP_ENTRY] = strToU8(signatureJson);
-
-      return zipSync(files, { level: 0 }); // store without compression for fast access
+      return zipSync(toZippable(files), { level: 0 });
     } catch (err) {
       throw new Error(`OfficeHandler.embed failed: ${err}`);
     }
@@ -85,14 +81,19 @@ export class OfficeHandler implements FormatHandler {
     if (!this.canHandle(bytes)) return bytes;
     try {
       const files = unzipSync(bytes);
-      if (!(OFFICE_ZIP_ENTRY in files)) return bytes;
+      // Always re-canonicalize — even when there's no signature entry
+      // yet (first sign). sign() hashes whatever this returns; verify()
+      // must be able to reproduce the *exact same* bytes later. Short-
+      // circuiting to raw input bytes only when the entry is absent
+      // was the bug: it made sign-time bytes (raw Word output) diverge
+      // from verify-time bytes (always rezipped by fflate).
       delete files[OFFICE_ZIP_ENTRY];
-      return zipSync(files, { level: 0 });
+      return zipSync(toZippable(files), { level: 0 });
     } catch {
       return bytes;
     }
   }
-
+  
   private _isZip(bytes: Uint8Array): boolean {
     return (
       bytes.length >= 4 &&
