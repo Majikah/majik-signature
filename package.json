@@ -46,7 +46,9 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build",
-    "package": "npm run build && npm version patch && git push && git push --tags"
+    "package": "npm run build && npm version patch && git push && git push --tags",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@majikah/majik-key": "^0.2.7",
@@ -58,6 +60,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
   }
 }
