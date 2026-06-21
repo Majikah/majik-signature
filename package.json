@@ -46,7 +46,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build",
-    "package": "npm run build && npm version patch"
+    "package": "npm run build && npm version patch && git push && git push --tags"
   },
   "dependencies": {
     "@majikah/majik-key": "^0.2.7",
