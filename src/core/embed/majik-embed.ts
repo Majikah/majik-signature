@@ -231,16 +231,28 @@ export class MajikSignatureEmbed {
       console.log("signAndEmbed — original bytes hash:", recomputedHash);
     }
 
-    // ── Step 5: Compute allowlistHash if establishing an allowlist ─────────
+    // ── Step 5: Compute allowlistHash if establishing or re-signing with an allowlist ─
     const isFirstSigner = envelope.signatures.length === 0;
     const establishingAllowlist =
       isFirstSigner &&
       options?.expectedSigners &&
       options.expectedSigners.length > 0;
 
+    // If the issuer is re-signing an already-established allowlist,
+    // re-derive the allowlistHash from the existing allowlist so it
+    // stays present in their canonical payload — preventing the
+    // allowlist integrity check from failing on verify.
+    const isIssuerResigning =
+      !isFirstSigner &&
+      !!envelope.allowlist &&
+      envelope.allowlist.length > 0 &&
+      envelope.allowlistSignerId === key.fingerprint;
+
     const allowlistHashValue = establishingAllowlist
       ? hashAllowlist(options!.expectedSigners!)
-      : undefined;
+      : isIssuerResigning
+        ? hashAllowlist(envelope.allowlist!)
+        : undefined;
 
     // ── Step 6: Sign ───────────────────────────────────────────────────────
     const signature = await MajikSig.sign(originalBytes, key, {

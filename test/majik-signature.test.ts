@@ -51,6 +51,17 @@ function tamperBytes(bytes: Uint8Array): Uint8Array {
   return tampered;
 }
 
+/** Simulates data corruption on an embedded Blob (modifies original content, keeping envelope parsing intact if appended) */
+async function corruptBlob(blob: Blob): Promise<Blob> {
+  const buffer = await blob.arrayBuffer();
+  const view = new Uint8Array(buffer);
+  if (view.length > 0) {
+    // Flip a byte to break the content hash validation
+    view[0] = view[0] ^ 0xff;
+  }
+  return new Blob([view], { type: blob.type });
+}
+
 // ─── 1. MOCK DEPENDENCIES ──────────────────────────────────────────────────
 
 // Mock the crypto algorithms to return predictable values for fast test evaluation,
@@ -71,46 +82,6 @@ vi.mock("@noble/post-quantum/ml-dsa.js", () => ({
   },
 }));
 
-// Mock the file embedding sub-module delegation
-vi.mock("../src/core/embed/majik-embed", () => ({
-  MajikSignatureEmbed: {
-    signAndEmbed: vi.fn().mockResolvedValue({
-      blob: {},
-      signature: {},
-      handler: "test",
-      mimeType: "text/plain",
-    }),
-    verifyWithKey: vi.fn().mockResolvedValue([]),
-    verify: vi.fn().mockResolvedValue([]),
-    embed: vi.fn().mockResolvedValue({ blob: {} }),
-    extract: vi.fn().mockResolvedValue({ envelope: { signatures: [] } }),
-    strip: vi.fn().mockResolvedValue({}),
-    hasSignature: vi.fn().mockResolvedValue(true),
-    getAllowlist: vi.fn().mockResolvedValue([]),
-    seal: vi.fn().mockResolvedValue({}),
-    verifySeal: vi.fn().mockResolvedValue({ valid: true }),
-    getSealInfo: vi.fn().mockResolvedValue({}),
-    isSealed: vi.fn().mockResolvedValue(false),
-    isMultiSig: vi.fn().mockResolvedValue(false),
-    canSign: vi.fn().mockResolvedValue({ permitted: true }),
-    getSignatories: vi
-      .fn()
-      .mockResolvedValue({ all: [], signed: [], pending: [] }),
-    getIssuer: vi.fn().mockResolvedValue(null),
-    getEnvelopeInfo: vi.fn().mockResolvedValue({}),
-  },
-}));
-
-// // Mock the image stamping sub-module delegation
-// vi.mock("../src/core/stamp/image-signature", () => ({
-//   MajikImageSignature: {
-//     sign: vi.fn().mockResolvedValue({ blob: {}, stub: {}, fullEnvelope: {} }),
-//     verify: vi.fn().mockResolvedValue({ valid: true }),
-//     inspect: vi.fn().mockResolvedValue({ hasPixelRow: true, hasDct: true }),
-//     isSigned: vi.fn().mockResolvedValue(true),
-//   },
-// }));
-
 // ─── 2. TEST SUITE ──────────────────────────────────────────────────────────
 
 describe("MajikSignature Class Unit Tests", () => {
@@ -120,7 +91,7 @@ describe("MajikSignature Class Unit Tests", () => {
   beforeAll(async () => {
     vi.clearAllMocks();
     mockKey = await getTestKey();
-  }, 30000); // ← timeout in ms as the 2nd arg to beforeAll
+  }, 60000); // ← timeout in ms as the 2nd arg to beforeAll
 
   // ── SIGNING TESTS ─────────────────────────────────────────────────────────
 
@@ -312,20 +283,200 @@ describe("MajikSignature Class Unit Tests", () => {
     });
   });
 
-  // ── DELEGATION METRIC CHECK (Integration Contracts) ──────────────────────
+  // ── DELEGATION METRIC CHECK ───────────────────────────────────────────────
   describe("Sub-module Framework Redirection Contracts", () => {
     it("should redirect file-signing assertions to MajikSignatureEmbed", async () => {
-      const dummyBlob = new Blob([""], { type: "text/plain" });
+      const dummyBlob = new Blob(["test"], { type: "text/plain" });
       const result = await MajikSignature.signFile(dummyBlob, mockKey);
-
       expect(result).toBeDefined();
     });
+  });
 
-    // it("should redirect image stamping capabilities to MajikImageSignature", async () => {
-    //   const dummyImageBlob = new Blob([""], { type: "image/jpeg" });
-    //   const result = await MajikSignature.stampImage(dummyImageBlob, mockKey);
+  // ── MULTI-PARTY SIGNING (OPEN & RESTRICTED) ────────────────────────────────
+  describe("Multi-Party File Signing Workflow", () => {
+    let issuerKey: MajikKey;
+    let allowedKey1: MajikKey;
+    let allowedKey2: MajikKey;
+    let intruderKey: MajikKey;
+    let baseBlob: Blob;
 
-    //   expect(result).toBeDefined();
-    // });
+    beforeAll(async () => {
+      console.log("Creating Test Keys");
+      issuerKey = await getTestKey();
+      console.log("[majik-key] Issuer Key Created");
+
+      allowedKey1 = await getTestKey();
+      console.log("[majik-key] Allowed Key 1 Created");
+
+      allowedKey2 = await getTestKey();
+      console.log("[majik-key] Allowed Key 2 Created");
+
+      intruderKey = await getTestKey();
+      console.log("[majik-key] Intruder Key Created");
+
+      baseBlob = new Blob(["Majik Multi-sig test data"], {
+        type: "text/plain",
+      });
+    }, 120000); // ← timeout in ms as the 2nd arg to beforeAll
+
+    describe("Open Signing (No Allowlist)", () => {
+      it("should permit multiple signatures sequentially from different keys", async () => {
+        // Signer 1
+        const { blob: sig1Blob } = await MajikSignature.signFile(
+          baseBlob,
+          allowedKey1,
+        );
+        // Signer 2 appends to envelope
+        const { blob: sig2Blob } = await MajikSignature.signFile(
+          sig1Blob,
+          allowedKey2,
+        );
+
+        const info = await MajikSignature.getEnvelopeInfo(sig2Blob);
+        expect(info?.signatureCount).toBe(2);
+        expect(info?.isMultiSig).toBe(false); // No allowlist established
+
+        const results = await MajikSignature.verifyFile(sig2Blob, allowedKey2);
+        expect(results.some((r) => r.valid)).toBe(true);
+      });
+    });
+
+    describe("Restricted Multi-Sig (Allowlist)", () => {
+      let restrictedBlob: Blob;
+
+      it("should successfully establish an allowlist on first sign", async () => {
+        const expectedSigners = [
+          MajikSignature.expectedSignerFromKey(issuerKey),
+          MajikSignature.expectedSignerFromKey(allowedKey1),
+          MajikSignature.expectedSignerFromKey(allowedKey2),
+        ];
+
+        const { blob } = await MajikSignature.signFile(baseBlob, issuerKey, {
+          expectedSigners,
+        });
+        restrictedBlob = blob;
+
+        const info = await MajikSignature.getEnvelopeInfo(restrictedBlob);
+        expect(info?.isMultiSig).toBe(true);
+        expect(info?.issuer?.signerId).toBe(issuerKey.fingerprint);
+        expect(info?.allowlist?.length).toBe(3);
+      });
+
+      it("should permit a signature from an allowlisted key", async () => {
+        const { blob: doubleSignedBlob } = await MajikSignature.signFile(
+          restrictedBlob,
+          allowedKey1,
+        );
+
+        const info = await MajikSignature.getEnvelopeInfo(doubleSignedBlob);
+        expect(info?.signatureCount).toBe(2);
+        expect(
+          info?.signatories?.signed.some(
+            (s) => s.signerId === allowedKey1.fingerprint,
+          ),
+        ).toBe(true);
+      });
+
+      it("should reject a signature attempt from a key not on the allowlist", async () => {
+        await expect(
+          MajikSignature.signFile(restrictedBlob, intruderKey),
+        ).rejects.toThrow(/not permitted to sign this file/);
+      });
+
+      it("should accurately reflect pending signatories", async () => {
+        const signatories =
+          await MajikSignature.getPendingSignatories(restrictedBlob);
+        expect(
+          signatories?.pending.some(
+            (s) => s.signerId === allowedKey2.fingerprint,
+          ),
+        ).toBe(true);
+        expect(
+          signatories?.pending.some(
+            (s) => s.signerId === intruderKey.fingerprint,
+          ),
+        ).toBe(false);
+      });
+    });
+
+    // ── ENVELOPE SEALING ─────────────────────────────────────────────────────
+    describe("Envelope Sealing Capabilities", () => {
+      let sealedBlob: Blob;
+      let readyToSealBlob: Blob;
+
+      beforeAll(async () => {
+        // Setup a restricted file with signatures
+        const expectedSigners = [
+          MajikSignature.expectedSignerFromKey(issuerKey),
+          MajikSignature.expectedSignerFromKey(allowedKey1),
+        ];
+        const { blob: step1 } = await MajikSignature.signFile(
+          baseBlob,
+          issuerKey,
+          { expectedSigners },
+        );
+        const { blob: step2 } = await MajikSignature.signFile(
+          step1,
+          allowedKey1,
+        );
+        readyToSealBlob = step2;
+      });
+
+      it("should reject sealing attempts from non-issuers", async () => {
+        await expect(
+          MajikSignature.seal(readyToSealBlob, allowedKey1),
+        ).rejects.toThrow(/Only the issuer.*may seal this file/);
+      });
+
+      it("should allow the issuer to seal the multi-sig envelope", async () => {
+        const { blob, sealInfo } = await MajikSignature.seal(
+          readyToSealBlob,
+          issuerKey,
+        );
+        sealedBlob = blob;
+
+        expect(sealInfo.sealedBy).toBe(issuerKey.fingerprint);
+
+        const isSealed = await MajikSignature.isSealed(sealedBlob);
+        expect(isSealed).toBe(true);
+      });
+
+      it("should successfully verify an intact seal", async () => {
+        const result = await MajikSignature.verifySeal(sealedBlob);
+        expect(result.valid).toBe(true);
+        expect(result.sealedBy).toBe(issuerKey.fingerprint);
+      });
+
+      it("should strictly reject any new signatures once the envelope is sealed", async () => {
+        // Even the issuer shouldn't be able to re-sign a sealed file
+        await expect(
+          MajikSignature.signFile(sealedBlob, issuerKey),
+        ).rejects.toThrow(/Cannot sign a sealed envelope/);
+      });
+    });
+
+    // ── DATA INTEGRITY & TAMPERING ───────────────────────────────────────────
+    describe("Data Integrity & Tampering Checks", () => {
+      it("should flag validation as false if a signed file's raw bytes are modified over the wire", async () => {
+        // Sign a file normally
+        const { blob: originalSignedBlob } = await MajikSignature.signFile(
+          baseBlob,
+          issuerKey,
+        );
+
+        // Simulate a corrupted payload (bit rot, man-in-the-middle, formatting issue)
+        const tamperedBlob = await corruptBlob(originalSignedBlob);
+
+        // Verification must fail because the reconstructed payload contentHash will mismatch
+        const verifyResults = await MajikSignature.verifyFile(
+          tamperedBlob,
+          issuerKey,
+        );
+
+        // Ensure at least one result processed and returned valid = false
+        expect(verifyResults.length).toBeGreaterThan(0);
+        expect(verifyResults[0].valid).toBe(false);
+      });
+    });
   });
 });
