@@ -47,6 +47,35 @@ export interface MajikSignatureJSON {
    * Absent on all other signers and on any signature made before multi-sig support.
    */
   allowlistHash?: string;
+
+  tsa?: MajikTimestamp;
+}
+
+export interface MajikTSAPayload {
+  digest: {
+    algorithm: "SHA-256";
+    value: string;
+  };
+  nonce: string; // server-generated, base64 random bytes
+  timestamp: string; // ISO 8601, server-authoritative
+  tsa: {
+    id: string; // stable TSA entity identifier e.g. "tsa.majikah.solutions"
+    signerFingerprint: string; // MajikKey fingerprint of the key that signed
+  };
+}
+
+export interface MajikTSARequest {
+  digest: {
+    algorithm: "SHA-256";
+    value: string;
+  };
+}
+
+export interface MajikTimestamp {
+  version: 1;
+  id: string; // UUID — unique per issuance
+  payload: MajikTSAPayload; // the exact payload that was signed
+  signature: MajikSignatureJSON; // full envelope, carries its own public keys
 }
 
 /**

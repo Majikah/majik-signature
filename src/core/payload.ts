@@ -30,7 +30,8 @@
  *   existing signatures continue to verify correctly.
  */
 
-import { MAJIK_SIGNATURE_DOMAIN, MAJIK_SIGNATURE_VERSION } from "./constants";
+import { MAJIK_SIGNATURE_DOMAIN, MAJIK_SIGNATURE_VERSION, MAJIK_TSA_DOMAIN } from "./constants";
+import { MajikTSAPayload } from "./types";
 
 export interface PayloadFields {
   signerId: string;
@@ -67,6 +68,21 @@ export function buildSigningPayload(fields: PayloadFields): Uint8Array {
       : {}),
   });
   const prefix = new TextEncoder().encode(MAJIK_SIGNATURE_DOMAIN);
+  const body = new TextEncoder().encode(meta);
+  const out = new Uint8Array(prefix.length + body.length);
+  out.set(prefix, 0);
+  out.set(body, prefix.length);
+  return out;
+}
+
+export function buildTSACanonicalBytes(payload: MajikTSAPayload): Uint8Array {
+  const meta = JSON.stringify({
+    digest: payload.digest,
+    nonce: payload.nonce,
+    timestamp: payload.timestamp,
+    tsa: payload.tsa,
+  });
+  const prefix = new TextEncoder().encode(MAJIK_TSA_DOMAIN);
   const body = new TextEncoder().encode(meta);
   const out = new Uint8Array(prefix.length + body.length);
   out.set(prefix, 0);

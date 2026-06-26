@@ -58,7 +58,6 @@ import {
   MajikSignatureAllowlistError,
   MajikSignatureError,
   MajikSignatureKeyError,
-  MajikSignatureSerializationError,
 } from "../errors";
 import {
   parseEnvelope,

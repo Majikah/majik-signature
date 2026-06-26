@@ -39,7 +39,10 @@ import * as ed25519 from "@stablelib/ed25519";
 import { ml_dsa87 } from "@noble/post-quantum/ml-dsa.js";
 import type { MajikKey } from "@majikah/majik-key";
 
-import { MAJIK_SIGNATURE_VERSION } from "./core/constants";
+import {
+  MAJIK_SIGNATURE_VERSION,
+  MAJIK_TIMESTAMP_VERSION,
+} from "./core/constants";
 import {
   MajikSignatureError,
   MajikSignatureKeyError,
@@ -47,13 +50,16 @@ import {
   MajikSignatureSerializationError,
 } from "./core/errors";
 import { MajikSignatureValidator } from "./core/validator";
-import { buildSigningPayload } from "./core/payload";
+import { buildSigningPayload, buildTSACanonicalBytes } from "./core/payload";
 import { hashContent, bytesToBase64, base64ToBytes } from "./core/hash";
 import type {
   EnvelopeInfo,
   ExpectedSigner,
   MajikSignatureJSON,
   MajikSignerPublicKeys,
+  MajikTimestamp,
+  MajikTSAPayload,
+  MajikTSARequest,
   SealInfo,
   SealVerificationResult,
   SignatoriesFilter,
@@ -85,6 +91,7 @@ export class MajikSignature {
   private readonly _edSignature: string;
   private readonly _mlDsaSignature: string;
   private readonly _allowlistHash?: string;
+  private _tsa?: MajikTimestamp;
 
   private constructor(data: MajikSignatureJSON) {
     this._version = data.version;
@@ -97,6 +104,7 @@ export class MajikSignature {
     this._edSignature = data.edSignature;
     this._mlDsaSignature = data.mlDsaSignature;
     this._allowlistHash = data.allowlistHash;
+    this._tsa = data.tsa;
   }
 
   // ── Getters ─────────────────────────────────────────────────────────────────
@@ -136,6 +144,10 @@ export class MajikSignature {
    */
   get allowlistHash(): string | undefined {
     return this._allowlistHash;
+  }
+
+  get tsa(): MajikTimestamp | undefined {
+    return this._tsa;
   }
 
   // ── SIGN ────────────────────────────────────────────────────────────────────
@@ -367,6 +379,7 @@ export class MajikSignature {
       ...(this._allowlistHash !== undefined
         ? { allowlistHash: this._allowlistHash }
         : {}),
+      ...(this._tsa !== undefined ? { tsa: this._tsa } : {}),
     };
   }
 
@@ -832,6 +845,102 @@ export class MajikSignature {
   /** @experimental ⚠️ API not stable. */
   static async isStamped(image: Blob): Promise<boolean> {
     return MajikImageSignature.isSigned(image);
+  }
+
+  // ── TRUSTED TIMESTAMPS ───────────────────────────────────────────────────────
+
+  buildTSARequestPayload(): MajikTSARequest {
+    return {
+      digest: {
+        algorithm: "SHA-256",
+        value: this._contentHash,
+      },
+    };
+  }
+
+  addTSA(tsa: MajikTimestamp): void {
+    if (this._tsa !== undefined)
+      throw new MajikSignatureError(
+        "TSA is already set and cannot be replaced",
+      );
+
+    MajikSignatureValidator.validateMajikTimestamp(tsa);
+
+    if (tsa.payload.digest.value !== this._contentHash)
+      throw new MajikSignatureError(
+        "TSA digest does not match signature contentHash",
+      );
+
+    const canonicalBytes = buildTSACanonicalBytes(tsa.payload);
+    const tsaSig = MajikSignature.fromJSON(tsa.signature);
+    const publicKeys = tsaSig.extractPublicKeys();
+    const result = MajikSignature.verify(canonicalBytes, tsaSig, publicKeys);
+
+    if (!result.valid)
+      throw new MajikSignatureVerificationError(
+        `TSA signature verification failed: ${result.reason ?? "unknown"}`,
+      );
+
+    this._tsa = tsa;
+  }
+
+  /**
+   * Verify the TSA token on this signature without re-calling addTSA().
+   * Use after deserialization to confirm the embedded TSA is still valid.
+   * Returns a VerificationResult from the TSA signature check.
+   */
+  verifyTSA(): VerificationResult {
+    if (!this._tsa)
+      throw new MajikSignatureError("No TSA present on this signature");
+
+    if (this._tsa.payload.digest.value !== this._contentHash)
+      throw new MajikSignatureError(
+        "TSA digest does not match signature contentHash",
+      );
+
+    const canonicalBytes = buildTSACanonicalBytes(this._tsa.payload);
+    const tsaSig = MajikSignature.fromJSON(this._tsa.signature);
+    const publicKeys = tsaSig.extractPublicKeys();
+    return MajikSignature.verify(canonicalBytes, tsaSig, publicKeys);
+  }
+
+  get hasTSA(): boolean {
+    return this._tsa !== undefined;
+  }
+
+  /**
+   * Sign a TSA payload and return a complete MajikTimestamp.
+   * Intended for server-side use — the TSA server calls this with its MajikKey.
+   *
+   * @example
+   *   const timestamp = await MajikSignature.signTSA(
+   *     { digest: { algorithm: "SHA-256", value: contentHash } },
+   *     tsaKey,
+   *     { id: "tsa.majikah.com", signerFingerprint: tsaKey.fingerprint }
+   *   );
+   */
+  static async signTSA(
+    request: MajikTSARequest,
+    key: MajikKey,
+    tsa: { id: string; signerFingerprint: string },
+    options?: { timestamp?: string },
+  ): Promise<MajikTimestamp> {
+    const payload: MajikTSAPayload = {
+      digest: request.digest,
+      nonce: bytesToBase64(crypto.getRandomValues(new Uint8Array(32))),
+      timestamp: options?.timestamp ?? new Date().toISOString(),
+      tsa,
+    };
+
+    const canonicalBytes = buildTSACanonicalBytes(payload);
+    const signature = await MajikSignature.sign(canonicalBytes, key);
+
+    return {
+      version: MAJIK_TIMESTAMP_VERSION,
+      id: crypto.randomUUID(),
+      payload,
+      signature: signature.toJSON(),
+    };
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────

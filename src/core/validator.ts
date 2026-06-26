@@ -21,6 +21,8 @@ import type {
   ExpectedSigner,
   MajikSignatureJSON,
   MajikSignerPublicKeys,
+  MajikTimestamp,
+  MajikTSAPayload,
   MultiSigEnvelope,
 } from "./types";
 
@@ -405,5 +407,56 @@ export class MajikSignatureValidator {
 
     // Validate seal fields if any are present
     MajikSignatureValidator.validateSeal(env as MultiSigEnvelope);
+  }
+
+  static validateMajikTSAPayload(
+    payload: unknown,
+  ): asserts payload is MajikTSAPayload {
+    if (!payload || typeof payload !== "object")
+      throw new MajikSignatureValidationError("TSA payload must be an object");
+    const p = payload as Record<string, unknown>;
+    if (!p.digest || typeof p.digest !== "object")
+      throw new MajikSignatureValidationError("TSA payload missing digest");
+    const d = p.digest as Record<string, unknown>;
+    if (d.algorithm !== "SHA-256")
+      throw new MajikSignatureValidationError(
+        "TSA payload digest algorithm must be SHA-256",
+      );
+    if (typeof d.value !== "string" || d.value.length !== CONTENT_HASH_B64_LEN)
+      throw new MajikSignatureValidationError(
+        "TSA payload digest value must be a 44-char base64 string",
+      );
+    if (typeof p.nonce !== "string" || p.nonce.length === 0)
+      throw new MajikSignatureValidationError("TSA payload missing nonce");
+    if (typeof p.timestamp !== "string" || p.timestamp.length === 0)
+      throw new MajikSignatureValidationError("TSA payload missing timestamp");
+    if (!p.tsa || typeof p.tsa !== "object")
+      throw new MajikSignatureValidationError("TSA payload missing tsa");
+    const t = p.tsa as Record<string, unknown>;
+    if (typeof t.id !== "string" || t.id.length === 0)
+      throw new MajikSignatureValidationError("TSA payload tsa.id missing");
+    if (
+      typeof t.signerFingerprint !== "string" ||
+      t.signerFingerprint.length === 0
+    )
+      throw new MajikSignatureValidationError(
+        "TSA payload tsa.signerFingerprint missing",
+      );
+  }
+
+  static validateMajikTimestamp(tsa: unknown): asserts tsa is MajikTimestamp {
+    if (!tsa || typeof tsa !== "object")
+      throw new MajikSignatureValidationError(
+        "MajikTimestamp must be an object",
+      );
+    const t = tsa as Record<string, unknown>;
+    if (t.version !== 1)
+      throw new MajikSignatureValidationError(
+        "MajikTimestamp version must be 1",
+      );
+    if (typeof t.id !== "string" || t.id.length === 0)
+      throw new MajikSignatureValidationError("MajikTimestamp missing id");
+    MajikSignatureValidator.validateMajikTSAPayload(t.payload);
+    MajikSignatureValidator.validateJSON(t.signature); // reuses existing envelope validation
   }
 }

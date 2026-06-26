@@ -64,4 +64,8 @@ export const ALLOWLIST_HASH_B64_LEN = CONTENT_HASH_B64_LEN; // 44 chars
  * Seal hash is SHA3-512 → 64 bytes → 128 hex chars (with padding).
  * Distinct from SHA-256 hashes — longer length makes tampering obvious at a glance.
  */
-export const SEAL_HASH_HEX_LEN = 128;  // rename to reflect actual encoding
+export const SEAL_HASH_HEX_LEN = 128; // rename to reflect actual encoding
+
+export const MAJIK_TIMESTAMP_VERSION = 1 as const;
+export const MAJIK_TSA_DOMAIN =
+  `majikah-tsa-v-${MAJIK_TIMESTAMP_VERSION}:` as const;
