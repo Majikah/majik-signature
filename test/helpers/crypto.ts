@@ -10,7 +10,7 @@ export async function getTestKey(): Promise<MajikKey> {
 
   const testPassphrase = "test_passphrase";
 
-  const generatedMnemonic = MajikKey.generateMnemonic();
+  const generatedMnemonic = await MajikKey.generateMnemonic();
 
   const key = await MajikKey.create(
     generatedMnemonic,

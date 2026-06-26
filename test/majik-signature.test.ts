@@ -62,25 +62,7 @@ async function corruptBlob(blob: Blob): Promise<Blob> {
   return new Blob([view], { type: blob.type });
 }
 
-// ─── 1. MOCK DEPENDENCIES ──────────────────────────────────────────────────
 
-// Mock the crypto algorithms to return predictable values for fast test evaluation,
-// while retaining underlying setup helpers like generateKeyPairFromSeed for MajikKey.
-vi.mock("@stablelib/ed25519", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@stablelib/ed25519")>();
-  return {
-    ...actual,
-    sign: vi.fn().mockReturnValue(new Uint8Array(64).fill(1)), // ← 64 bytes, not 4
-    verify: vi.fn().mockReturnValue(true),
-  };
-});
-
-vi.mock("@noble/post-quantum/ml-dsa.js", () => ({
-  ml_dsa87: {
-    sign: vi.fn().mockReturnValue(new Uint8Array(4595).fill(5)), // ← 4595 bytes, not 4
-    verify: vi.fn().mockReturnValue(true),
-  },
-}));
 
 // ─── 2. TEST SUITE ──────────────────────────────────────────────────────────
 
