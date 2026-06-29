@@ -786,9 +786,12 @@ export class MajikSignatureEmbed {
     const { envelope } = result;
 
     const isSealed = envelope.sealHash !== undefined;
+
+    const hasMultipleSignatories = envelope.signatures.length > 1;
+
     const isMultiSig =
-      envelope.allowlist !== undefined && envelope.allowlist.length > 1;
-    const hasMultipleSignatories = isMultiSig || envelope.signatures.length > 1;
+      (envelope.allowlist !== undefined && envelope.allowlist.length > 0) ||
+      hasMultipleSignatories;
 
     const sealInfo: SealInfo | undefined =
       envelope.sealHash && envelope.sealTimestamp && envelope.sealedBy

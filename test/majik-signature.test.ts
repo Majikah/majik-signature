@@ -316,7 +316,7 @@ describe("MajikSignature Class Unit Tests", () => {
 
         const info = await MajikSignature.getEnvelopeInfo(sig2Blob);
         expect(info?.signatureCount).toBe(2);
-        expect(info?.isMultiSig).toBe(false); // No allowlist established
+        expect(info?.isMultiSig).toBe(true);
 
         const results = await MajikSignature.verifyFile(sig2Blob, allowedKey2);
         expect(results.some((r) => r.valid)).toBe(true);

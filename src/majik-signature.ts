@@ -916,7 +916,7 @@ export class MajikSignature {
    *   const timestamp = await MajikSignature.signTSA(
    *     { digest: { algorithm: "SHA-256", value: contentHash } },
    *     tsaKey,
-   *     { id: "tsa.majikah.com", signerFingerprint: tsaKey.fingerprint }
+   *     { id: "tsa.majikah.solutions", signerFingerprint: tsaKey.fingerprint }
    *   );
    */
   static async signTSA(
