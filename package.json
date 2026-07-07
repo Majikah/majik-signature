@@ -51,7 +51,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@majikah/majik-key": "^0.2.11",
     "@noble/post-quantum": "^0.6.1",
     "@stablelib/ed25519": "^2.1.0",
     "@stablelib/sha256": "^2.0.1",
@@ -59,8 +58,17 @@
     "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
+    "@majikah/majik-key": "^0.2.12",
     "@types/node": "^25.5.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
+  },
+  "peerDependencies": {
+    "@majikah/majik-key": "^0.2.12"
+  },
+  "peerDependenciesMeta": {
+    "@majikah/majik-key": {
+      "optional": false
+    }
   }
 }
