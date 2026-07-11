@@ -18,6 +18,5 @@ export async function getTestKey(): Promise<MajikKey> {
     "Test Account",
   );
 
-
   return key;
 }

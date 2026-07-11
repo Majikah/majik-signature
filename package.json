@@ -58,13 +58,13 @@
     "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
-    "@majikah/majik-key": "^0.2.12",
+    "@majikah/majik-key": "^0.2.14",
     "@types/node": "^25.5.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   },
   "peerDependencies": {
-    "@majikah/majik-key": "^0.2.12"
+    "@majikah/majik-key": "^0.2.14"
   },
   "peerDependenciesMeta": {
     "@majikah/majik-key": {
