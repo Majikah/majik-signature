@@ -1,84 +1,152 @@
 # Majik Signature
 
 [![Developed by Zelijah](https://img.shields.io/badge/Developed%20by-Zelijah-red?logo=github&logoColor=white)](https://thezelijah.world) ![GitHub Sponsors](https://img.shields.io/github/sponsors/jedlsf?style=plastic&label=Sponsors&link=https%3A%2F%2Fgithub.com%2Fsponsors%2Fjedlsf)
-
-**Majik Signature** is a hybrid post-quantum content signing and verification library for the Majikah ecosystem. Built on top of **Majik Key**, it provides tamper-proof, forgery-resistant digital signatures for any content format — plaintext, JSON, PDF, audio, video, binary — using a dual-algorithm architecture that combines classical Ed25519 with post-quantum ML-DSA-87 (FIPS-204).
-
-**Majik Signature now includes built-in file embedding** — sign any file and embed the signature directly into its native metadata. No sidecar files needed. PDFs stay PDFs, WAVs stay WAVs, MP4s stay MP4s.
-
 ![npm](https://img.shields.io/npm/v/@majikah/majik-signature) ![npm downloads](https://img.shields.io/npm/dm/@majikah/majik-signature) ![npm bundle size](https://img.shields.io/bundlephobia/min/%40majikah%2Fmajik-signature) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) ![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue)
+
+**Majik Signature** is a hybrid post-quantum content signing and verification library for the Majikah ecosystem. Built on top of [**Majik Key**](https://www.npmjs.com/package/@majikah/majik-key), it produces tamper-evident, forgery-resistant digital signatures for any content — plaintext, JSON, PDFs, audio, video, Office documents, or raw binary — using a dual-algorithm architecture that combines classical **Ed25519** with post-quantum **ML-DSA-87** (FIPS-204).
+
+Beyond signing raw bytes, Majik Signature can **embed signatures directly into a file's native format**. PDFs stay PDFs, WAVs stay WAVs, DOCX files stay editable — the signature travels with the file, no sidecar `.sig` file required. On top of that, it supports **multi-party signing**, **signing allowlists**, **envelope sealing**, and **trusted timestamps (TSA)**.
 
 ---
 
-- [Majik Signature](#majik-signature)
-  - [Security Architecture](#security-architecture)
-  - [Overview](#overview)
-  - [Features](#features)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [File Embedding — Quick Start](#file-embedding--quick-start)
-  - [API Reference](#api-reference)
-    - [Content Signing (bytes/strings)](#content-signing-bytesstrings)
-    - [File Embedding](#file-embedding)
-    - [Lower-Level Embed API](#lower-level-embed-api)
-    - [Instance Methods](#instance-methods)
-    - [Getters](#getters)
-  - [Supported File Formats](#supported-file-formats)
-  - [Usage Examples](#usage-examples)
-  - [Signature Envelope](#signature-envelope)
-  - [Security Considerations](#security-considerations)
-  - [Related Projects](#related-projects)
-  - [Contributing](#contributing)
-  - [License](#license)
-  - [Author](#author)
-  - [Contact](#contact)
+## Table of Contents
+
+- [Why Majik Signature](#why-majik-signature)
+- [Security Architecture](#security-architecture)
+- [Overview](#overview)
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+  - [Signing Raw Content](#signing-raw-content)
+  - [File Embedding](#file-embedding)
+  - [Multi-Signature Files & Allowlists](#multi-signature-files--allowlists)
+  - [Sealing an Envelope](#sealing-an-envelope)
+  - [Trusted Timestamps (TSA)](#trusted-timestamps-tsa)
+- [API Reference](#api-reference)
+  - [Content Signing](#content-signing-bytesstrings)
+  - [File Embedding](#file-embedding-api)
+  - [Multi-Signature & Allowlist](#multi-signature--allowlist-api)
+  - [Sealing](#sealing-api)
+  - [Trusted Timestamps](#trusted-timestamps-api)
+  - [Image Stamping (Experimental)](#image-stamping-experimental)
+  - [Serialization](#serialization)
+- [Supported File Formats](#supported-file-formats)
+- [Signature & Envelope Structure](#signature--envelope-structure)
+- [Error Handling](#error-handling)
+- [Security Considerations](#security-considerations)
+- [The Majikah Ecosystem](#the-majikah-ecosystem)
+- [Related Projects](#related-projects)
+- [Contributing](#contributing)
+- [License](#license)
+- [Author](#author)
+- [Contact](#contact)
+
+---
+
+## Why Majik Signature
+
+Most "digital signature" libraries only sign raw bytes and leave you to figure out storage, transport, and file compatibility yourself. Majik Signature is built to be dropped into a real application:
+
+- **Hybrid post-quantum by default** — every signature is Ed25519 + ML-DSA-87, not an opt-in extra.
+- **Signatures live inside the file** — no sidecar files to lose, mismatch, or forget to ship.
+- **Multi-party signing is a first-class concept** — not bolted on. Allowlists, sealing, and issuer semantics are part of the core envelope format.
+- **Deterministic by design** — the library goes out of its way to guarantee that signing and verifying the same content always produces the same canonical bytes (see [Signature & Envelope Structure](#signature--envelope-structure)).
+- **No native dependencies** — pure TypeScript/WASM-free cryptography, works identically in Node.js, browsers, Tauri, Deno, and Bun.
 
 ---
 
 ## Security Architecture
 
+
+```mermaid
+flowchart TD
+    A[12/24-word BIP-39 Seed Phrase] --> B[Majik Key]
+
+    %% Signing branch
+    B --> S[Signing]
+    S --> S1[Ed25519]
+    S --> S2[ML-DSA-87]
+
+  
+
+    %% Identity branch
+    B --> I[Identity]
+    I --> I1[BIP-39]
+    I --> I2[X25519]
+
+
+
+    %% Products (fan-in)
+    S1 --> P1[Majik Signature]
+    S2 --> P1
+
+ 
+    
+
+
+
+
+```
+
+
 ### 1. Hybrid Dual-Algorithm Signing
 
 Every Majik Signature is produced by **two independent signing algorithms** over the same canonical payload:
 
-- **Ed25519** — Classical elliptic curve signature (128-bit security, 64-byte signature)
-- **ML-DSA-87 (FIPS-204)** — Post-quantum lattice-based signature (Category 5, ~AES-256 PQ security, 4595-byte signature)
+- **Ed25519** — classical elliptic curve signature (128-bit security, 64-byte signature)
+- **ML-DSA-87 (FIPS-204)** — post-quantum lattice-based signature (NIST Category 5, ~4595-byte signature)
 
 Verification requires **both** to pass. This means:
-- A classical attacker breaking Ed25519 still cannot forge the ML-DSA-87 signature
-- A quantum attacker breaking ML-DSA-87 still cannot forge the Ed25519 signature
-- No single algorithmic break is sufficient to forge a valid signature
+- A classical attacker breaking Ed25519 still cannot forge the ML-DSA-87 signature.
+- A quantum attacker breaking ML-DSA-87 still cannot forge the Ed25519 signature.
+- No single algorithmic break is sufficient to forge a valid signature.
 
 ### 2. Canonical Payload Binding
 
-Both signatures cover a **domain-separated canonical payload** that binds together:
+Both signatures cover a **domain-separated canonical payload**:
+
 ```
-"majik-signature-v1:" + JSON({ v, id, ts, ct, hash })
+"majik-signature-v1:" + JSON({ v, id, ts, ct, hash[, alh] })
 ```
 
-| Field  | Description                             |
-| ------ | --------------------------------------- |
-| `v`    | Envelope version                        |
-| `id`   | Signer fingerprint (MajikKey identity)  |
-| `ts`   | ISO 8601 timestamp                      |
-| `ct`   | Content type (advisory)                 |
-| `hash` | SHA-256 of the original content, base64 |
+| Field  | Description                                                                 |
+| ------ | ---------------------------------------------------------------------------- |
+| `v`    | Envelope version                                                             |
+| `id`   | Signer fingerprint (MajikKey identity)                                      |
+| `ts`   | ISO 8601 timestamp                                                          |
+| `ct`   | Content type (advisory, or `null`)                                          |
+| `hash` | SHA-256 of the original content, base64                                     |
+| `alh`  | SHA-256 of the canonical allowlist, base64 — **present only** when this signer is establishing an allowlist |
+
+`alh` is *omitted entirely* (not set to `null`) on every signature that isn't establishing an allowlist. This is a deliberate backward-compatibility guarantee: every signature produced before multi-sig support existed still verifies today, because its payload bytes are unchanged.
 
 This binding means a valid signature cannot be reused on different content, transferred to a different signer, replayed with a modified timestamp, or forged without both private keys.
 
 ### 3. Content-Agnostic Hashing
 
-Content is never embedded in the envelope — only its SHA-256 hash is signed. This means a 500 MB video signs at the same speed as a 10-byte string, and any format is supported identically.
+Content is never embedded in the envelope — only its SHA-256 hash is signed. A 500 MB video signs at the same speed as a 10-byte string, and every content type is supported identically.
 
 ### 4. File Embedding Integrity
 
-When a signature is embedded into a file, it always covers the **original file bytes before embedding**. Verification automatically strips the embedded signature before re-hashing, so the round-trip is always:
+When a signature is embedded into a file, it always covers the **original file bytes before embedding**. Verification strips the embedded envelope before re-hashing, so the round-trip is always:
 
 ```
 sign(originalBytes) → embed into file → extract → strip → verify(originalBytes)
 ```
 
-Re-signing the same file is always safe and idempotent — the existing signature is stripped before the new one is created.
+Re-signing (or re-embedding) the same file is always safe — the existing envelope is stripped before the new one is written, so signatures never stack or corrupt each other.
+
+### 5. Multi-Party Signing, Allowlists & Sealing
+
+Files don't hold a single signature — they hold a **`MultiSigEnvelope`**: an array of per-signer envelopes, plus optional allowlist and seal metadata.
+
+- **Open signing** (default): anyone with a `MajikKey` can add a signature.
+- **Restricted signing**: the first signer may supply an `expectedSigners` allowlist. That allowlist is cryptographically committed to via `allowlistHash` in the issuer's own canonical payload — tampering with the allowlist after the fact breaks the issuer's signature. Non-listed signers are rejected *before* any cryptographic operation runs.
+- **Sealing**: the issuer (and only the issuer) can seal an envelope, computing a **SHA3-512** hash over every current signatory plus a seal timestamp, domain-separated with `"majik-seal-v1:"`. A sealed envelope rejects all further signing attempts — including from the issuer.
+
+### 6. Trusted Timestamps (TSA)
+
+A `MajikSignature` can optionally carry a `MajikTimestamp` — a signature from a timestamp authority over a canonical payload (`"majikah-tsa-v-1:"` domain) binding a digest, a server-generated nonce, and a server-authoritative timestamp. The TSA signature is itself a full Majik Signature (Ed25519 + ML-DSA-87), so it inherits the same hybrid guarantees.
 
 ---
 
@@ -86,19 +154,19 @@ Re-signing the same file is always safe and idempotent — the existing signatur
 
 ### What is a Majik Signature?
 
-A Majik Signature is a cryptographic proof that a specific piece of content was produced or approved by the holder of a specific **Majik Key** account, that the content has not been modified since it was signed, and that the signature remains valid against future quantum computing threats.
+A Majik Signature is cryptographic proof that a specific piece of content was produced or approved by the holder of a specific **Majik Key**, that the content has not been modified since it was signed, and that the signature remains valid against future quantum computing threats.
 
 Verification is fully **public** — anyone with the signer's public keys can verify. No private key is ever needed for verification.
 
 ### Use Cases
 
-- **Content Provenance**: Prove that a piece of music, art, document, or dataset was produced by a specific identity
-- **File Integrity**: Detect any tampering or modification to distributed files
-- **API Payload Signing**: Sign JSON responses or requests for non-repudiation
-- **Document Authentication**: Certify legal documents, contracts, or records
-- **Media Certification**: Stamp audio, video, or image files as authentic originals — with the signature embedded directly in the file's metadata
-- **Software Distribution**: Sign release artifacts to prove they come from the original author
-- **Majikah Ecosystem**: Integrate with Majik Message and other Majikah products for identity-bound content
+- **Content Provenance** — prove that music, art, a document, or a dataset was produced by a specific identity.
+- **File Integrity** — detect any tampering or modification to distributed files.
+- **API Payload Signing** — sign JSON requests/responses for non-repudiation.
+- **Document Authentication** — certify contracts, legal records, or invoices, with support for multiple independent signers and a final seal.
+- **Media Certification** — stamp audio, video, or image files as authentic originals, with the signature embedded directly in the file.
+- **Software Distribution** — sign release artifacts to prove they come from the original author.
+- **Identity-Bound Messaging** — bind signed content to a verifiable identity across the Majikah ecosystem.
 
 ---
 
@@ -106,130 +174,213 @@ Verification is fully **public** — anyone with the signer's public keys can ve
 
 ### Security & Post-Quantum Readiness
 
-- **Hybrid Signatures**: Ed25519 (classical) + ML-DSA-87 (post-quantum, FIPS-204, Category 5) — both must verify
-- **Tamper Detection**: SHA-256 content hash is bound inside the signed payload — any byte change invalidates both signatures
-- **Domain Separation**: `"majik-signature-v1:"` prefix prevents cross-protocol signature reuse
-- **Signer Binding**: Signer fingerprint is part of the signed payload — signatures cannot be transferred between identities
-- **Timestamp Binding**: Timestamp is part of the signed payload — cannot be altered after signing
-- **No Private Key for Verification**: Pure public-key verification — safe to verify in any context
+- **Hybrid signatures** — Ed25519 (classical) + ML-DSA-87 (post-quantum, FIPS-204, Category 5); both must verify
+- **Tamper detection** — SHA-256 content hash is bound inside the signed payload; any byte change invalidates both signatures
+- **Domain separation** — distinct prefixes for signing (`majik-signature-v1:`), sealing (`majik-seal-v1:`), and timestamping (`majikah-tsa-v-1:`) prevent cross-protocol signature reuse
+- **Signer & timestamp binding** — both are part of the signed payload; neither can be altered or transferred after signing
+- **No private key for verification** — pure public-key verification, safe to run anywhere
+
+### Multi-Party Signing
+
+- **Multi-signature envelopes** — any number of independent signers on one file
+- **Signing allowlists** — restrict who may sign, enforced before any cryptographic operation
+- **Cryptographically committed allowlists** — tampering with the allowlist invalidates the issuer's signature
+- **Sealing** — the issuer can permanently lock an envelope against further signatures
+- **Status queries** — `getSignatories()`, `getIssuer()`, `getEnvelopeInfo()`, `canSign()` for building signing-status UI without manually walking the envelope
 
 ### Content Format Support
 
-- **Plain text**, **JSON**, **Binary** — `Uint8Array` or `string`
-- **PDF, PNG, JPEG** — Signature embedded in native metadata (visible in File → Properties for PDF)
-- **WAV, MP3, FLAC** — Embedded in RIFF/ID3/Vorbis metadata
-- **MP4, MOV, M4A, M4V** — Embedded in `moov/udta` box
-- **DOCX, XLSX, PPTX, ODF** — Embedded as a file entry inside the ZIP container
-- **MKV, WebM** — Embedded via append-safe trailer
-- **HTML, Markdown, JSON, plain text, source code** — Appended comment block
-- **Any other format** — Universal binary trailer (self-describing, cleanly strippable)
+- **Plain text, JSON, binary** — `Uint8Array` or `string`
+- **PDF** — signature appended as a spec-compliant binary trailer after the file's `%%EOF`
+- **PNG** — embedded in a `iTXt` metadata chunk
+- **WAV** — embedded in a RIFF `LIST INFO` chunk
+- **MP3** — embedded in an ID3v2 `TXXX` frame
+- **MP4, MOV, M4A, M4V** — embedded in the `moov/udta` box
+- **DOCX, XLSX, PPTX, ODT, ODS, ODP** — embedded as a dedicated entry inside the ZIP container
+- **MKV, WebM** — embedded via a custom Matroska metadata tag
+- **HTML, Markdown, JSON, plain text, source code** — embedded as an appended, format-appropriate metadata block
+- **Any other format** — universal binary trailer: `[original bytes][signature JSON][8-byte length][8-byte magic]` — cleanly detectable and strippable regardless of format
+
+See [Supported File Formats](#supported-file-formats) for the full handler table.
 
 ### Developer Experience
 
-- **First-Class TypeScript Support**: Full type definitions for all interfaces and classes
-- **Simple Core API**: `sign()` and `verify()` for bytes/strings; `signFile()` and `verifyFile()` for files
-- **One-liner file signing**: `MajikSignature.signFile(blob, key)` — sign and embed in a single call
-- **Format auto-detection**: MIME type and magic-byte sniffing — no manual format hints required
-- **Idempotent re-signing**: Safely re-sign any file without accumulating stacked signatures
-- **Structured Errors**: Typed error hierarchy for precise error handling
-- **Isomorphic**: Works in Node.js and modern browser environments (no native deps)
+- **First-class TypeScript support** — full type definitions for every interface and class
+- **Simple core API** — `sign()` / `verify()` for bytes and strings; `signFile()` / `verifyFile()` for files
+- **One-liner file signing** — `MajikSignature.signFile(blob, key)` signs and embeds in a single call
+- **Format auto-detection** — MIME type and magic-byte sniffing, no manual format hints required in most cases
+- **Idempotent re-signing** — safely re-sign or re-embed any file without accumulating stacked or orphaned envelopes
+- **Typed error hierarchy** — precise, catchable error classes instead of generic exceptions
+- **Isomorphic** — Node.js, browsers, Tauri, Deno, and Bun; no native bindings
 
 ### Serialization & Portability
 
-- **JSON Envelope**: Full `toJSON()` / `fromJSON()` round-trip
-- **Base64 Serialization**: `serialize()` / `deserialize()` for compact transport
-- **File-embedded**: Signature lives inside the file itself — no sidecar files needed
-- **Self-Contained**: Envelope includes signer's public keys — verifiable without a key registry
+- **JSON envelope** — full `toJSON()` / `fromJSON()` round-trip
+- **Base64 serialization** — `serialize()` / `deserialize()` for compact transport (HTTP headers, DB columns, etc.)
+- **File-embedded** — the signature lives inside the file itself, no sidecar files needed
+- **Self-contained** — the envelope includes the signer's public keys, verifiable without a separate key registry
 
 ---
 
 ## Installation
 
 ```bash
-# Using npm
 npm install @majikah/majik-signature
 
-# Peer dependency — must also be installed
+# Required peer dependency
 npm install @majikah/majik-key
 ```
 
-No native bindings. Works in Node.js 18+, all modern browsers, Deno, and Bun.
+No native bindings. Works in Node.js 18+, modern browsers, Deno, Bun, and Tauri.
 
 ---
 
 ## Quick Start
 
+### Signing Raw Content
+
 ```typescript
 import { MajikKey } from '@majikah/majik-key';
 import { MajikSignature, CONTENT_TYPES } from '@majikah/majik-signature';
 
-// ── Step 1: Create and unlock a MajikKey ─────────────────────────────────────
+// Step 1 — create and unlock a MajikKey
 const mnemonic = MajikKey.generateMnemonic();
 const key = await MajikKey.create(mnemonic, 'my-passphrase', 'My Signing Key');
 
-// ── Step 2: Sign content ──────────────────────────────────────────────────────
+// Step 2 — sign content
 const document = 'This is the original content of my document.';
-
 const signature = await MajikSignature.sign(document, key, {
   contentType: CONTENT_TYPES.TEXT,
 });
 
-console.log('Signed!');
 console.log('Signer ID:', signature.signerId);
 console.log('Content Hash:', signature.contentHash);
 console.log('Timestamp:', signature.timestamp);
 
-// ── Step 3: Serialize for storage or transport ────────────────────────────────
+// Step 3 — serialize for storage or transport
 const serialized = signature.serialize(); // base64 string
 
-// ── Step 4: Verify (no private key needed) ────────────────────────────────────
+// Step 4 — verify (no private key needed)
 const publicKeys = MajikSignature.publicKeysFromMajikKey(key);
 const result = MajikSignature.verify(document, signature, publicKeys);
+console.log('Valid:', result.valid);
 
-console.log('Valid:', result.valid);      // true
-console.log('Signer:', result.signerId);
-
-// Shorthand — verify directly against a MajikKey
+// Shorthand — verify directly against a MajikKey (works even if locked)
 const result2 = MajikSignature.verifyWithKey(document, signature, key);
-console.log('Valid:', result2.valid);     // true
 ```
 
 ---
 
-## File Embedding — Quick Start
+### File Embedding
 
 ```typescript
-import { MajikKey } from '@majikah/majik-key';
 import { MajikSignature } from '@majikah/majik-signature';
 
-// ── Sign a file and embed the signature into it ───────────────────────────────
+// Sign a file and embed the signature into it
 const { blob: signedBlob } = await MajikSignature.signFile(file, key);
 // signedBlob is the same format as file — PDF stays PDF, WAV stays WAV, etc.
-// The signature is embedded in the file's native metadata.
 
-// ── Verify the embedded signature later ──────────────────────────────────────
-const result = await MajikSignature.verifyFile(signedBlob, key);
-if (result.valid) {
-  console.log('Verified — signed by:', result.signerId);
-  console.log('At:', result.timestamp);
-  console.log('Handler used:', result.handler); // e.g. "PDF", "WAV", "MP4/MOV"
-}
+// Verify — returns one VerificationResult PER SIGNER
+const results = await MajikSignature.verifyFile(signedBlob, key);
+const allValid = results.every((r) => r.valid);
+console.log('All signatures valid:', allValid);
+console.log('Signed by:', results.map((r) => r.signerId));
 
-// ── Check if a file is signed (without verifying) ────────────────────────────
+// Check if a file is signed, without verifying
 const signed = await MajikSignature.isSigned(file);
 
-// ── Extract the embedded signature as a typed instance ───────────────────────
-const sig = await MajikSignature.extractFrom(signedBlob);
-if (sig) {
+// Extract embedded signatures as typed instances — always an array
+const sigs = await MajikSignature.extractFrom(signedBlob);
+for (const sig of sigs) {
   console.log(sig.signerId, sig.timestamp, sig.contentHash);
 }
 
-// ── Get the original clean file (signature removed) ──────────────────────────
+// Get the original clean file back (signature removed)
 const originalBlob = await MajikSignature.stripFrom(signedBlob);
+```
 
-// ── Embed an already-computed signature into a file ──────────────────────────
-const sig2 = await MajikSignature.sign(await file.arrayBuffer(), key);
-const signedBlob2 = await sig2.embedIn(file);
+> **Note:** `verifyFile()` and `extractFrom()` return **arrays**, not single values — a file may carry more than one signature. Legacy single-signature files still return a one-item array, so existing call sites that only read `results[0]` continue to work.
+
+---
+
+### Multi-Signature Files & Allowlists
+
+```typescript
+import { MajikSignature } from '@majikah/majik-signature';
+
+// Alice signs first and restricts who else may sign
+const { blob: step1 } = await MajikSignature.signFile(file, aliceKey, {
+  expectedSigners: [
+    MajikSignature.expectedSignerFromKey(aliceKey),
+    MajikSignature.expectedSignerFromKey(bobKey),
+  ],
+});
+
+// Bob signs — allowed, he's on the allowlist
+const { blob: step2 } = await MajikSignature.signFile(step1, bobKey);
+
+// Someone not on the allowlist — rejected before any crypto runs
+try {
+  await MajikSignature.signFile(step2, eveKey);
+} catch (err) {
+  // MajikSignatureAllowlistError
+}
+
+// Check status without signing
+const { permitted, reason } = await MajikSignature.canSign(step2, eveKey);
+
+// Inspect who has signed and who is still pending
+const { signed, pending } = await MajikSignature.getSignatories(step2);
+console.log('Pending:', pending.map((s) => s.signerId));
+```
+
+---
+
+### Sealing an Envelope
+
+Only the issuer (the signer who established the allowlist) can seal a file, and only once every intended signer's status is where you want it to be.
+
+```typescript
+import { MajikSignature } from '@majikah/majik-signature';
+
+// Alice (the issuer) seals the file — no further signatures accepted after this
+const { blob: sealed, sealInfo } = await MajikSignature.seal(step2, aliceKey);
+console.log('Sealed at:', sealInfo.sealTimestamp);
+
+// Anyone can verify the seal itself (structural — not the individual signatures)
+const sealResult = await MajikSignature.verifySeal(sealed);
+console.log('Seal valid:', sealResult.valid, 'sealed by:', sealResult.sealedBy);
+
+// Still verify the underlying cryptographic signatures separately
+const sigResults = await MajikSignature.verifyFile(sealed, aliceKey);
+```
+
+---
+
+### Trusted Timestamps (TSA)
+
+TSA support works at the signature-object level, independent of file embedding. A TSA server signs a canonical payload binding your content's digest to a server-issued timestamp; you attach the resulting `MajikTimestamp` to your own signature.
+
+```typescript
+import { MajikSignature } from '@majikah/majik-signature';
+
+// Client side — build the request payload from an existing signature
+const signature = await MajikSignature.sign(document, key);
+const tsaRequest = signature.buildTSARequestPayload();
+
+// Send tsaRequest to your TSA server, receive back a MajikTimestamp...
+// (server side, using a TSA-controlled MajikKey)
+const timestamp = await MajikSignature.signTSA(
+  tsaRequest,
+  tsaKey,
+  { id: 'tsa.majikah.solutions', signerFingerprint: tsaKey.fingerprint },
+);
+
+// Client attaches and validates the timestamp
+signature.addTSA(timestamp); // throws if the TSA signature or digest doesn't match
+
+console.log('Has TSA:', signature.hasTSA);
+console.log('TSA still valid:', signature.verifyTSA().valid);
 ```
 
 ---
@@ -240,17 +391,15 @@ const signedBlob2 = await sig2.embedIn(file);
 
 #### `MajikSignature.sign(content, key, options?)`
 
-Sign raw bytes or a string with an unlocked MajikKey.
+Sign raw bytes or a string with an unlocked `MajikKey`.
 
-**Parameters:**
-- `content: Uint8Array | string` — Content to sign. Strings are UTF-8 encoded before hashing.
-- `key: MajikKey` — An unlocked MajikKey with signing keys present.
+- `content: Uint8Array | string` — content to sign; strings are UTF-8 encoded before hashing
+- `key: MajikKey` — an unlocked key with signing keys present
 - `options?: SignOptions`
-  - `contentType?: string` — Advisory label (e.g. `"audio/wav"`, `"application/pdf"`). See `CONTENT_TYPES`.
-  - `timestamp?: string` — ISO 8601 timestamp override. Defaults to `new Date().toISOString()`.
+  - `contentType?: string` — advisory label (see `CONTENT_TYPES`)
+  - `timestamp?: string` — ISO 8601 override (defaults to `new Date().toISOString()`)
 
 **Returns:** `Promise<MajikSignature>`
-
 **Throws:** `MajikSignatureKeyError` if the key is locked or has no signing keys.
 
 ---
@@ -259,468 +408,220 @@ Sign raw bytes or a string with an unlocked MajikKey.
 
 Verify a signature against content and the signer's public keys. Both Ed25519 and ML-DSA-87 must pass.
 
-**Parameters:**
-- `content: Uint8Array | string` — The original content that was signed.
-- `signature: MajikSignature | MajikSignatureJSON` — The signature to verify.
-- `publicKeys: MajikSignerPublicKeys` — Signer's Ed25519 and ML-DSA-87 public keys.
-
 **Returns:** `VerificationResult`
+
 ```typescript
 {
   valid: boolean;
-  signerId: string;
-  contentHash: string;
+  signerId?: string;
+  contentHash?: string;
   timestamp: string;
   contentType?: string;
+  reason?: string; // present when valid is false
 }
 ```
 
 ---
 
 #### `MajikSignature.verifyWithKey(content, signature, key)`
-
-Convenience — verify directly against a MajikKey instance. Works on locked keys.
-
----
+Convenience wrapper — verifies directly against a `MajikKey` instance. Works even if the key is locked, since only public keys are needed.
 
 #### `MajikSignature.publicKeysFromMajikKey(key)`
-
-Extract public keys from a MajikKey for use with `verify()`. Works on locked keys.
-
-**Returns:** `MajikSignerPublicKeys`
-```typescript
-{
-  signerId: string;
-  edPublicKey: Uint8Array;    // 32 bytes
-  mlDsaPublicKey: Uint8Array; // 2592 bytes
-}
-```
-
----
+Extracts `{ signerId, edPublicKey, mlDsaPublicKey }` from a `MajikKey` for use with `verify()`. Works on locked keys.
 
 #### `MajikSignature.fromJSON(json)` / `MajikSignature.deserialize(base64)`
-
-Reconstruct a `MajikSignature` from stored JSON or base64.
-
----
-
-### File Embedding
-
-These methods sign or verify files with the signature embedded directly in the file. The file format is auto-detected from magic bytes — no manual hints needed in most cases.
+Reconstruct a `MajikSignature` instance from stored JSON or a base64 string.
 
 ---
+
+### File Embedding API
+
+These methods sign or verify files with the signature envelope embedded directly in the file. Format is auto-detected from magic bytes and MIME type.
 
 #### `MajikSignature.signFile(file, key, options?)`
 
-Sign a file and embed the signature into it in one call. Strips any existing signature before signing so re-signing is always safe.
+Sign a file and embed the signature in one call. Strips any existing envelope first, so re-signing is always safe.
 
-**Parameters:**
-- `file: Blob` — The file to sign.
-- `key: MajikKey` — An unlocked MajikKey with signing keys.
+- `file: Blob`
+- `key: MajikKey`
 - `options?`
-  - `contentType?: string` — Advisory label stored in the envelope.
-  - `timestamp?: string` — ISO 8601 override.
-  - `mimeType?: string` — Override auto-detected MIME type.
+  - `contentType?: string`
+  - `timestamp?: string`
+  - `mimeType?: string` — override auto-detected MIME type
+  - `expectedSigners?: ExpectedSigner[]` — only honored on the **first** signature; establishes a signing allowlist
 
 **Returns:** `Promise<{ blob: Blob; signature: MajikSignature; handler: string; mimeType: string }>`
-
-- `blob` — The signed file. Same format as the input.
-- `signature` — The `MajikSignature` instance, if you need it separately.
-- `handler` — Which format handler was used (e.g. `"PDF"`, `"WAV"`, `"MP4/MOV"`).
-- `mimeType` — The detected MIME type.
-
-**Example:**
-```typescript
-const { blob: signedPdf } = await MajikSignature.signFile(pdfBlob, key);
-// signedPdf is a valid PDF with the signature in its /Info dict + XMP metadata
-```
 
 ---
 
 #### `MajikSignature.verifyFile(file, keyOrPublicKeys, options?)`
 
-Verify a file's embedded signature. Accepts either a `MajikKey` instance or raw `MajikSignerPublicKeys`.
+Verify every signature embedded in a file. Accepts a `MajikKey` or raw `MajikSignerPublicKeys`.
 
-**Parameters:**
-- `file: Blob` — The signed file.
-- `keyOrPublicKeys: MajikKey | MajikSignerPublicKeys` — The key or public keys to verify against.
-- `options?`
-  - `expectedSignerId?: string` — If provided, checks `signerId` before running crypto.
-  - `mimeType?: string` — Override auto-detected MIME type.
+- `options?.expectedSignerId?: string` — verify only one specific signer
+- `options?.mimeType?: string`
 
-**Returns:** `Promise<VerificationResult & { handler?: string }>`
-
-**Example:**
-```typescript
-const result = await MajikSignature.verifyFile(signedWav, key);
-if (result.valid) {
-  console.log('Signed by:', result.signerId);
-  console.log('At:', result.timestamp);
-}
-```
-
----
-
-#### `MajikSignature.extractFrom(file, options?)`
-
-Extract the embedded signature as a fully typed `MajikSignature` instance. Returns `null` if no signature is found.
-
-**Returns:** `Promise<MajikSignature | null>`
-
-**Example:**
-```typescript
-const sig = await MajikSignature.extractFrom(file);
-if (sig) {
-  console.log(sig.signerId, sig.timestamp, sig.contentHash);
-}
-```
-
----
-
-#### `MajikSignature.stripFrom(file, options?)`
-
-Return a clean copy of the file with any embedded signature removed. The returned bytes are exactly what was originally signed.
-
-**Returns:** `Promise<Blob>`
-
-**Example:**
-```typescript
-const original = await MajikSignature.stripFrom(signedMp4);
-// original bytes are what was hashed when the signature was created
-```
-
----
-
-#### `MajikSignature.isSigned(file, options?)`
-
-Check whether a file contains an embedded signature. Does not verify — purely a structural presence check. Useful as a fast guard before verification.
-
-**Returns:** `Promise<boolean>`
-
-**Example:**
-```typescript
-if (await MajikSignature.isSigned(file)) {
-  const result = await MajikSignature.verifyFile(file, key);
-}
-```
+**Returns:** `Promise<VerificationResult[]>` — one result per signer in the envelope; legacy single-sig files return a one-item array.
 
 ---
 
 #### `signature.embedIn(file, options?)` *(instance method)*
-
-Embed this `MajikSignature` instance into a file. Call on an existing instance when you have already signed the content separately.
-
-> **Note:** The signature must have been created from the original file bytes **before** embedding. Use `signFile()` if you want signing and embedding together.
+Embed an already-computed `MajikSignature` into a file. The signature must have been created from the file's original bytes *before* embedding — use `signFile()` if you want signing and embedding together in one step.
 
 **Returns:** `Promise<Blob>`
 
-**Example:**
+#### `MajikSignature.extractFrom(file, options?)`
+Extract every embedded signature as typed `MajikSignature` instances.
+
+**Returns:** `Promise<MajikSignature[]>` — empty array if the file has no envelope.
+
+#### `MajikSignature.stripFrom(file, options?)`
+Return a clean copy of the file with the embedded envelope removed — exactly the bytes that were originally signed.
+
+**Returns:** `Promise<Blob>`
+
+#### `MajikSignature.isSigned(file, options?)`
+Structural presence check — does the file contain an envelope at all? Does not verify. Use as a fast guard before calling `verifyFile()`.
+
+**Returns:** `Promise<boolean>`
+
+---
+
+### Multi-Signature & Allowlist API
+
+#### `MajikSignature.expectedSignerFromKey(key)`
+Builds an `ExpectedSigner` entry (`{ signerId, edPublicKey, mlDsaPublicKey }`) from a `MajikKey`, for use in `signFile()`'s `expectedSigners` option. The key does not need to be unlocked.
+
+#### `MajikSignature.getAllowlist(file, options?)`
+**Returns:** `Promise<ExpectedSigner[] | null>` — `null` for open-signing or unsigned files.
+
+#### `MajikSignature.canSign(file, key, options?)`
+Checks whether a key is permitted to add a signature — accounts for seal status and full three-field allowlist membership (`signerId` + both public keys).
+
+**Returns:** `Promise<{ permitted: boolean; reason?: string }>`
+
+#### `MajikSignature.getSignatories(file, options?, filter?)`
+Returns the full signing-status breakdown of a file. `filter` narrows which slice of the result is populated, but the full `SignatoriesResult` shape is always returned.
+
+**Returns:** `Promise<SignatoriesResult | null>`
+
 ```typescript
-const originalBytes = new Uint8Array(await file.arrayBuffer());
-const sig = await MajikSignature.sign(originalBytes, key);
-const signedBlob = await sig.embedIn(file);
+{
+  all: SignatoryInfo[];
+  signed: SignatoryInfo[];
+  pending: SignatoryInfo[];
+}
 ```
 
+Convenience aliases: `getSignedSignatories()`, `getPendingSignatories()`, `getAllSignatories()`.
+
+#### `MajikSignature.getIssuer(file, options?)`
+Returns the signatory who established the allowlist (or, for open-signing files, the first signer). **Returns:** `Promise<SignatoryInfo | null>`
+
+#### `MajikSignature.getEnvelopeInfo(file, options?)`
+One call, full picture — `isMultiSig`, `isSealed`, `issuer`, `signatories`, `allowlist`, `signatureCount`, and `sealInfo` when sealed. Built for rendering a signing-status UI without multiple round trips.
+
+**Returns:** `Promise<EnvelopeInfo | null>`
+
+#### `MajikSignature.isMultiSig(file, options?)`
+`true` only when the file has a **restricted** multi-sig envelope (an allowlist with more than one expected signer). `false` for unsigned, open-signing, or single-signer files.
+
 ---
 
-### Lower-Level Embed API
+### Sealing API
 
-For advanced use cases — custom handler registration, explicit format control, or accessing handler metadata — the underlying `MajikSignatureEmbed` class is also exported.
+#### `MajikSignature.seal(file, key, options?)`
+Only the issuer may seal, and only once. Computes a SHA3-512 hash over all current signatories plus a seal timestamp — this is a hash-based integrity lock, not a new cryptographic signature.
+
+**Returns:** `Promise<{ blob: Blob; sealInfo: SealInfo; handler: string; mimeType: string }>`
+
+#### `MajikSignature.verifySeal(file, options?)`
+Recomputes and compares the seal hash. Does **not** verify individual signer signatures — call `verifyFile()` for that.
+
+**Returns:** `Promise<SealVerificationResult>`
+
+#### `MajikSignature.getSealInfo(file, options?)`
+**Returns:** `Promise<SealInfo | null>` — `{ sealHash, sealTimestamp, sealedBy }`, without performing verification.
+
+#### `MajikSignature.isSealed(file, options?)`
+Structural check only. **Returns:** `Promise<boolean>`
+
+---
+
+### Trusted Timestamps API
+
+#### `signature.buildTSARequestPayload()`
+Builds a `MajikTSARequest` (`{ digest: { algorithm: "SHA-256", value } }`) from an existing signature, ready to send to a TSA server.
+
+#### `MajikSignature.signTSA(request, key, tsa, options?)`
+**Server-side.** Signs a TSA payload and returns a complete `MajikTimestamp`, including a server-generated nonce and timestamp.
+
+#### `signature.addTSA(timestamp)`
+Attaches and validates a `MajikTimestamp` on an existing signature instance. Throws `MajikSignatureError` if a TSA is already present, if the digest doesn't match, or `MajikSignatureVerificationError` if the TSA signature itself doesn't verify. A TSA, once attached, cannot be replaced.
+
+#### `signature.verifyTSA()`
+Re-verifies the attached TSA's own signature — useful after deserializing a signature from storage.
+
+#### `signature.hasTSA`
+`boolean` getter.
+
+---
+
+### Image Stamping (Experimental)
+
+> ⚠️ **These APIs are explicitly marked experimental in source and are not yet API-stable.** Expect breaking changes across minor versions.
+
+`MajikSignature.stampImage()`, `verifyStamp()`, `inspectStamp()`, and `isStamped()` implement compression-resistant signature embedding directly into image pixel/frequency data (as opposed to metadata), intended for cases where metadata may be stripped by re-compression. Consult the source directly before depending on this surface in production.
+
+---
+
+### Serialization
+
+#### `signature.toJSON()` / `MajikSignature.fromJSON(json)`
+Full round-trip to/from the `MajikSignatureJSON` shape.
+
+#### `signature.serialize()` / `MajikSignature.deserialize(base64)`
+Compact base64 transport format — useful for HTTP headers or database columns.
 
 ```typescript
-import { MajikSignatureEmbed } from '@majikah/majik-signature';
+const signature = await MajikSignature.sign(content, key);
 
-// Register a custom handler for an unsupported format
-MajikSignatureEmbed.registry.register(new MyCustomHandler());
+const json = signature.toJSON();
+await db.signatures.insert({ id: docId, sig: json });
 
-// List all registered handlers
-console.log(MajikSignatureEmbed.listHandlers());
-// → ['PDF', 'PNG', 'JPEG', 'WAV', 'MP3', 'MP4/MOV', 'FLAC', 'MKV/WebM',
-//    'Office (DOCX/XLSX/PPTX/ODF)', 'Text/Markup/Source',
-//    'Fallback (Universal Trailer)']
+const b64 = signature.serialize();
+res.setHeader('X-Majik-Signature', b64);
 
-// Force the Tier-2 trailer even for natively supported formats
-const { blob } = await MajikSignatureEmbed.embed(file, sig, { forceFallback: true });
+const restored = MajikSignature.fromJSON(json);
+const restoredFromB64 = MajikSignature.deserialize(b64);
 ```
-
----
-
-### Instance Methods
-
-#### `validate()`
-Validate the envelope's internal structure without performing cryptographic verification. Throws `MajikSignatureValidationError` on any structural problem.
-
-#### `isValid()`
-Returns `true` if the envelope is structurally valid. Never throws — safe to use as a boolean guard.
-
-#### `extractPublicKeys()`
-Extract the signer's public keys from the envelope.
-
-> ⚠️ Public keys embedded in the envelope are self-reported by the signer. Always cross-check `signerId` against a trusted source before trusting extracted keys for verification.
-
-#### `toJSON()`
-Export the full signature envelope as a plain JSON object.
-
-#### `serialize()`
-Serialize the envelope to a compact base64 string. Suitable for embedding in database fields, HTTP headers, file metadata, or sidecar files.
-
-#### `toString()`
-Alias for `serialize()`.
-
----
-
-### Getters
-
-| Getter                 | Type                  | Description                               |
-| ---------------------- | --------------------- | ----------------------------------------- |
-| `version`              | `1`                   | Envelope version                          |
-| `signerId`             | `string`              | MajikKey fingerprint of the signer        |
-| `signerEdPublicKey`    | `string`              | Ed25519 public key, base64 (32 bytes)     |
-| `signerMlDsaPublicKey` | `string`              | ML-DSA-87 public key, base64 (2592 bytes) |
-| `contentHash`          | `string`              | SHA-256 of the signed content, base64     |
-| `contentType`          | `string \| undefined` | Advisory content type label               |
-| `timestamp`            | `string`              | ISO 8601 signing timestamp                |
-| `edSignature`          | `string`              | Ed25519 signature, base64 (64 bytes)      |
-| `mlDsaSignature`       | `string`              | ML-DSA-87 signature, base64 (4595 bytes)  |
 
 ---
 
 ## Supported File Formats
 
-### Tier 1 — Native metadata
+Handlers are tried in order; the first one whose `canHandle()` matches wins. If nothing matches, the **universal trailer fallback** always applies — meaning *every* file type is signable, even ones with no dedicated handler.
 
-The signature is stored in each format's built-in metadata container. The file remains structurally valid and the signature survives round-trips through standard tools.
+| Format(s)                          | Handler        | Embedding Mechanism                                             |
+| ----------------------------------- | -------------- | ----------------------------------------------------------------- |
+| PDF                                 | PDF            | Binary trailer appended after the last `%%EOF` marker (PDF 1.7 §7.5.6 compliant) |
+| PNG                                 | PNG            | `iTXt` metadata chunk                                             |
+| WAV                                 | WAV            | RIFF `LIST INFO` chunk, custom `ISIG` sub-chunk                   |
+| MP3                                 | MP3            | ID3v2 `TXXX` frame                                                 |
+| MP4, MOV, M4A, M4V                  | MP4/MOV        | `moov/udta` box, custom `majk` box type                           |
+| DOCX, XLSX, PPTX, ODT, ODS, ODP     | Office         | Dedicated `majik-signature.json` entry inside the ZIP container   |
+| MKV, WebM                           | MKV            | Custom Matroska metadata tag                                      |
+| JPEG, FLAC                          | JPEG / FLAC    | Native format metadata (non-destructive; same round-trip guarantees as other handlers) |
+| HTML, Markdown, JSON, plain text, source code | Text | Appended, format-appropriate metadata block                       |
+| Anything else                       | Fallback       | Universal binary trailer: `[original][signature JSON][8-byte length][8-byte magic "MAJIKSIG"]` |
 
-| Format                                    | Embedding mechanism                                                                                    |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| **PDF**                                   | `/Info` dictionary custom key + XMP metadata stream. Visible in File → Properties in most PDF viewers. |
-| **PNG**                                   | `iTXt` chunk with keyword `majik-signature`                                                            |
-| **JPEG / JPG**                            | Custom `APP15` marker segment                                                                          |
-| **WAV / WAVE**                            | RIFF `LIST INFO` chunk — `ISIG` entry                                                                  |
-| **MP3**                                   | ID3v2 `TXXX` frame with description `MAJIK-SIGNATURE`                                                  |
-| **MP4 / MOV / M4A / M4V**                 | `moov → udta → majk` box                                                                               |
-| **FLAC**                                  | `VORBIS_COMMENT` block — `MAJIK-SIGNATURE=` field                                                      |
-| **MKV / WebM**                            | Append-safe binary trailer                                                                             |
-| **DOCX / XLSX / PPTX**                    | `majik-signature.json` entry inside the ZIP container                                                  |
-| **ODF (ODT/ODS/ODP)**                     | Same as OOXML — ZIP entry                                                                              |
-| **HTML / XML / SVG / Markdown**           | `<!-- MAJIK-SIGNATURE-BEGIN -->` block appended at end                                                 |
-| **Plain text / JSON / CSV / source code** | Same comment block                                                                                     |
-
-### Tier 2 — Universal trailer
-
-For any format not covered above, a self-describing binary trailer is appended:
-
-```
-[original file bytes][signature JSON UTF-8][8-byte payload length LE][8-byte magic: MAJIKSIG]
-```
-
-The magic bytes at the end allow detection and clean stripping from any file without knowing its format. Most parsers and players ignore trailing bytes.
-
-> **Re-mux warning:** For MKV/WebM and the Tier-2 fallback, the embedded signature will be stripped if the file is re-encoded or re-muxed through a tool that rewrites the container. For MP4, DOCX, and all Tier-1 native-metadata formats, the signature survives standard open → save round-trips.
+All handlers guarantee: files remain fully usable after signing (PDFs still open, videos still play, Office files stay editable), signing is idempotent (safe to re-sign), and `strip()` always reproduces exactly the bytes that were originally hashed — including deterministic ZIP re-canonicalization for Office formats, so that identical content always strips to identical bytes regardless of when it was last re-zipped.
 
 ---
 
-## Usage Examples
+## Signature & Envelope Structure
 
-### Example 1: Sign and Verify a Text Document
-```typescript
-import { MajikKey } from '@majikah/majik-key';
-import { MajikSignature, CONTENT_TYPES } from '@majikah/majik-signature';
-
-const mnemonic = MajikKey.generateMnemonic();
-const key = await MajikKey.create(mnemonic, 'passphrase', 'Author Key');
-
-const document = `
-  AGREEMENT
-  This agreement is entered into on January 1, 2026.
-  Party A agrees to deliver the software by March 31, 2026.
-`;
-
-const signature = await MajikSignature.sign(document, key, {
-  contentType: CONTENT_TYPES.TEXT,
-});
-
-const result = MajikSignature.verifyWithKey(document, signature, key);
-console.log('Valid:', result.valid); // true
-
-// Tamper detection
-const tampered = document + ' (modified)';
-const tamperResult = MajikSignature.verifyWithKey(tampered, signature, key);
-console.log('Tampered rejected:', tamperResult.valid); // false
-```
-
----
-
-### Example 2: Sign a File and Embed the Signature
-```typescript
-import { MajikKey } from '@majikah/majik-key';
-import { MajikSignature } from '@majikah/majik-signature';
-
-const mnemonic = MajikKey.generateMnemonic();
-const key = await MajikKey.create(mnemonic, 'passphrase', 'Artist Key');
-
-// Works for any file — PDF, WAV, MP3, MP4, PNG, DOCX, etc.
-const { blob: signedFile, handler } = await MajikSignature.signFile(file, key);
-
-console.log('Signed using handler:', handler);
-// e.g. "PDF", "WAV", "MP4/MOV", "Office (DOCX/XLSX/PPTX/ODF)"
-
-// The signed file is the same format — upload or save it directly
-await uploadFile(signedFile);
-```
-
----
-
-### Example 3: Verify an Embedded Signature
-```typescript
-import { MajikKey } from '@majikah/majik-key';
-import { MajikSignature } from '@majikah/majik-signature';
-
-// key does NOT need to be unlocked for verification
-const key = MajikKey.fromJSON(storedKeyJson);
-
-const result = await MajikSignature.verifyFile(downloadedFile, key);
-
-if (result.valid) {
-  console.log('Authentic. Signed by:', result.signerId);
-  console.log('Signed at:', result.timestamp);
-} else {
-  console.log('Invalid or tampered:', result.reason);
-}
-```
-
----
-
-### Example 4: Sign a Binary File (Node.js)
-```typescript
-import { MajikKey } from '@majikah/majik-key';
-import { MajikSignature, CONTENT_TYPES } from '@majikah/majik-signature';
-import { readFileSync } from 'fs';
-
-const key = await MajikKey.create(mnemonic, 'passphrase', 'Publisher Key');
-const fileBytes = new Uint8Array(readFileSync('./release.zip'));
-
-// Option A: Sign bytes, store signature separately
-const signature = await MajikSignature.sign(fileBytes, key, {
-  contentType: 'application/zip',
-});
-const result = MajikSignature.verifyWithKey(fileBytes, signature, key);
-console.log('Verified:', result.valid); // true
-
-// Option B: Sign and embed into the file itself
-const fileBlob = new Blob([fileBytes], { type: 'application/zip' });
-const { blob: signedBlob } = await MajikSignature.signFile(fileBlob, key);
-```
-
----
-
-### Example 5: Sign a JSON Payload
-```typescript
-import { MajikKey } from '@majikah/majik-key';
-import { MajikSignature, CONTENT_TYPES } from '@majikah/majik-signature';
-
-const key = await MajikKey.create(mnemonic, 'passphrase', 'API Key');
-
-const payload = {
-  userId: 'usr_abc123',
-  action: 'transfer',
-  amount: 1000,
-  currency: 'USD',
-  nonce: crypto.randomUUID(),
-};
-
-// Always sign the canonical string — agree on stringify format
-const content = JSON.stringify(payload);
-const signature = await MajikSignature.sign(content, key, {
-  contentType: CONTENT_TYPES.JSON,
-});
-
-const response = { data: payload, signature: signature.toJSON() };
-
-// On the receiving end
-const result = MajikSignature.verifyWithKey(
-  JSON.stringify(response.data),
-  response.signature,
-  key,
-);
-console.log('Payload verified:', result.valid); // true
-```
-
----
-
-### Example 6: Extract and Inspect an Embedded Signature
-```typescript
-import { MajikSignature } from '@majikah/majik-signature';
-
-// Extract without verifying — useful for inspecting provenance metadata
-const sig = await MajikSignature.extractFrom(file);
-
-if (sig) {
-  console.log('Signer ID:', sig.signerId);
-  console.log('Signed at:', sig.timestamp);
-  console.log('Content hash:', sig.contentHash);
-  console.log('Content type:', sig.contentType);
-} else {
-  console.log('No signature found');
-}
-```
-
----
-
-### Example 7: Re-sign a File
-```typescript
-import { MajikSignature } from '@majikah/majik-signature';
-
-// signFile() strips any existing signature before signing — always safe to call
-const { blob: resignedFile } = await MajikSignature.signFile(previouslySignedFile, key);
-// The new signature covers the original content bytes, not the previously signed file
-```
-
----
-
-### Example 8: Verify Using Only Public Keys
-```typescript
-import { MajikSignature } from '@majikah/majik-signature';
-import type { MajikSignerPublicKeys } from '@majikah/majik-signature';
-
-// Public keys received from a trusted source (e.g. a user profile API)
-const publicKeys: MajikSignerPublicKeys = {
-  signerId: 'base64-fingerprint-of-the-signer',
-  edPublicKey: new Uint8Array(/* 32 bytes */),
-  mlDsaPublicKey: new Uint8Array(/* 2592 bytes */),
-};
-
-// Verify embedded signature without a MajikKey instance
-const result = await MajikSignature.verifyFile(signedFile, publicKeys, {
-  expectedSignerId: publicKeys.signerId,
-});
-console.log('Verified:', result.valid);
-```
-
----
-
-### Example 9: Serialize and Store a Signature
-```typescript
-const signature = await MajikSignature.sign(content, key);
-
-// Store as JSON
-const json = signature.toJSON();
-await db.signatures.insert({ id: docId, sig: json });
-
-// Store as base64 (HTTP header, metadata field, etc.)
-const b64 = signature.serialize();
-res.setHeader('X-Majik-Signature', b64);
-
-// Restore later
-const sigFromJson = MajikSignature.fromJSON(json);
-const sigFromB64 = MajikSignature.deserialize(b64);
-```
-
----
-
-## Signature Envelope
-
-Every `MajikSignature` serializes to the following JSON structure:
+A single signer's envelope (`MajikSignatureJSON`):
 
 ```json
 {
@@ -732,18 +633,54 @@ Every `MajikSignature` serializes to the following JSON structure:
   "contentType": "audio/wav",
   "timestamp": "2026-01-01T00:00:00.000Z",
   "edSignature": "base64-ed25519-signature-64-bytes",
-  "mlDsaSignature": "base64-ml-dsa-87-signature-4595-bytes"
+  "mlDsaSignature": "base64-ml-dsa-87-signature-4595-bytes",
+  "allowlistHash": "base64-sha256-of-allowlist-44-chars",
+  "tsa": { "...": "optional MajikTimestamp, see below" }
 }
 ```
 
-**Approximate serialized sizes:**
+`allowlistHash` and `tsa` are only present when applicable — omitted entirely otherwise, never `null`.
+
+What's actually embedded into a file is a **`MultiSigEnvelope`**, wrapping one or more of the above:
+
+```json
+{
+  "version": 1,
+  "signatures": [ /* MajikSignatureJSON[] */ ],
+  "allowlist": [ /* ExpectedSigner[], optional */ ],
+  "allowlistSignerId": "fingerprint-of-issuer",
+  "sealHash": "128-hex-char-sha3-512-hash",
+  "sealTimestamp": "2026-01-01T00:00:00.000Z",
+  "sealedBy": "fingerprint-of-issuer"
+}
+```
+
+Files signed before multi-sig support existed contain a bare `MajikSignatureJSON` object at the root instead of this wrapper. The library detects and promotes this shape transparently — every public API always returns/accepts `MultiSigEnvelope` semantics, and old signatures continue to verify unmodified.
+
+**Approximate serialized sizes (per signer):**
 
 | Format            | Size   |
-| ----------------- | ------ |
-| JSON (minified)   | ~10 KB |
-| Base64 serialized | ~14 KB |
+| ------------------ | ------ |
+| JSON (minified)     | ~10 KB |
+| Base64 serialized   | ~14 KB |
 
-The dominant contributor is `mlDsaSignature` (~6 KB base64) and `signerMlDsaPublicKey` (~3.5 KB base64). This is the inherent cost of post-quantum signatures and is negligible relative to any content being signed.
+The dominant contributor is `mlDsaSignature` (~6 KB base64) and `signerMlDsaPublicKey` (~3.5 KB base64) — the inherent cost of post-quantum signatures, negligible relative to any real content being signed.
+
+---
+
+## Error Handling
+
+Majik Signature throws a typed error hierarchy rather than generic `Error` objects, so you can catch precisely what you need:
+
+| Error Class                          | Thrown when...                                                          |
+| ------------------------------------- | ------------------------------------------------------------------------- |
+| `MajikSignatureError`                 | Base class; also thrown for general/unexpected failures                  |
+| `MajikSignatureKeyError`              | The key is locked, lacks signing keys, or isn't the required issuer      |
+| `MajikSignatureVerificationError`     | Verification fails unexpectedly (not the same as `valid: false`)         |
+| `MajikSignatureSerializationError`    | JSON/base64 parsing or encoding fails                                    |
+| `MajikSignatureAllowlistError`        | A non-listed signer attempts to sign a restricted file                   |
+
+Note the distinction: `verify()`/`verifyFile()` return `{ valid: false, reason }` for a signature that *fails cryptographic verification* — that's an expected, handled outcome, not an exception. Exceptions are reserved for misuse (locked keys, malformed envelopes, disallowed signers, sealed files, etc.).
 
 ---
 
@@ -751,55 +688,93 @@ The dominant contributor is `mlDsaSignature` (~6 KB base64) and `signerMlDsaPubl
 
 ### What is Guaranteed
 
-- **Content integrity**: Any byte change to the content invalidates the signature
-- **Signer binding**: The signature is cryptographically bound to a specific MajikKey fingerprint
-- **Timestamp binding**: The signing timestamp cannot be altered after signing
-- **Forgery resistance (classical)**: Ed25519 provides 128-bit classical security
-- **Forgery resistance (post-quantum)**: ML-DSA-87 provides NIST Category 5 post-quantum security
-- **Hybrid downgrade resistance**: Both algorithms must be broken simultaneously to forge — a break in one is not sufficient
-- **Embed integrity**: File embedding always signs original bytes — the embedding container is never part of what's signed
+- **Content integrity** — any byte change to the content invalidates the signature
+- **Signer binding** — the signature is cryptographically bound to a specific `MajikKey` fingerprint
+- **Timestamp binding** — the signing timestamp cannot be altered after signing
+- **Forgery resistance (classical)** — Ed25519 provides 128-bit classical security
+- **Forgery resistance (post-quantum)** — ML-DSA-87 provides NIST Category 5 post-quantum security
+- **Hybrid downgrade resistance** — both algorithms must be broken simultaneously to forge a signature
+- **Allowlist integrity** — tampering with a restricted file's allowlist invalidates the issuer's own signature
+- **Seal integrity** — sealed envelopes reject all further signing attempts, including from the issuer
+- **Embed integrity** — file embedding always signs original bytes; the container format is never part of what's signed
 
 ### What is Your Responsibility
 
-- **Signer identity verification**: The library proves content was signed by a specific key. It does not prove who owns that key in the real world. Maintain the mapping between `signerId` (fingerprint) and a real-world identity through your own means.
-- **Byte-for-byte content consistency**: The same bytes must be passed to both `sign()` and `verify()`. For strings, both sides must use UTF-8. For JSON, both sides must use the same `JSON.stringify()` output.
-- **Key upgrade**: Legacy MajikKey accounts without signing keys must be re-imported via `importFromMnemonicBackup()` before signing. Check with `key.hasSigningKeys`.
+- **Signer identity verification** — the library proves content was signed by a specific key. It does not prove who owns that key in the real world. Maintain the mapping between `signerId` and a real-world identity through your own means.
+- **Byte-for-byte content consistency** — the same bytes must be passed to both `sign()` and `verify()`. For strings, both sides must use UTF-8; for JSON, both sides must use the same `JSON.stringify()` output.
+- **Key upgrade** — legacy `MajikKey` accounts without signing keys must be re-imported via `importFromMnemonicBackup()` before signing. Check with `key.hasSigningKeys`.
+- **TSA trust** — the library verifies a TSA signature cryptographically, but trusting *which* TSA identity to accept is your application's decision.
 
 ### What NOT to Do
 
-❌ **DON'T** trust `extractPublicKeys()` without cross-checking `signerId` against a known trusted source  
-❌ **DON'T** sign JSON by passing the object directly — always `JSON.stringify()` first  
-❌ **DON'T** transform file bytes (compress, transcode, re-encode) between signing and verification  
-❌ **DON'T** pass a locked key to `sign()` or `signFile()` — call `unlock()` first  
-❌ **DON'T** use `contentType` as a security mechanism — it is advisory only and not enforced  
-❌ **DON'T** assume a Tier-2 trailer signature survives re-muxing — use native-metadata formats where durability matters  
+- ❌ **DON'T** trust `extractPublicKeys()` / extracted signer info without cross-checking `signerId` against a known trusted source
+- ❌ **DON'T** sign a JSON object by passing it directly — always `JSON.stringify()` first
+- ❌ **DON'T** transform file bytes (compress, transcode, re-encode) between signing and verification
+- ❌ **DON'T** pass a locked key to `sign()` or `signFile()` — call `unlock()` first
+- ❌ **DON'T** use `contentType` as a security mechanism — it is advisory only and not enforced
+- ❌ **DON'T** assume a Tier-2 trailer signature survives re-muxing or re-encoding — use native-metadata formats where durability matters
+- ❌ **DON'T** treat the experimental image-stamping APIs as stable in production
 
 ### What TO Do
 
-✅ **DO** verify `result.signerId` matches a known trusted fingerprint after calling `verify()` or `verifyFile()`  
-✅ **DO** use `verifyWithKey()` / `verifyFile(key)` when you have the signer's `MajikKey` — it handles key extraction safely  
-✅ **DO** lock the key immediately after signing — `key.lock()` purges secret keys from memory  
-✅ **DO** use `signFile()` for media and documents to keep signature and content together  
-✅ **DO** use `isSigned()` as a fast guard before calling `verifyFile()` in hot paths  
-✅ **DO** use `CONTENT_TYPES` constants for standard content type labels  
+- ✅ **DO** verify `result.signerId` for every entry returned by `verifyFile()` against a known trusted fingerprint
+- ✅ **DO** use `verifyWithKey()` / `verifyFile(key)` when you have the signer's `MajikKey` — it handles key extraction safely
+- ✅ **DO** lock the key immediately after signing — `key.lock()` purges secret keys from memory
+- ✅ **DO** use `signFile()` for media and documents to keep signature and content together
+- ✅ **DO** use `isSigned()` as a fast guard before calling `verifyFile()` in hot paths
+- ✅ **DO** use `canSign()` to give users a clear reason *before* they attempt to sign a restricted file
+- ✅ **DO** use `CONTENT_TYPES` constants for standard content type labels
+
+---
+
+## The Majikah Ecosystem
+
+Majik Signature is the cryptographic signing layer shared across Majikah's product suite. Each product uses this SDK for a different job:
+
+### [Majik Signature](https://majikah.solutions/products/majik-signature) — Standalone App
+
+[![Majik Signature Hero](https://github.com/user-attachments/assets/781bb778-9535-4b1f-bbc5-820550ecc864)](https://signature.majikah.solutions)
+
+
+The standalone desktop and web application built on top of this SDK. It's the fastest way to sign and verify files without writing any code:
+
+- Sign virtually any file — documents, PDFs, Office files, images, audio, video, source code, archives, and more — entirely **locally on your device**. No account, no upload, no internet connection required for offline signing and verification.
+- **Visual Stamping** — signature appearances drawn or imported, with fonts, colors, templates, placement, rotation, transparency, and multi-page layouts for PDF, DOCX, and XLSX.
+- **Audio Stamping** — embed producer tags, voice tags, or audio watermarks directly into signed audio, with a full mixing timeline (volume, pan, pitch, EQ, trim, loop).
+- **Trusted Timestamps** — every account gets 5 free Trusted Timestamps every 24 hours; local timestamps remain fully supported offline.
+- **Batch processing** — drag-and-drop folders, recursive ZIP processing, individual or bulk sealing, per-file verification results.
+- **Multi-party workflows** — signing allowlists, open or restricted modes, progress tracking for pending vs. completed signatures.
+- Built with Tauri for a lightweight, fast, secure desktop experience — available on the **Microsoft Store**, with a full-featured **web app** as well.
+
+### 🧾 Majik Buwiz
+
+BIR-compliant invoicing and financial management for the Philippines. Every `MajikInvoice` is encrypted and signed using this SDK before it ever leaves the client — the backend stores it as an opaque, signed blob and never sees the decrypted contents. Multi-signature support means invoices can carry independent approvals from multiple parties, and sealing finalizes a document once all required approvals are in.
+
+### 💬 Majik Message
+
+Secure messaging built on Majik Keys and Majik Signatures, binding every message to a verifiable identity.
+
+[Read Docs](https://majikah.solutions/products/majik-message/docs) · [Microsoft Store](https://apps.microsoft.com/detail/9pmjgvzzjspn) · [Web App](https://message.majikah.solutions)
+
+### 🪪 Majik Universal ID
+
+The identity layer of the Majikah ecosystem, using the same Majik Key + Majik Signature foundation to bind verifiable credentials to a cryptographic identity rather than a centralized account.
 
 ---
 
 ## Related Projects
 
 ### [Majik Key](https://www.npmjs.com/package/@majikah/majik-key)
-Seed phrase account library — required peer dependency for signing.
+Seed phrase account library — the required peer dependency for signing.
 
 ### [Majik Message](https://message.majikah.solutions)
 Secure messaging platform using Majik Keys and Majik Signatures for identity-bound communication.
-
-[Read Docs](https://majikah.solutions/products/majik-message/docs) · [Microsoft Store](https://apps.microsoft.com/detail/9pmjgvzzjspn)
 
 ---
 
 ## Contributing
 
-If you want to contribute or help extend support to more platforms, reach out via email. All contributions are welcome!
+If you want to contribute or help extend support to more platforms or file formats, reach out via email. All contributions are welcome!
 
 ---
 
@@ -811,15 +786,17 @@ If you want to contribute or help extend support to more platforms, reach out vi
 
 ## Author
 
-Made with 💙 by [@thezelijah](https://github.com/jedlsf)
+Developed by **Josef Elijah Fabian (Zelijah)** | [Majikah Solutions OPC](https://majikah.solutions/about)
 
-**Developer**: Josef Elijah Fabian  
-**GitHub**: [https://github.com/jedlsf](https://github.com/jedlsf)  
+
+**Developer**: [Josef Elijah Fabian](https://github.com/jedlsf)
+**GitHub**: [https://github.com/Majikah](https://github.com/Majikah)
 **Project Repository**: [https://github.com/Majikah/majik-signature](https://github.com/Majikah/majik-signature)
 
 ---
 
 ## Contact
 
-- **Business Email**: [business@thezelijah.world](mailto:business@thezelijah.world)
+- **Business Email**: [business@majikah.solutions](mailto:business@majikah.solutions)
 - **Official Website**: [https://www.thezelijah.world](https://www.thezelijah.world)
+- **Majikah Ecosystem**: [https://majikah.solutions](https://majikah.solutions)
