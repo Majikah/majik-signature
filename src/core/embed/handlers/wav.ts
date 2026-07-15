@@ -170,3 +170,9 @@ export class WavHandler implements FormatHandler {
     return chunks;
   }
 }
+
+// Freeze static methods
+Object.freeze(WavHandler);
+
+// Freeze instance methods
+Object.freeze(WavHandler.prototype);

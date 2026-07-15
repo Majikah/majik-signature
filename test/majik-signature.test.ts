@@ -6,6 +6,7 @@ import { MajikKey } from "@majikah/majik-key";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { MajikChainAnchor } from "../src/anchor/types";
 
 const __currentDir = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(__currentDir, "fixtures");
@@ -61,8 +62,6 @@ async function corruptBlob(blob: Blob): Promise<Blob> {
   }
   return new Blob([view], { type: blob.type });
 }
-
-
 
 // ─── 2. TEST SUITE ──────────────────────────────────────────────────────────
 
@@ -458,6 +457,218 @@ describe("MajikSignature Class Unit Tests", () => {
         // Ensure at least one result processed and returned valid = false
         expect(verifyResults.length).toBeGreaterThan(0);
         expect(verifyResults[0].valid).toBe(false);
+      });
+    });
+
+    // ── CHAIN ANCHORING CAPABILITIES ─────────────────────────────────────────
+    describe("Chain Anchoring Capabilities", () => {
+      let sealedBlob: Blob;
+      let readyToSealBlob: Blob;
+
+      beforeAll(async () => {
+        // Build a fresh unsealed and sealed file for anchoring checks
+        const expectedSigners = [
+          MajikSignature.expectedSignerFromKey(issuerKey),
+          MajikSignature.expectedSignerFromKey(allowedKey1),
+        ];
+        const { blob: step1 } = await MajikSignature.signFile(
+          baseBlob,
+          issuerKey,
+          { expectedSigners },
+        );
+        const { blob: step2 } = await MajikSignature.signFile(
+          step1,
+          allowedKey1,
+        );
+        readyToSealBlob = step2;
+
+        const { blob: step3 } = await MajikSignature.seal(
+          readyToSealBlob,
+          issuerKey,
+        );
+        sealedBlob = step3;
+      });
+
+      it("should reject anchoring eligibility checks on unsigned files", async () => {
+        const result = await MajikSignature.canAnchor(baseBlob);
+        expect(result.permitted).toBe(false);
+        expect(result.reason).toContain("no envelope found");
+      });
+
+      it("should reject anchoring eligibility checks on signed but unsealed files", async () => {
+        const result = await MajikSignature.canAnchor(readyToSealBlob);
+        expect(result.permitted).toBe(false);
+        expect(result.reason).toContain("File is not sealed");
+      });
+
+      it("should permit anchoring on a sealed file", async () => {
+        const result = await MajikSignature.canAnchor(sealedBlob);
+        expect(result.permitted).toBe(true);
+      });
+
+      it("should throw when trying to register an anchor on an unsigned file", async () => {
+        const dummyAnchor: MajikChainAnchor = {
+          version: 1,
+          id: "anchor-1",
+          payload: {
+            chain: "solana",
+            network: "mainnet-beta",
+            digest: {
+              algorithm: "SHA3-512",
+              value: "dummy-seal-hash",
+            },
+          },
+          memo: "majik-notary-v1:dummy-seal-hash",
+          txSignature: "dummy-tx-signature",
+          slot: 12345,
+          blockTime: 1700000000,
+          confirmedAt: "2026-07-16T02:18:20.000Z",
+          status: "confirmed",
+        };
+
+        await expect(
+          MajikSignature.registerChainAnchor(baseBlob, dummyAnchor),
+        ).rejects.toThrow(/no envelope found/);
+      });
+
+      it("should throw when trying to register an anchor on an unsealed file", async () => {
+        const sealInfo = await MajikSignature.getSealInfo(sealedBlob);
+        const dummyAnchor: MajikChainAnchor = {
+          version: 1,
+          id: "anchor-1",
+          payload: {
+            chain: "solana",
+            network: "mainnet-beta",
+            digest: {
+              algorithm: "SHA3-512",
+              value: sealInfo!.sealHash,
+            },
+          },
+          memo: `majik-notary-v1:${sealInfo!.sealHash}`,
+          txSignature: "dummy-tx-signature",
+          slot: 12345,
+          blockTime: 1700000000,
+          confirmedAt: "2026-07-16T02:18:20.000Z",
+          status: "confirmed",
+        };
+
+        await expect(
+          MajikSignature.registerChainAnchor(readyToSealBlob, dummyAnchor),
+        ).rejects.toThrow(/file must be sealed first/);
+      });
+
+      it("should throw when the anchor digest doesn't match the envelope's seal hash", async () => {
+        const dummyAnchor: MajikChainAnchor = {
+          version: 1,
+          id: "anchor-1",
+          payload: {
+            chain: "solana",
+            network: "mainnet-beta",
+            digest: {
+              algorithm: "SHA3-512",
+              value: "mismatched-hash-value-000000000000000000000000000000000",
+            },
+          },
+          memo: "majik-notary-v1:mismatched-hash-value",
+          txSignature: "dummy-tx-signature",
+          slot: 12345,
+          blockTime: 1700000000,
+          confirmedAt: "2026-07-16T02:18:20.000Z",
+          status: "confirmed",
+        };
+
+        await expect(
+          MajikSignature.registerChainAnchor(sealedBlob, dummyAnchor),
+        ).rejects.toThrow(
+          /digest does not match the envelope's current seal hash/,
+        );
+      });
+
+      it("should successfully register and retrieve chain anchors on a sealed file", async () => {
+        const sealInfo = await MajikSignature.getSealInfo(sealedBlob);
+        expect(sealInfo).not.toBeNull();
+
+        const anchor: MajikChainAnchor = {
+          version: 1,
+          id: "anchor-uuid-777",
+          payload: {
+            chain: "solana",
+            network: "mainnet-beta",
+            digest: {
+              algorithm: "SHA3-512",
+              value: sealInfo!.sealHash,
+            },
+          },
+          memo: `majik-notary-v1:${sealInfo!.sealHash}`,
+          txSignature: "52GgP8F9abcdefghijklmnopqrstuvwxyz",
+          slot: 9876543,
+          blockTime: 1700000000,
+          confirmedAt: "2026-07-16T02:18:20.000Z",
+          status: "confirmed",
+        };
+
+        // Assert initially empty list of anchors
+        let anchors = await MajikSignature.getChainAnchors(sealedBlob);
+        expect(anchors).toEqual([]);
+
+        // Register the anchor record
+        const anchoredBlob = await MajikSignature.registerChainAnchor(
+          sealedBlob,
+          anchor,
+        );
+
+        // Retrieve and assert correctly updated anchor payload
+        anchors = await MajikSignature.getChainAnchors(anchoredBlob);
+        expect(anchors).toHaveLength(1);
+        expect(anchors[0]).toEqual(anchor);
+      });
+
+      it("should upsert instead of duplicate when registering the same anchor ID twice", async () => {
+        const sealInfo = await MajikSignature.getSealInfo(sealedBlob);
+        const anchorId = "anchor-uuid-dup-check";
+
+        const anchor: MajikChainAnchor = {
+          version: 1,
+          id: anchorId,
+          payload: {
+            chain: "solana",
+            network: "mainnet-beta",
+            digest: {
+              algorithm: "SHA3-512",
+              value: sealInfo!.sealHash,
+            },
+          },
+          memo: `majik-notary-v1:${sealInfo!.sealHash}`,
+          txSignature: "original-tx-sig",
+          slot: 9876543,
+          blockTime: 1700000000,
+          confirmedAt: "2026-07-16T02:18:20.000Z",
+          status: "pending",
+        };
+
+        // Register first time
+        const anchoredBlob1 = await MajikSignature.registerChainAnchor(
+          sealedBlob,
+          anchor,
+        );
+
+        // Update transaction status parameters for the duplicate register check
+        const updatedAnchor: MajikChainAnchor = {
+          ...anchor,
+          txSignature: "finalized-tx-sig",
+          status: "confirmed",
+        };
+
+        // Register a second time with modified properties but identical anchor ID
+        const anchoredBlob2 = await MajikSignature.registerChainAnchor(
+          anchoredBlob1,
+          updatedAnchor,
+        );
+
+        const anchors = await MajikSignature.getChainAnchors(anchoredBlob2);
+        expect(anchors).toHaveLength(1); // Length is still 1 (the record was upserted)
+        expect(anchors[0].status).toBe("confirmed");
+        expect(anchors[0].txSignature).toBe("finalized-tx-sig");
       });
     });
   });

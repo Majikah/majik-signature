@@ -17,7 +17,13 @@
 
 import { FormatHandler } from "../../types";
 import { MP4_BOX_TYPE } from "../constants";
-import { concatBytes, readUint32BE, textDecode, textEncode, writeUint32BE } from "../utils";
+import {
+  concatBytes,
+  readUint32BE,
+  textDecode,
+  textEncode,
+  writeUint32BE,
+} from "../utils";
 
 const MAJK_TYPE = textEncode(MP4_BOX_TYPE); // "majk"
 
@@ -198,3 +204,9 @@ export class Mp4Handler implements FormatHandler {
     return concatBytes(writeUint32BE(size), textEncode(type), data);
   }
 }
+
+// Freeze static methods
+Object.freeze(Mp4Handler);
+
+// Freeze instance methods
+Object.freeze(Mp4Handler.prototype);

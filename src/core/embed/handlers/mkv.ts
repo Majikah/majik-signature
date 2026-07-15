@@ -15,7 +15,6 @@
 import { FormatHandler } from "../../types";
 import { appendTrailer, extractTrailer } from "../utils";
 
-
 const EBML_MAGIC = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3]);
 
 export class MkvHandler implements FormatHandler {
@@ -53,3 +52,9 @@ export class MkvHandler implements FormatHandler {
     return result ? result.original : bytes;
   }
 }
+
+// Freeze static methods
+Object.freeze(MkvHandler);
+
+// Freeze instance methods
+Object.freeze(MkvHandler.prototype);

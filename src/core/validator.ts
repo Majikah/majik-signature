@@ -339,6 +339,14 @@ export class MajikSignatureValidator {
       );
   }
 
+  static validateSealHash(hash: string): void {
+    if (typeof hash !== "string" || hash.length !== SEAL_HASH_HEX_LEN)
+      throw new MajikSignatureValidationError(
+        `sealHash must be exactly ${SEAL_HASH_HEX_LEN} hex chars (SHA3-512)`,
+        "sealHash",
+      );
+  }
+
   // ── MultiSigEnvelope validator ───────────────────────────────────────────────
 
   static validateMultiSigEnvelope(
@@ -460,3 +468,9 @@ export class MajikSignatureValidator {
     MajikSignatureValidator.validateJSON(t.signature); // reuses existing envelope validation
   }
 }
+
+// Freeze static methods
+Object.freeze(MajikSignatureValidator);
+
+// Freeze instance methods
+Object.freeze(MajikSignatureValidator.prototype);

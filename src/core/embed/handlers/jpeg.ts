@@ -168,3 +168,10 @@ export class JpegHandler implements FormatHandler {
     return concatBytes(...parts);
   }
 }
+
+
+// Freeze static methods
+Object.freeze(JpegHandler);
+
+// Freeze instance methods
+Object.freeze(JpegHandler.prototype);

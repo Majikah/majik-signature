@@ -93,7 +93,7 @@ export class OfficeHandler implements FormatHandler {
       return bytes;
     }
   }
-  
+
   private _isZip(bytes: Uint8Array): boolean {
     return (
       bytes.length >= 4 &&
@@ -104,3 +104,9 @@ export class OfficeHandler implements FormatHandler {
     );
   }
 }
+
+// Freeze static methods
+Object.freeze(OfficeHandler);
+
+// Freeze instance methods
+Object.freeze(OfficeHandler.prototype);

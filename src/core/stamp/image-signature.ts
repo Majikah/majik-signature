@@ -621,3 +621,9 @@ function base64ToBytes(b64: string): Uint8Array {
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
 }
+
+// Freeze static methods
+Object.freeze(MajikImageSignature);
+
+// Freeze instance methods
+Object.freeze(MajikImageSignature.prototype);

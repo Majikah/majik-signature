@@ -72,3 +72,9 @@ export class PdfHandler implements FormatHandler {
     return new TextDecoder().decode(bytes.slice(sigStart, sigEnd));
   }
 }
+
+// Freeze static methods
+Object.freeze(PdfHandler);
+
+// Freeze instance methods
+Object.freeze(PdfHandler.prototype);

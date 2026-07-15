@@ -15,9 +15,13 @@
  */
 
 import { FormatHandler } from "../../types";
-import { concatBytes, readUint32LE, textDecode, textEncode, writeUint32LE } from "../utils";
-
-
+import {
+  concatBytes,
+  readUint32LE,
+  textDecode,
+  textEncode,
+  writeUint32LE,
+} from "../utils";
 
 const FLAC_MAGIC = textEncode("fLaC");
 const BLOCK_TYPE_STREAMINFO = 0;
@@ -218,3 +222,9 @@ export class FlacHandler implements FormatHandler {
     return comments;
   }
 }
+
+// Freeze static methods
+Object.freeze(FlacHandler);
+
+// Freeze instance methods
+Object.freeze(FlacHandler.prototype);

@@ -3,6 +3,7 @@
  * Public types for the MajikSignature library.
  */
 
+import { MajikChainAnchor } from "../anchor/types";
 import type { ContentType } from "./constants";
 
 export type { ContentType };
@@ -126,6 +127,7 @@ export interface MultiSigEnvelope {
 
   /**
    * SHA3-512 hash of the canonical seal payload (all signatories + sealTimestamp).
+   * Hex-encoded, 128 chars — matches SEAL_HASH_HEX_LEN.
    * Present only when the issuer has sealed the envelope.
    * A sealed envelope rejects all further signing attempts, including from the issuer.
    */
@@ -142,6 +144,8 @@ export interface MultiSigEnvelope {
    * Must equal allowlistSignerId — only the issuer can seal.
    */
   sealedBy?: string;
+
+  chainAnchors?: MajikChainAnchor[]; // NEW — array from day one, multi-chain-ready
 }
 
 /**
@@ -209,7 +213,7 @@ export interface SealVerificationResult {
  * Returned by getSealInfo().
  */
 export interface SealInfo {
-  /** SHA3-512 hash of the canonical seal payload, base64 */
+  /** SHA3-512 hash of the canonical seal payload, hex-encoded (128 chars) */
   sealHash: string;
   /** ISO 8601 timestamp of when the seal was applied */
   sealTimestamp: string;

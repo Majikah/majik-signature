@@ -67,6 +67,7 @@ import {
   computeSealHash,
   buildSignatoriesResult,
 } from "../multi-sig";
+import { MajikChainAnchor } from "../../anchor/types";
 
 // ─── Adapter interfaces ───────────────────────────────────────────────────────
 
@@ -887,4 +888,116 @@ export class MajikSignatureEmbed {
   static listHandlers(): string[] {
     return DEFAULT_REGISTRY.listHandlers();
   }
+
+  // ── canAnchor ──────────────────────────────────────────────────────────────
+
+  /**
+   * Check whether a file is eligible for chain anchoring.
+   * Anchoring requires a sealed envelope — permitted = isSealed(file).
+   * Chain-agnostic: does not know or care which chain the caller intends to use.
+   */
+  static async canAnchor(
+    file: Blob,
+    options?: ExtractOptions,
+  ): Promise<{ permitted: boolean; reason?: string }> {
+    const result = await MajikSignatureEmbed.extract(file, options);
+
+    if (!result) {
+      return {
+        permitted: false,
+        reason: "Cannot anchor an unsigned file — no envelope found.",
+      };
+    }
+
+    if (!result.envelope.sealHash) {
+      return {
+        permitted: false,
+        reason: "File is not sealed. Anchoring requires a sealed envelope.",
+      };
+    }
+
+    return { permitted: true };
+  }
+
+  // ── registerChainAnchor ───────────────────────────────────────────────────
+
+  /**
+   * Embed an already-confirmed chain anchor into the envelope.
+   * Does NOT talk to any chain — purely appends a record it's handed.
+   *
+   * Defensive checks (beyond the master plan's minimum):
+   *   - File must be sealed
+   *   - anchor.payload.digest.value must match the envelope's current sealHash —
+   *     catches a caller accidentally embedding an anchor computed against a
+   *     stale seal (e.g. file was re-sealed between notarize() and this call)
+   *   - Upserts by anchor.id rather than blind-pushing, so a duplicate call
+   *     with the same anchor (e.g. retried after a network blip) doesn't
+   *     produce two entries for the same on-chain transaction
+   */
+  static async registerChainAnchor(
+    file: Blob,
+    anchor: MajikChainAnchor,
+    options?: ExtractOptions,
+  ): Promise<EmbedResult> {
+    const bytes = await blobToBytes(file);
+    const mimeType = options?.mimeType ?? detectMimeType(bytes, file.type);
+    const handler = DEFAULT_REGISTRY.resolve(bytes, mimeType);
+
+    const raw = await handler.extract(bytes);
+    if (!raw) {
+      throw new MajikSignatureError(
+        "Cannot register a chain anchor on an unsigned file — no envelope found.",
+      );
+    }
+
+    const envelope = parseEnvelope(raw);
+
+    if (!envelope.sealHash) {
+      throw new MajikSignatureError(
+        "Cannot register a chain anchor — file must be sealed first.",
+      );
+    }
+
+    if (anchor.payload.digest.value !== envelope.sealHash) {
+      throw new MajikSignatureError(
+        "Chain anchor digest does not match the envelope's current seal hash.",
+      );
+    }
+
+    const existing = envelope.chainAnchors ?? [];
+    const nextAnchors = existing.some((a) => a.id === anchor.id)
+      ? existing.map((a) => (a.id === anchor.id ? anchor : a))
+      : [...existing, anchor];
+
+    const nextEnvelope: MultiSigEnvelope = {
+      ...envelope,
+      chainAnchors: nextAnchors,
+    };
+
+    const originalBytes = await handler.strip(bytes);
+    const resultBytes = await handler.embed(
+      originalBytes,
+      JSON.stringify(nextEnvelope),
+    );
+    const blob = bytesToBlob(resultBytes, mimeType);
+
+    return { blob, handler: handler.name, mimeType };
+  }
+
+  // ── getChainAnchors ────────────────────────────────────────────────────────
+
+  static async getChainAnchors(
+    file: Blob,
+    options?: ExtractOptions,
+  ): Promise<MajikChainAnchor[]> {
+    const result = await MajikSignatureEmbed.extract(file, options);
+    if (!result) return [];
+    return result.envelope.chainAnchors ?? [];
+  }
 }
+
+// Freeze static methods
+Object.freeze(MajikSignatureEmbed);
+
+// Freeze instance methods
+Object.freeze(MajikSignatureEmbed.prototype);

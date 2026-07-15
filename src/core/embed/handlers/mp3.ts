@@ -225,3 +225,9 @@ export class Mp3Handler implements FormatHandler {
     return concatBytes(newHeader, audioData);
   }
 }
+
+// Freeze static methods
+Object.freeze(Mp3Handler);
+
+// Freeze instance methods
+Object.freeze(Mp3Handler.prototype);

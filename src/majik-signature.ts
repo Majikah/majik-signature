@@ -1,38 +1,7 @@
 /**
  * majik-signature.ts
- *
  * MajikSignature — hybrid Ed25519 + ML-DSA-87 content signing and verification.
  *
- * Signing requires an unlocked MajikKey with signing keys present.
- * Verification requires only the signer's public keys — no private key needed.
- *
- * Signature envelope (MajikSignatureJSON):
- *   - Ed25519 signature    (64 bytes, classical)
- *   - ML-DSA-87 signature  (4595 bytes, post-quantum)
- *   - Both cover the same canonical payload (domain + JSON metadata)
- *   - Verification requires BOTH to pass — hybrid security
- *
- * Multi-sig support:
- *   - Files embed a MultiSigEnvelope containing an array of MajikSignatureJSON
- *   - Each signer's entry is identified by their signerId (fingerprint)
- *   - Re-signing with the same key overwrites that signer's existing entry
- *   - Old single-sig files are promoted transparently — no migration needed
- *
- * Allowlist:
- *   - The first signer may optionally restrict future signers via expectedSigners
- *   - The allowlist is cryptographically committed to via allowlistHash in the
- *     establishing signer's canonical payload (covered by Ed25519 + ML-DSA-87)
- *   - Non-listed signers are rejected before any cryptographic operation
- *
- * Seal:
- *   - Only the issuer (allowlistSignerId) may seal a restricted multi-sig file
- *   - Sealing computes a SHA3-512 hash over all current signatories + timestamp
- *   - A sealed envelope rejects all further signing attempts
- *
- * Canonical payload:
- *   "majik-signature-v1:" + JSON({ v, id, ts, ct, hash[, alh] })
- *   where hash = SHA-256(content), alh = SHA-256(canonical allowlist) — omitted
- *   when no allowlist is set, preserving backward compat with old signatures.
  */
 
 import * as ed25519 from "@stablelib/ed25519";
@@ -40,6 +9,7 @@ import { ml_dsa87 } from "@noble/post-quantum/ml-dsa.js";
 import type { MajikKey } from "@majikah/majik-key";
 
 import {
+  MAJIK_NOTARY_MEMO_DOMAIN,
   MAJIK_SIGNATURE_VERSION,
   MAJIK_TIMESTAMP_VERSION,
 } from "./core/constants";
@@ -77,9 +47,46 @@ import type {
   ImageSignOptions,
   ImageSignatureStub,
 } from "./core/stamp";
+import { MajikChainAnchor, MajikChainAnchorMemo } from "./anchor/types";
 
-// ─── MajikSignature ───────────────────────────────────────────────────────────
+const secureFill = Uint8Array.prototype.fill;
 
+/**
+ * Majik Signature
+ * ---
+ * Hybrid Ed25519 + ML-DSA-87 content signing and verification.
+ *
+ * Signing requires an unlocked MajikKey with signing keys present.
+ * Verification requires only the signer's public keys — no private key needed.
+ *
+ * Signature envelope (MajikSignatureJSON):
+ *   - Ed25519 signature    (64 bytes, classical)
+ *   - ML-DSA-87 signature  (4595 bytes, post-quantum)
+ *   - Both cover the same canonical payload (domain + JSON metadata)
+ *   - Verification requires BOTH to pass — hybrid security
+ *
+ * Multi-sig support:
+ *   - Files embed a MultiSigEnvelope containing an array of MajikSignatureJSON
+ *   - Each signer's entry is identified by their signerId (fingerprint)
+ *   - Re-signing with the same key overwrites that signer's existing entry
+ *   - Old single-sig files are promoted transparently — no migration needed
+ *
+ * Allowlist:
+ *   - The first signer may optionally restrict future signers via expectedSigners
+ *   - The allowlist is cryptographically committed to via allowlistHash in the
+ *     establishing signer's canonical payload (covered by Ed25519 + ML-DSA-87)
+ *   - Non-listed signers are rejected before any cryptographic operation
+ *
+ * Seal:
+ *   - Only the issuer (allowlistSignerId) may seal a restricted multi-sig file
+ *   - Sealing computes a SHA3-512 hash over all current signatories + timestamp
+ *   - A sealed envelope rejects all further signing attempts
+ *
+ * Canonical payload:
+ *   "majik-signature-v1:" + JSON({ v, id, ts, ct, hash[, alh] })
+ *   where hash = SHA-256(content), alh = SHA-256(canonical allowlist) — omitted
+ *   when no allowlist is set, preserving backward compat with old signatures.
+ */
 export class MajikSignature {
   private readonly _version: 1;
   private readonly _signerId: string;
@@ -165,28 +172,32 @@ export class MajikSignature {
     options?: SignOptions & { allowlistHash?: string },
     debug: boolean = false,
   ): Promise<MajikSignature> {
+    MajikSignatureValidator.validateContent(content);
+    MajikSignatureValidator.assertDefined(key, "key");
+    MajikSignatureValidator.validateContentType(options?.contentType);
+
+    if (key.isLocked)
+      throw new MajikSignatureKeyError(
+        "MajikKey is locked. Call unlock() before signing.",
+      );
+
+    if (!key.hasSigningKeys)
+      throw new MajikSignatureKeyError(
+        "MajikKey has no signing keys. Re-import via importFromMnemonicBackup() to enable signing.",
+      );
+
+    let edSecretKeyClone: Uint8Array | undefined;
+    let mlDsaSecretKeyClone: Uint8Array | undefined;
+    const rawEdKey = key.getEdSecretKey();
+    const rawMlDsaKey = key.getMlDsaSecretKey();
+
+    edSecretKeyClone = rawEdKey.slice();
+    mlDsaSecretKeyClone = rawMlDsaKey.slice();
+    MajikSignatureValidator.validateEdSecretKey(edSecretKeyClone);
+    MajikSignatureValidator.validateMlDsaSecretKey(mlDsaSecretKeyClone);
     try {
-      MajikSignatureValidator.validateContent(content);
-      MajikSignatureValidator.assertDefined(key, "key");
-      MajikSignatureValidator.validateContentType(options?.contentType);
-
-      if (key.isLocked)
-        throw new MajikSignatureKeyError(
-          "MajikKey is locked. Call unlock() before signing.",
-        );
-
-      if (!key.hasSigningKeys)
-        throw new MajikSignatureKeyError(
-          "MajikKey has no signing keys. Re-import via importFromMnemonicBackup() to enable signing.",
-        );
-
-      const edSecretKey = key.getEdSecretKey();
-      const mlDsaSecretKey = key.getMlDsaSecretKey();
       const edPublicKey = key.edPublicKey!;
       const mlDsaPublicKey = key.mlDsaPublicKey!;
-
-      MajikSignatureValidator.validateEdSecretKey(edSecretKey);
-      MajikSignatureValidator.validateMlDsaSecretKey(mlDsaSecretKey);
 
       const contentHashBytes = hashContent(content);
       const contentHash = bytesToBase64(contentHashBytes);
@@ -205,15 +216,21 @@ export class MajikSignature {
 
       if (debug) console.log("Signing Payload:", payload);
 
-      const edSigBytes = ed25519.sign(edSecretKey, payload);
+      const edSigBytes = ed25519.sign(edSecretKeyClone, payload);
 
       if (debug) {
-        console.log("mlDsaSecretKey type:", mlDsaSecretKey?.constructor?.name);
-        console.log("mlDsaSecretKey length:", mlDsaSecretKey?.length);
-        console.log("is Uint8Array:", mlDsaSecretKey instanceof Uint8Array);
+        console.log(
+          "mlDsaSecretKey type:",
+          mlDsaSecretKeyClone?.constructor?.name,
+        );
+        console.log("mlDsaSecretKey length:", mlDsaSecretKeyClone?.length);
+        console.log(
+          "is Uint8Array:",
+          mlDsaSecretKeyClone instanceof Uint8Array,
+        );
       }
 
-      const mlDsaSigBytes = ml_dsa87.sign(payload, mlDsaSecretKey);
+      const mlDsaSigBytes = ml_dsa87.sign(payload, mlDsaSecretKeyClone);
 
       const envelope: MajikSignatureJSON = {
         version: MAJIK_SIGNATURE_VERSION,
@@ -233,6 +250,16 @@ export class MajikSignature {
       if (debug) console.error("Raw Signing Error:", err);
       if (err instanceof MajikSignatureError) throw err;
       throw new MajikSignatureError("Failed to sign content", err);
+    } finally {
+      // 3. Securely wipe the clones, leaving the originals in MajikKey safe
+      if (edSecretKeyClone) {
+        secureFill.call(edSecretKeyClone, 0);
+        edSecretKeyClone = undefined;
+      }
+      if (mlDsaSecretKeyClone) {
+        secureFill.call(mlDsaSecretKeyClone, 0);
+        mlDsaSecretKeyClone = undefined;
+      }
     }
   }
 
@@ -943,6 +970,57 @@ export class MajikSignature {
     };
   }
 
+  // ── CHAIN ANCHOR METHODS ──────────────────────────────────────────────────
+
+  // majik-signature — core/anchor (or wherever the anchor-related statics live)
+  static buildChainAnchorMemo(sealHash: string): MajikChainAnchorMemo {
+    MajikSignatureValidator.validateSealHash(sealHash);
+
+    return MAJIK_NOTARY_MEMO_DOMAIN + sealHash;
+  }
+
+  /**
+   * Check whether a file is eligible for chain anchoring (requires seal).
+   */
+  static async canAnchor(
+    file: Blob,
+    options?: { mimeType?: string },
+  ): Promise<{ permitted: boolean; reason?: string }> {
+    return MajikSignatureEmbed.canAnchor(file, options);
+  }
+
+  /**
+   * Embed an already-confirmed MajikChainAnchor into the file's envelope.
+   * Does not talk to any chain — the caller (majik-notary) is responsible
+   * for submitting and confirming the transaction first.
+   *
+   * @example
+   *   const blob = await MajikSignature.registerChainAnchor(sealedBlob, anchor);
+   */
+  static async registerChainAnchor(
+    file: Blob,
+    anchor: MajikChainAnchor,
+    options?: { mimeType?: string },
+  ): Promise<Blob> {
+    const { blob } = await MajikSignatureEmbed.registerChainAnchor(
+      file,
+      anchor,
+      options,
+    );
+    return blob;
+  }
+
+  /**
+   * Get all chain anchors embedded in a file's envelope.
+   * Returns an empty array if none, or if the file has no envelope.
+   */
+  static async getChainAnchors(
+    file: Blob,
+    options?: { mimeType?: string },
+  ): Promise<MajikChainAnchor[]> {
+    return MajikSignatureEmbed.getChainAnchors(file, options);
+  }
+
   // ── Private helpers ───────────────────────────────────────────────────────
 
   private static _isMajikKey(
@@ -951,3 +1029,9 @@ export class MajikSignature {
     return typeof (v as MajikKey).fingerprint === "string";
   }
 }
+
+// Freeze static methods
+Object.freeze(MajikSignature);
+
+// Freeze instance methods
+Object.freeze(MajikSignature.prototype);

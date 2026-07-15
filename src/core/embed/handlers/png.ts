@@ -11,9 +11,14 @@
 
 import { FormatHandler } from "../../types";
 import { PNG_KEYWORD } from "../constants";
-import { concatBytes, crc32, readUint32BE, textDecode, textEncode, writeUint32BE } from "../utils";
-
-
+import {
+  concatBytes,
+  crc32,
+  readUint32BE,
+  textDecode,
+  textEncode,
+  writeUint32BE,
+} from "../utils";
 
 const PNG_SIGNATURE = new Uint8Array([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
@@ -154,3 +159,9 @@ export class PngHandler implements FormatHandler {
     }
   }
 }
+
+// Freeze static methods
+Object.freeze(PngHandler);
+
+// Freeze instance methods
+Object.freeze(PngHandler.prototype);

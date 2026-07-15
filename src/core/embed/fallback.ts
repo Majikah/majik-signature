@@ -36,3 +36,9 @@ export class FallbackHandler implements FormatHandler {
     return result ? result.original : bytes;
   }
 }
+
+// Freeze static methods
+Object.freeze(FallbackHandler);
+
+// Freeze instance methods
+Object.freeze(FallbackHandler.prototype);

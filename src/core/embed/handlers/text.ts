@@ -22,7 +22,6 @@
 import { FormatHandler } from "../../types";
 import { concatBytes, textDecode, textEncode } from "../utils";
 
-
 const BEGIN_MARKER = "<!-- MAJIK-SIGNATURE-BEGIN -->";
 const END_MARKER = "<!-- MAJIK-SIGNATURE-END -->";
 
@@ -108,3 +107,9 @@ export class TextHandler implements FormatHandler {
     }
   }
 }
+
+// Freeze static methods
+Object.freeze(TextHandler);
+
+// Freeze instance methods
+Object.freeze(TextHandler.prototype);

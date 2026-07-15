@@ -17,6 +17,9 @@ export * from "./core/constants";
 
 export * from "./core/embed/majik-embed";
 
+// ── Chain Anchor ─────────────────────────────────────────────────────────────────
+export type * from "./anchor/types";
+
 // ── Low-level utilities (opt-in) ──────────────────────────────────────────────
 // These are exported for consumers who want to build on top of the primitives
 // without going through MajikSignature (e.g. streaming hash pipelines,
