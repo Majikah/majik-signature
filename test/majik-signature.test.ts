@@ -96,7 +96,10 @@ describe("MajikSignature Class Unit Tests", () => {
         "should sign $label ($file) content correctly",
         async ({ file, contentType }) => {
           const fileContent = loadFixture(file);
-          const signature = await MajikSignature.sign(fileContent, mockKey, {
+          const blob = new Blob([fileContent as BlobPart], {
+            type: contentType,
+          });
+          const { signature } = await MajikSignature.signFile(blob, mockKey, {
             contentType,
           });
 
@@ -189,19 +192,65 @@ describe("MajikSignature Class Unit Tests", () => {
         "should verify $label ($file) directly via verifyWithKey",
         async ({ file, contentType }) => {
           const fileContent = loadFixture(file);
-          const signature = await MajikSignature.sign(fileContent, mockKey, {
-            contentType,
+          const blob = new Blob([fileContent as BlobPart], {
+            type: contentType,
           });
+          const { signature, blob: signedBlob } = await MajikSignature.signFile(
+            blob,
+            mockKey,
+            {
+              contentType,
+            },
+          );
+
+          // Recover what was actually signed, not the raw pre-strip fixture
+          const strippedBlob = await MajikSignature.stripFrom(signedBlob, {
+            mimeType: contentType,
+          });
+          const strippedBytes = new Uint8Array(
+            await strippedBlob.arrayBuffer(),
+          );
 
           const result = MajikSignature.verifyWithKey(
-            fileContent,
+            strippedBytes,
             signature,
             mockKey,
           );
-
           expect(result.valid).toBe(true);
         },
       );
+
+      it.each(FILE_FIXTURES)(
+        "should verify $label ($file) directly via verifyFile",
+        async ({ file, contentType }) => {
+          const fileContent = loadFixture(file);
+          const blob = new Blob([fileContent as BlobPart], {
+            type: contentType,
+          });
+          const { blob: signedBlob } = await MajikSignature.signFile(
+            blob,
+            mockKey,
+            {
+              contentType,
+            },
+          );
+
+          const results = await MajikSignature.verifyFile(signedBlob, mockKey);
+          expect(results[0].valid).toBe(true);
+        },
+      );
+    });
+
+    it("MP4 strip() should be idempotent on its own output", async () => {
+      const fileContent = loadFixture("sample.mp4");
+      const blob = new Blob([fileContent as BlobPart], { type: "video/mp4" });
+      const once = new Uint8Array(
+        await (await MajikSignature.stripFrom(blob)).arrayBuffer(),
+      );
+      const twice = new Uint8Array(
+        await (await MajikSignature.stripFrom(new Blob([once]))).arrayBuffer(),
+      );
+      expect(once).toEqual(twice);
     });
   });
 
