@@ -25,6 +25,7 @@ import { hashContent, bytesToBase64, base64ToBytes } from "./core/hash";
 import type {
   EnvelopeInfo,
   ExpectedSigner,
+  MajikSignatureEnvelope,
   MajikSignatureJSON,
   MajikSignerPublicKeys,
   MajikTimestamp,
@@ -544,18 +545,39 @@ export class MajikSignature {
       mimeType?: string;
       expectedSigners?: ExpectedSigner[];
     },
-  ): Promise<{
-    blob: Blob;
-    signature: MajikSignature;
-    handler: string;
-    mimeType: string;
-  }> {
-    return MajikSignatureEmbed.signAndEmbed<MajikSignature>(
+  ): ReturnType<typeof MajikSignatureEmbed.signAndEmbed> {
+    return await MajikSignatureEmbed.signAndEmbed<MajikSignature>(
       file,
       key,
       MajikSignature,
       options,
     );
+  }
+
+  /**
+   * Sign a file and return the signature envelope detached.
+   *
+   * Strips the file of any embedded envelopes, incorporates your new signature
+   * into the multi-sig structure, but does NOT embed it back.
+   * Useful for external verification workflows where payloads and envelopes travel out-of-band.
+   *
+   * @example
+   *   const { blob, signature } = await MajikSignature.signFileDetached(file, aliceKey, {
+   *     existingEnvelope: outOfBandEnvelope // Optionally pass state from an external source
+   *   });
+   */
+  static async signFileDetached(
+    file: Blob,
+    key: MajikKey,
+    options?: {
+      contentType?: string;
+      timestamp?: string;
+      mimeType?: string;
+      expectedSigners?: ExpectedSigner[];
+      existingEnvelope?: MajikSignatureEnvelope;
+    },
+  ): ReturnType<typeof MajikSignatureEmbed.signDetached> {
+    return MajikSignatureEmbed.signDetached(file, key, MajikSignature, options);
   }
 
   /**
@@ -580,6 +602,39 @@ export class MajikSignature {
     }
     return MajikSignatureEmbed.verify(
       file,
+      keyOrPublicKeys,
+      MajikSignature,
+      options,
+      debug,
+    );
+  }
+
+  /**
+   * Verify a file against a detached signature envelope.
+   * Skips extraction and verifies the stripped file bytes directly against the provided envelope.
+   * Returns one VerificationResult per signer.
+   * Pass options.expectedSignerId to verify only a specific signer.
+   */
+  static async verifyFileDetached(
+    file: Blob,
+    envelope: MajikSignatureEnvelope,
+    keyOrPublicKeys: MajikKey | MajikSignerPublicKeys,
+    options?: { expectedSignerId?: string; mimeType?: string },
+    debug: boolean = false,
+  ): Promise<VerificationResult[]> {
+    if (MajikSignature._isMajikKey(keyOrPublicKeys)) {
+      return MajikSignatureEmbed.verifyDetachedWithKey(
+        file,
+        envelope,
+        keyOrPublicKeys,
+        MajikSignature,
+        options,
+        debug,
+      );
+    }
+    return MajikSignatureEmbed.verifyDetached(
+      file,
+      envelope,
       keyOrPublicKeys,
       MajikSignature,
       options,

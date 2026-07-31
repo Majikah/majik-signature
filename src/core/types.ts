@@ -8,6 +8,8 @@ import type { ContentType } from "./constants";
 
 export type { ContentType };
 
+export type MajikSignatureEnvelope = MultiSigEnvelope;
+
 /**
  * The serializable per-signer signature envelope.
  * Everything a verifier needs — no private keys required.

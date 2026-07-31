@@ -29,6 +29,7 @@ import type {
   ExpectedSigner,
   ExtractOptions,
   ExtractResult,
+  MajikSignatureEnvelope,
   MajikSignatureJSON,
   MajikSignerPublicKeys,
   MultiSigEnvelope,
@@ -187,7 +188,7 @@ export class MajikSignatureEmbed {
       expectedSigners?: ExpectedSigner[];
     },
     debug: boolean = false,
-  ): Promise<EmbedResult & { signature: T }> {
+  ): Promise<EmbedResult & { signature: T; envelope: MajikSignatureEnvelope }> {
     const bytes = await blobToBytes(file);
     const mimeType = options?.mimeType ?? detectMimeType(bytes, file.type);
 
@@ -281,7 +282,130 @@ export class MajikSignatureEmbed {
     );
     const blob = bytesToBlob(resultBytes, mimeType);
 
-    return { blob, handler: handler.name, mimeType, signature: signature as T };
+    return {
+      blob,
+      handler: handler.name,
+      mimeType,
+      signature: signature as T,
+      envelope: nextEnvelope,
+    };
+  }
+
+  // ── signDetached ───────────────────────────────────────────────────────────
+
+  /**
+   * Sign a file and return the envelope detached.
+   * Extracts any existing envelope (or uses a provided one), validates constraints,
+   * signs the stripped bytes, and returns the updated MultiSigEnvelope.
+   * Does NOT embed the envelope back into the file.
+   */
+  static async signDetached(
+    file: Blob,
+    key: MajikKey,
+    MajikSig: MajikSignatureStaticAdapter,
+    options?: EmbedOptions & {
+      contentType?: string;
+      timestamp?: string;
+      expectedSigners?: ExpectedSigner[];
+      existingEnvelope?: MajikSignatureEnvelope; // Allow passing an existing detached envelope out-of-band
+    },
+    debug: boolean = false,
+  ): Promise<{
+    blob: Blob;
+    envelope: MajikSignatureEnvelope;
+    handler: string;
+    mimeType: string;
+  }> {
+    const bytes = await blobToBytes(file);
+    const mimeType = options?.mimeType ?? detectMimeType(bytes, file.type);
+
+    const handler = options?.forceFallback
+      ? new FallbackHandler()
+      : DEFAULT_REGISTRY.resolve(bytes, mimeType);
+
+    // ── Step 1: Resolve the working envelope ───────────────────────────────
+    let envelope: MajikSignatureEnvelope;
+    if (options?.existingEnvelope) {
+      envelope = options.existingEnvelope;
+    } else {
+      const existingRaw = await handler.extract(bytes);
+      envelope = existingRaw
+        ? parseEnvelope(existingRaw)
+        : { version: 1, signatures: [] };
+    }
+
+    // ── Step 2: Reject sealed envelopes ────────────────────────────────────
+    if (envelope.sealHash) {
+      throw new MajikSignatureError(
+        "Cannot sign a sealed envelope. The issuer has locked this file against further signatures.",
+      );
+    }
+
+    // ── Step 3: Allowlist enforcement ──────────────────────────────────────────
+    const isIssuer = envelope.allowlistSignerId === key.fingerprint;
+
+    if (!isIssuer) {
+      const allowlistCheck = checkAllowlist(envelope, key);
+      if (!allowlistCheck.permitted) {
+        throw new MajikSignatureAllowlistError(
+          `Signer "${key.fingerprint}" is not permitted to sign this file. ` +
+            `The file has a signing allowlist established by "${envelope.allowlistSignerId}".`,
+          key.fingerprint,
+        );
+      }
+    }
+
+    // ── Step 4: Get clean original bytes ───────────────────────────────────
+    const originalBytes = await handler.strip(bytes);
+
+    if (debug) {
+      const recomputedHash = bytesToBase64(hashContent(originalBytes));
+      console.log("signDetached — original bytes hash:", recomputedHash);
+    }
+
+    // ── Step 5: Compute allowlistHash if establishing or re-signing ─────────
+    const isFirstSigner = envelope.signatures.length === 0;
+    const establishingAllowlist =
+      isFirstSigner &&
+      options?.expectedSigners &&
+      options.expectedSigners.length > 0;
+
+    const isIssuerResigning =
+      !isFirstSigner &&
+      !!envelope.allowlist &&
+      envelope.allowlist.length > 0 &&
+      envelope.allowlistSignerId === key.fingerprint;
+
+    const allowlistHashValue = establishingAllowlist
+      ? hashAllowlist(options!.expectedSigners!)
+      : isIssuerResigning
+        ? hashAllowlist(envelope.allowlist!)
+        : undefined;
+
+    // ── Step 6: Sign ───────────────────────────────────────────────────────
+    const signature = await MajikSig.sign(originalBytes, key, {
+      contentType: options?.contentType,
+      timestamp: options?.timestamp,
+      ...(allowlistHashValue !== undefined
+        ? { allowlistHash: allowlistHashValue }
+        : {}),
+    });
+
+    // ── Step 7: Build updated envelope ────────────────────────────────────
+    let nextEnvelope = upsertSignature(envelope, signature.toJSON());
+
+    if (establishingAllowlist) {
+      nextEnvelope = {
+        ...nextEnvelope,
+        allowlist: options!.expectedSigners!,
+        allowlistSignerId: key.fingerprint,
+      };
+    }
+
+    // ── Step 8: Return DETACHED (No Embedding) ────────────────────────────
+    const blob = bytesToBlob(originalBytes, mimeType);
+
+    return { blob, handler: handler.name, mimeType, envelope: nextEnvelope };
   }
 
   // ── extract ────────────────────────────────────────────────────────────────
@@ -423,6 +547,110 @@ export class MajikSignatureEmbed {
     const publicKeys = MajikSig.publicKeysFromMajikKey(key);
     return MajikSignatureEmbed.verify(
       file,
+      publicKeys,
+      MajikSig,
+      options,
+      debug,
+    );
+  }
+
+  // ── verifyDetached ─────────────────────────────────────────────────────────
+
+  /**
+   * Verify a file against a provided, detached MultiSigEnvelope.
+   * Skips extraction but still strips the file in case it contains an embedded envelope,
+   * ensuring verification runs against the clean original bytes.
+   */
+  static async verifyDetached(
+    file: Blob,
+    envelope: MajikSignatureEnvelope,
+    publicKeys: MajikSignerPublicKeys,
+    MajikSig: MajikSignatureStaticAdapter,
+    options?: ExtractOptions & { expectedSignerId?: string },
+    debug: boolean = false,
+  ): Promise<VerificationResult[]> {
+    const bytes = await blobToBytes(file);
+    const mimeType = options?.mimeType ?? detectMimeType(bytes, file.type);
+    const handler = DEFAULT_REGISTRY.resolve(bytes, mimeType);
+
+    // Strip the file to ensure we verify against clean bytes
+    const originalBytes = await handler.strip(bytes);
+
+    if (debug) {
+      const recomputedHash = bytesToBase64(hashContent(originalBytes));
+      console.log("verifyDetached — original bytes hash:", recomputedHash);
+    }
+
+    // ── Allowlist integrity check ──────────────────────────────────────────
+    if (envelope.allowlist && envelope.allowlistSignerId) {
+      const recomputedAllowlistHash = hashAllowlist(envelope.allowlist);
+      const establisherSig = envelope.signatures.find(
+        (s) => s.signerId === envelope.allowlistSignerId,
+      );
+      if (!establisherSig) {
+        return [
+          {
+            valid: false,
+            reason: `Allowlist establisher "${envelope.allowlistSignerId}" has no signature in this envelope`,
+            timestamp: new Date().toISOString(),
+          },
+        ];
+      }
+      if (establisherSig.allowlistHash !== recomputedAllowlistHash) {
+        return [
+          {
+            valid: false,
+            reason:
+              "Allowlist integrity check failed — allowlist may have been tampered with",
+            timestamp: new Date().toISOString(),
+          },
+        ];
+      }
+    }
+
+    // ── Filter by expectedSignerId if provided ─────────────────────────────
+    const sigsToVerify = options?.expectedSignerId
+      ? envelope.signatures.filter(
+          (s) => s.signerId === options.expectedSignerId,
+        )
+      : envelope.signatures;
+
+    if (sigsToVerify.length === 0) {
+      return [
+        {
+          valid: false,
+          reason: options?.expectedSignerId
+            ? `No signature found for signerId "${options.expectedSignerId}"`
+            : "Envelope contains no signatures",
+          timestamp: new Date().toISOString(),
+        },
+      ];
+    }
+
+    // ── Verify each signature ──────────────────────────────────────────────
+    const results: VerificationResult[] = [];
+    for (const sig of sigsToVerify) {
+      const result = MajikSig.verify(originalBytes, sig, publicKeys);
+      results.push({ ...result, handler: handler.name });
+    }
+
+    return results;
+  }
+
+  // ── verifyDetachedWithKey ──────────────────────────────────────────────────
+
+  static async verifyDetachedWithKey(
+    file: Blob,
+    envelope: MajikSignatureEnvelope,
+    key: MajikKey,
+    MajikSig: MajikSignatureStaticAdapter,
+    options?: ExtractOptions & { expectedSignerId?: string },
+    debug: boolean = false,
+  ): Promise<VerificationResult[]> {
+    const publicKeys = MajikSig.publicKeysFromMajikKey(key);
+    return MajikSignatureEmbed.verifyDetached(
+      file,
+      envelope,
       publicKeys,
       MajikSig,
       options,
