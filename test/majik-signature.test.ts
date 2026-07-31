@@ -721,4 +721,122 @@ describe("MajikSignature Class Unit Tests", () => {
       });
     });
   });
+
+  // ── DETACHED SIGNING & VERIFICATION FLOW (FULL FLOW) ──────────────────────
+  describe("Detached File Signing & Verification (Full Flow)", () => {
+    let activeKey1: MajikKey;
+    let activeKey2: MajikKey;
+    let baseBlob: Blob;
+
+    beforeAll(async () => {
+      // Generate genuine keys for full cryptographic flow testing (no mocks)
+      console.log("[majik-key] Generating activeKey1 for detached flow...");
+      activeKey1 = await getTestKey();
+
+      console.log("[majik-key] Generating activeKey2 for detached flow...");
+      activeKey2 = await getTestKey();
+
+      const fileContent = loadFixture("sample.txt");
+      baseBlob = new Blob([fileContent as BlobPart], { type: "text/plain" });
+    }, 120000);
+
+    it("should successfully sign and verify a file using the detached flow", async () => {
+      // 1. Sign Detached
+      const { blob: strippedBlob, envelope: detachedEnvelope } =
+        await MajikSignature.signFileDetached(baseBlob, activeKey1, {
+          contentType: "text/plain",
+        });
+
+      expect(detachedEnvelope).toBeDefined();
+      expect(detachedEnvelope.signatures.length).toBe(1);
+
+      // 2. Verify Detached against the stripped file
+      const results = await MajikSignature.verifyFileDetached(
+        strippedBlob,
+        detachedEnvelope,
+        activeKey1,
+      );
+
+      expect(results).toHaveLength(1);
+      expect(results[0].valid).toBe(true);
+      expect(results[0].signerId).toBe(activeKey1.fingerprint);
+    });
+
+    it("should support passing an existing envelope out-of-band for multi-sig", async () => {
+      // 1. First signer generates the initial detached envelope
+      const { blob: stripped1, envelope: env1 } =
+        await MajikSignature.signFileDetached(baseBlob, activeKey1, {
+          contentType: "text/plain",
+        });
+
+      // 2. Second signer adds their signature to the existing envelope
+      const { blob: stripped2, envelope: env2 } =
+        await MajikSignature.signFileDetached(stripped1, activeKey2, {
+          existingEnvelope: env1,
+          contentType: "text/plain",
+        });
+
+      expect(env2.signatures.length).toBe(2);
+
+      // 3. Verify Signer 1 independently
+      const results1 = await MajikSignature.verifyFileDetached(
+        stripped2,
+        env2,
+        activeKey1,
+        { expectedSignerId: activeKey1.fingerprint },
+      );
+      expect(results1).toHaveLength(1);
+      expect(results1[0].valid).toBe(true);
+      expect(results1[0].signerId).toBe(activeKey1.fingerprint);
+
+      // 4. Verify Signer 2 independently
+      const results2 = await MajikSignature.verifyFileDetached(
+        stripped2,
+        env2,
+        activeKey2,
+        { expectedSignerId: activeKey2.fingerprint },
+      );
+      expect(results2).toHaveLength(1);
+      expect(results2[0].valid).toBe(true);
+      expect(results2[0].signerId).toBe(activeKey2.fingerprint);
+    });
+
+    it("should reject verification if the detached file bytes are tampered with", async () => {
+      // 1. Generate valid detached signature
+      const { blob: strippedBlob, envelope: detachedEnvelope } =
+        await MajikSignature.signFileDetached(baseBlob, activeKey1, {
+          contentType: "text/plain",
+        });
+
+      // 2. Simulate data corruption on the raw file
+      const tamperedBlob = await corruptBlob(strippedBlob);
+
+      // 3. Attempt verification against the tampered data
+      const results = await MajikSignature.verifyFileDetached(
+        tamperedBlob,
+        detachedEnvelope,
+        activeKey1,
+      );
+
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0].valid).toBe(false);
+    });
+
+    it("should reject verification when evaluated against mismatched public keys", async () => {
+      const { blob: strippedBlob, envelope: detachedEnvelope } =
+        await MajikSignature.signFileDetached(baseBlob, activeKey1, {
+          contentType: "text/plain",
+        });
+
+      // Verify the envelope signed by activeKey1 using activeKey2's context
+      const results = await MajikSignature.verifyFileDetached(
+        strippedBlob,
+        detachedEnvelope,
+        activeKey2,
+      );
+
+      // Verification should fail because the cryptographic validation checks won't match
+      expect(results.some((r) => r.valid)).toBe(false);
+    });
+  });
 });

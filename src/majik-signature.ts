@@ -545,7 +545,7 @@ export class MajikSignature {
       mimeType?: string;
       expectedSigners?: ExpectedSigner[];
     },
-  ): ReturnType<typeof MajikSignatureEmbed.signAndEmbed> {
+  ): ReturnType<typeof MajikSignatureEmbed.signAndEmbed<MajikSignature>> {
     return await MajikSignatureEmbed.signAndEmbed<MajikSignature>(
       file,
       key,
