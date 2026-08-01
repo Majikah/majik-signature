@@ -10,14 +10,15 @@
  *
  *   majik-signature → majik-embed → majik-signature  ✗
  *
- * Instead, operations that need MajikSignature receive it via the
- * MajikSignatureStaticAdapter interface — no circular import needed.
+ * Operations that need MajikSignature (signing, verifying) receive it via
+ * the MajikSignatureStaticAdapter interface — no circular import needed.
  *
- * Multi-sig + allowlist + seal:
- * ─────────────────────────────
- * Files embed a MultiSigEnvelope (array of per-signer envelopes + optional
- * allowlist + optional seal). parseEnvelope() transparently promotes old
- * single-sig files — all code here always operates on MultiSigEnvelope.
+ * MajikSignatureEnvelope, by contrast, is pure/structural (no crypto), so it
+ * IS imported directly here — no adapter required for it. All parsing,
+ * validation, allowlist enforcement, seal computation, and signatory/issuer
+ * resolution now live on that class (core/envelope.ts). This file is
+ * reduced to file-format orchestration: read bytes → resolve handler →
+ * extract/strip → delegate to the envelope class → re-embed.
  */
 
 import type { MajikKey } from "@majikah/majik-key";
@@ -29,10 +30,10 @@ import type {
   ExpectedSigner,
   ExtractOptions,
   ExtractResult,
-  MajikSignatureEnvelope,
+  FormatHandler,
+  MajikSignatureEnvelopeJSON,
   MajikSignatureJSON,
   MajikSignerPublicKeys,
-  MultiSigEnvelope,
   SealInfo,
   SealVerificationResult,
   SignatoriesFilter,
@@ -40,6 +41,7 @@ import type {
   SignOptions,
   VerificationResult,
 } from "../../core/types";
+import { MajikSignatureEnvelope } from "../../core/envelope";
 import { FormatHandlerRegistry } from "./registry";
 import { blobToBytes, bytesToBlob, detectMimeType } from "./utils";
 
@@ -55,22 +57,12 @@ import { OfficeHandler } from "./handlers/office";
 import { TextHandler } from "./handlers/text";
 import { FallbackHandler } from "./fallback";
 import { bytesToBase64, hashContent } from "../hash";
-import {
-  MajikSignatureAllowlistError,
-  MajikSignatureError,
-  MajikSignatureKeyError,
-} from "../errors";
-import {
-  parseEnvelope,
-  upsertSignature,
-  checkAllowlist,
-  hashAllowlist,
-  computeSealHash,
-  buildSignatoriesResult,
-} from "../multi-sig";
+import { MajikSignatureError } from "../errors";
 import { MajikChainAnchor } from "../../anchor/types";
 
 // ─── Adapter interfaces ───────────────────────────────────────────────────────
+// Unchanged — these solve the crypto-side circular dependency, orthogonal to
+// the envelope class (see file header).
 
 export interface MajikSignatureAdapter {
   toJSON(): MajikSignatureJSON;
@@ -116,7 +108,7 @@ export class MajikSignatureEmbed {
   /**
    * Embed a pre-computed signature into a file Blob.
    * Reads any existing envelope, upserts the new signature by signerId,
-   * and writes the updated MultiSigEnvelope back.
+   * and writes the updated envelope back.
    * Does NOT sign — call signAndEmbed() for sign + embed together.
    */
   static async embed(
@@ -124,37 +116,24 @@ export class MajikSignatureEmbed {
     signature: MajikSignatureAdapter | MajikSignatureJSON,
     options?: EmbedOptions,
   ): Promise<EmbedResult> {
-    const bytes = await blobToBytes(file);
-    const mimeType = options?.mimeType ?? detectMimeType(bytes, file.type);
-
-    const handler = options?.forceFallback
-      ? new FallbackHandler()
-      : DEFAULT_REGISTRY.resolve(bytes, mimeType);
+    const { bytes, mimeType, handler } = await MajikSignatureEmbed._prepare(
+      file,
+      options,
+    );
 
     const sigJson =
       typeof (signature as MajikSignatureAdapter).toJSON === "function"
         ? (signature as MajikSignatureAdapter).toJSON()
         : (signature as MajikSignatureJSON);
 
-    // Read existing envelope (if any) and upsert
-    const existingRaw = await handler.extract(bytes);
-    const envelope: MultiSigEnvelope = existingRaw
-      ? parseEnvelope(existingRaw)
-      : { version: 1, signatures: [] };
+    const envelope = await MajikSignatureEmbed._readEnvelope(handler, bytes);
+    // withSignature() throws MajikSignatureError if the envelope is sealed
+    const updated = envelope.withSignature(sigJson);
 
-    // Refuse to embed into a sealed envelope
-    if (envelope.sealHash) {
-      throw new MajikSignatureError(
-        "Cannot embed a signature into a sealed envelope.",
-      );
-    }
-
-    const updated = upsertSignature(envelope, sigJson);
-    // Strip before re-embedding so the old envelope bytes are not included
     const strippedBytes = await handler.strip(bytes);
     const resultBytes = await handler.embed(
       strippedBytes,
-      JSON.stringify(updated),
+      JSON.stringify(updated.toJSON()),
     );
     const blob = bytesToBlob(resultBytes, mimeType);
 
@@ -167,15 +146,15 @@ export class MajikSignatureEmbed {
    * Sign a file and embed the signature in one call.
    *
    * Flow:
-   *   1. Extract existing MultiSigEnvelope (or start fresh)
-   *   2. Reject if envelope is sealed
-   *   3. Enforce allowlist — throw MajikSignatureAllowlistError before any crypto
-   *   4. Strip existing envelope to get clean original bytes
-   *   5. If first signer and options.expectedSigners provided: compute allowlistHash
-   *      to bind the allowlist into the signing payload
-   *   6. Sign the clean bytes (allowlistHash included in payload when present)
-   *   7. Upsert signature into envelope; if establishing allowlist, attach
-   *      allowlist + allowlistSignerId to envelope
+   *   1. Read existing envelope (or start fresh)
+   *   2. assertCanSign() — rejects sealed envelopes and non-allowlisted signers
+   *      before any cryptographic operation (issuer always bypasses)
+   *   3. Strip existing envelope to get clean original bytes
+   *   4. Resolve allowlistHash for this signer (establishing / re-signing / none)
+   *   5. Sign the clean bytes
+   *   6. If establishing an allowlist, attach it BEFORE upserting the signature
+   *      (withAllowlist() requires zero existing signatures — see note below)
+   *   7. Upsert signature into envelope
    *   8. Embed updated envelope back into the file
    */
   static async signAndEmbed<T extends MajikSignatureAdapter>(
@@ -189,73 +168,33 @@ export class MajikSignatureEmbed {
     },
     debug: boolean = false,
   ): Promise<EmbedResult & { signature: T; envelope: MajikSignatureEnvelope }> {
-    const bytes = await blobToBytes(file);
-    const mimeType = options?.mimeType ?? detectMimeType(bytes, file.type);
+    const { bytes, mimeType, handler } = await MajikSignatureEmbed._prepare(
+      file,
+      options,
+    );
 
-    const handler = options?.forceFallback
-      ? new FallbackHandler()
-      : DEFAULT_REGISTRY.resolve(bytes, mimeType);
+    const envelope = await MajikSignatureEmbed._readEnvelope(handler, bytes);
 
-    // ── Step 1: Extract existing envelope ─────────────────────────────────
-    const existingRaw = await handler.extract(bytes);
-    const envelope: MultiSigEnvelope = existingRaw
-      ? parseEnvelope(existingRaw)
-      : { version: 1, signatures: [] };
+    // ── Sealed + allowlist gate (throws before any crypto) ──────────────────
+    envelope.assertCanSign(key);
 
-    // ── Step 2: Reject sealed envelopes ────────────────────────────────────
-    if (envelope.sealHash) {
-      throw new MajikSignatureError(
-        "Cannot sign a sealed envelope. The issuer has locked this file against further signatures.",
-      );
-    }
-
-    // ── Step 3: Allowlist enforcement ──────────────────────────────────────────
-    // Issuer always bypasses the allowlist — they established it and control sealing
-    const isIssuer = envelope.allowlistSignerId === key.fingerprint;
-
-    if (!isIssuer) {
-      const allowlistCheck = checkAllowlist(envelope, key);
-      if (!allowlistCheck.permitted) {
-        throw new MajikSignatureAllowlistError(
-          `Signer "${key.fingerprint}" is not permitted to sign this file. ` +
-            `The file has a signing allowlist established by "${envelope.allowlistSignerId}".`,
-          key.fingerprint,
-        );
-      }
-    }
-
-    // ── Step 4: Get clean original bytes ───────────────────────────────────
+    // ── Clean original bytes ─────────────────────────────────────────────────
     const originalBytes = await handler.strip(bytes);
 
     if (debug) {
-      const recomputedHash = bytesToBase64(hashContent(originalBytes));
-      console.log("signAndEmbed — original bytes hash:", recomputedHash);
+      console.log(
+        "signAndEmbed — original bytes hash:",
+        bytesToBase64(hashContent(originalBytes)),
+      );
     }
 
-    // ── Step 5: Compute allowlistHash if establishing or re-signing with an allowlist ─
-    const isFirstSigner = envelope.signatures.length === 0;
-    const establishingAllowlist =
-      isFirstSigner &&
-      options?.expectedSigners &&
-      options.expectedSigners.length > 0;
+    // ── Resolve allowlistHash for this signer's payload ──────────────────────
+    const allowlistHashValue = envelope.resolveAllowlistHashFor(
+      key,
+      options?.expectedSigners,
+    );
 
-    // If the issuer is re-signing an already-established allowlist,
-    // re-derive the allowlistHash from the existing allowlist so it
-    // stays present in their canonical payload — preventing the
-    // allowlist integrity check from failing on verify.
-    const isIssuerResigning =
-      !isFirstSigner &&
-      !!envelope.allowlist &&
-      envelope.allowlist.length > 0 &&
-      envelope.allowlistSignerId === key.fingerprint;
-
-    const allowlistHashValue = establishingAllowlist
-      ? hashAllowlist(options!.expectedSigners!)
-      : isIssuerResigning
-        ? hashAllowlist(envelope.allowlist!)
-        : undefined;
-
-    // ── Step 6: Sign ───────────────────────────────────────────────────────
+    // ── Sign ──────────────────────────────────────────────────────────────────
     const signature = await MajikSig.sign(originalBytes, key, {
       contentType: options?.contentType,
       timestamp: options?.timestamp,
@@ -264,21 +203,25 @@ export class MajikSignatureEmbed {
         : {}),
     });
 
-    // ── Step 7: Build updated envelope ────────────────────────────────────
-    let nextEnvelope = upsertSignature(envelope, signature.toJSON());
+    // ── Attach allowlist FIRST (requires zero signatures), then upsert ───────
+    // NOTE: withAllowlist() enforces "first signer only" by checking the
+    // envelope's current signature count. It must run before withSignature()
+    // adds this signer's entry, or the guard trips on the count it just added.
+    const establishingAllowlist =
+      envelope.isFirstSigner() && !!options?.expectedSigners?.length;
 
-    if (establishingAllowlist) {
-      nextEnvelope = {
-        ...nextEnvelope,
-        allowlist: options!.expectedSigners!,
-        allowlistSignerId: key.fingerprint,
-      };
-    }
+    const envelopeWithAllowlist = establishingAllowlist
+      ? envelope.withAllowlist(options!.expectedSigners!, key.fingerprint)
+      : envelope;
 
-    // ── Step 8: Embed ──────────────────────────────────────────────────────
+    const nextEnvelope = envelopeWithAllowlist.withSignature(
+      signature.toJSON(),
+    );
+
+    // ── Embed ─────────────────────────────────────────────────────────────────
     const resultBytes = await handler.embed(
       originalBytes,
-      JSON.stringify(nextEnvelope),
+      JSON.stringify(nextEnvelope.toJSON()),
     );
     const blob = bytesToBlob(resultBytes, mimeType);
 
@@ -295,9 +238,7 @@ export class MajikSignatureEmbed {
 
   /**
    * Sign a file and return the envelope detached.
-   * Extracts any existing envelope (or uses a provided one), validates constraints,
-   * signs the stripped bytes, and returns the updated MultiSigEnvelope.
-   * Does NOT embed the envelope back into the file.
+   * Same flow as signAndEmbed(), minus the final embed step.
    */
   static async signDetached(
     file: Blob,
@@ -307,7 +248,7 @@ export class MajikSignatureEmbed {
       contentType?: string;
       timestamp?: string;
       expectedSigners?: ExpectedSigner[];
-      existingEnvelope?: MajikSignatureEnvelope; // Allow passing an existing detached envelope out-of-band
+      existingEnvelope?: MajikSignatureEnvelope | MajikSignatureEnvelopeJSON;
     },
     debug: boolean = false,
   ): Promise<{
@@ -316,73 +257,32 @@ export class MajikSignatureEmbed {
     handler: string;
     mimeType: string;
   }> {
-    const bytes = await blobToBytes(file);
-    const mimeType = options?.mimeType ?? detectMimeType(bytes, file.type);
+    const { bytes, mimeType, handler } = await MajikSignatureEmbed._prepare(
+      file,
+      options,
+    );
 
-    const handler = options?.forceFallback
-      ? new FallbackHandler()
-      : DEFAULT_REGISTRY.resolve(bytes, mimeType);
+    // ── Resolve the working envelope ─────────────────────────────────────────
+    const envelope = options?.existingEnvelope
+      ? MajikSignatureEnvelope.from(options.existingEnvelope)
+      : await MajikSignatureEmbed._readEnvelope(handler, bytes);
 
-    // ── Step 1: Resolve the working envelope ───────────────────────────────
-    let envelope: MajikSignatureEnvelope;
-    if (options?.existingEnvelope) {
-      envelope = options.existingEnvelope;
-    } else {
-      const existingRaw = await handler.extract(bytes);
-      envelope = existingRaw
-        ? parseEnvelope(existingRaw)
-        : { version: 1, signatures: [] };
-    }
+    envelope.assertCanSign(key);
 
-    // ── Step 2: Reject sealed envelopes ────────────────────────────────────
-    if (envelope.sealHash) {
-      throw new MajikSignatureError(
-        "Cannot sign a sealed envelope. The issuer has locked this file against further signatures.",
-      );
-    }
-
-    // ── Step 3: Allowlist enforcement ──────────────────────────────────────────
-    const isIssuer = envelope.allowlistSignerId === key.fingerprint;
-
-    if (!isIssuer) {
-      const allowlistCheck = checkAllowlist(envelope, key);
-      if (!allowlistCheck.permitted) {
-        throw new MajikSignatureAllowlistError(
-          `Signer "${key.fingerprint}" is not permitted to sign this file. ` +
-            `The file has a signing allowlist established by "${envelope.allowlistSignerId}".`,
-          key.fingerprint,
-        );
-      }
-    }
-
-    // ── Step 4: Get clean original bytes ───────────────────────────────────
     const originalBytes = await handler.strip(bytes);
 
     if (debug) {
-      const recomputedHash = bytesToBase64(hashContent(originalBytes));
-      console.log("signDetached — original bytes hash:", recomputedHash);
+      console.log(
+        "signDetached — original bytes hash:",
+        bytesToBase64(hashContent(originalBytes)),
+      );
     }
 
-    // ── Step 5: Compute allowlistHash if establishing or re-signing ─────────
-    const isFirstSigner = envelope.signatures.length === 0;
-    const establishingAllowlist =
-      isFirstSigner &&
-      options?.expectedSigners &&
-      options.expectedSigners.length > 0;
+    const allowlistHashValue = envelope.resolveAllowlistHashFor(
+      key,
+      options?.expectedSigners,
+    );
 
-    const isIssuerResigning =
-      !isFirstSigner &&
-      !!envelope.allowlist &&
-      envelope.allowlist.length > 0 &&
-      envelope.allowlistSignerId === key.fingerprint;
-
-    const allowlistHashValue = establishingAllowlist
-      ? hashAllowlist(options!.expectedSigners!)
-      : isIssuerResigning
-        ? hashAllowlist(envelope.allowlist!)
-        : undefined;
-
-    // ── Step 6: Sign ───────────────────────────────────────────────────────
     const signature = await MajikSig.sign(originalBytes, key, {
       contentType: options?.contentType,
       timestamp: options?.timestamp,
@@ -391,18 +291,18 @@ export class MajikSignatureEmbed {
         : {}),
     });
 
-    // ── Step 7: Build updated envelope ────────────────────────────────────
-    let nextEnvelope = upsertSignature(envelope, signature.toJSON());
+    const establishingAllowlist =
+      envelope.isFirstSigner() && !!options?.expectedSigners?.length;
 
-    if (establishingAllowlist) {
-      nextEnvelope = {
-        ...nextEnvelope,
-        allowlist: options!.expectedSigners!,
-        allowlistSignerId: key.fingerprint,
-      };
-    }
+    const envelopeWithAllowlist = establishingAllowlist
+      ? envelope.withAllowlist(options!.expectedSigners!, key.fingerprint)
+      : envelope;
 
-    // ── Step 8: Return DETACHED (No Embedding) ────────────────────────────
+    const nextEnvelope = envelopeWithAllowlist.withSignature(
+      signature.toJSON(),
+    );
+
+    // ── Return DETACHED (no embedding) ───────────────────────────────────────
     const blob = bytesToBlob(originalBytes, mimeType);
 
     return { blob, handler: handler.name, mimeType, envelope: nextEnvelope };
@@ -411,22 +311,22 @@ export class MajikSignatureEmbed {
   // ── extract ────────────────────────────────────────────────────────────────
 
   /**
-   * Extract the MultiSigEnvelope from a file.
+   * Extract the envelope from a file as a MajikSignatureEnvelope instance.
    * Returns null if no signature is found.
-   * Old single-sig files are promoted to MultiSigEnvelope transparently.
    */
   static async extract(
     file: Blob,
     options?: ExtractOptions,
   ): Promise<ExtractResult | null> {
-    const bytes = await blobToBytes(file);
-    const mimeType = options?.mimeType ?? detectMimeType(bytes, file.type);
-    const handler = DEFAULT_REGISTRY.resolve(bytes, mimeType);
+    const { bytes, handler } = await MajikSignatureEmbed._prepare(
+      file,
+      options,
+    );
 
     const raw = await handler.extract(bytes);
     if (!raw) return null;
 
-    const envelope = parseEnvelope(raw);
+    const envelope = MajikSignatureEnvelope.fromJSON(raw);
     return { envelope, handler: handler.name };
   }
 
@@ -435,7 +335,6 @@ export class MajikSignatureEmbed {
   /**
    * Verify a file's embedded signatures against public keys.
    * Returns one VerificationResult per signature in the envelope.
-   * Old single-sig files return a single-item array.
    */
   static async verify(
     file: Blob,
@@ -444,24 +343,17 @@ export class MajikSignatureEmbed {
     options?: ExtractOptions & { expectedSignerId?: string },
     debug: boolean = false,
   ): Promise<VerificationResult[]> {
-    const bytes = await blobToBytes(file);
-    const mimeType = options?.mimeType ?? detectMimeType(bytes, file.type);
-    const handler = DEFAULT_REGISTRY.resolve(bytes, mimeType);
+    const { bytes, handler } = await MajikSignatureEmbed._prepare(
+      file,
+      options,
+    );
 
     const raw = await handler.extract(bytes);
-    if (!raw) {
-      return [
-        {
-          valid: false,
-          reason: "No embedded signature found",
-          timestamp: new Date().toISOString(),
-        },
-      ];
-    }
+    if (!raw) return [MajikSignatureEmbed._noSignatureResult()];
 
-    let envelope: MultiSigEnvelope;
+    let envelope: MajikSignatureEnvelope;
     try {
-      envelope = parseEnvelope(raw);
+      envelope = MajikSignatureEnvelope.fromJSON(raw);
     } catch {
       return [
         {
@@ -475,64 +367,31 @@ export class MajikSignatureEmbed {
     const originalBytes = await handler.strip(bytes);
 
     if (debug) {
-      const recomputedHash = bytesToBase64(hashContent(originalBytes));
-      console.log("verify — original bytes hash:", recomputedHash);
-    }
-
-    // ── Allowlist integrity check ──────────────────────────────────────────
-    if (envelope.allowlist && envelope.allowlistSignerId) {
-      const recomputedAllowlistHash = hashAllowlist(envelope.allowlist);
-      const establisherSig = envelope.signatures.find(
-        (s) => s.signerId === envelope.allowlistSignerId,
+      console.log(
+        "verify — original bytes hash:",
+        bytesToBase64(hashContent(originalBytes)),
       );
-      if (!establisherSig) {
-        return [
-          {
-            valid: false,
-            reason: `Allowlist establisher "${envelope.allowlistSignerId}" has no signature in this envelope`,
-            timestamp: new Date().toISOString(),
-          },
-        ];
-      }
-      if (establisherSig.allowlistHash !== recomputedAllowlistHash) {
-        return [
-          {
-            valid: false,
-            reason:
-              "Allowlist integrity check failed — allowlist may have been tampered with",
-            timestamp: new Date().toISOString(),
-          },
-        ];
-      }
     }
 
-    // ── Filter by expectedSignerId if provided ─────────────────────────────
-    const sigsToVerify = options?.expectedSignerId
-      ? envelope.signatures.filter(
-          (s) => s.signerId === options.expectedSignerId,
-        )
-      : envelope.signatures;
-
-    if (sigsToVerify.length === 0) {
+    const integrity = envelope.verifyAllowlistIntegrity();
+    if (!integrity.valid) {
       return [
         {
           valid: false,
-          reason: options?.expectedSignerId
-            ? `No signature found for signerId "${options.expectedSignerId}"`
-            : "Envelope contains no signatures",
+          reason: integrity.reason,
           timestamp: new Date().toISOString(),
         },
       ];
     }
 
-    // ── Verify each signature ──────────────────────────────────────────────
-    const results: VerificationResult[] = [];
-    for (const sig of sigsToVerify) {
-      const result = MajikSig.verify(originalBytes, sig, publicKeys);
-      results.push({ ...result, handler: handler.name });
-    }
-
-    return results;
+    return MajikSignatureEmbed._verifySignatures(
+      envelope,
+      originalBytes,
+      publicKeys,
+      MajikSig,
+      handler.name,
+      options?.expectedSignerId,
+    );
   }
 
   // ── verifyWithKey ──────────────────────────────────────────────────────────
@@ -557,91 +416,59 @@ export class MajikSignatureEmbed {
   // ── verifyDetached ─────────────────────────────────────────────────────────
 
   /**
-   * Verify a file against a provided, detached MultiSigEnvelope.
-   * Skips extraction but still strips the file in case it contains an embedded envelope,
+   * Verify a file against a provided, detached envelope (instance or JSON).
+   * Still strips the file in case it also contains an embedded envelope,
    * ensuring verification runs against the clean original bytes.
    */
   static async verifyDetached(
     file: Blob,
-    envelope: MajikSignatureEnvelope,
+    envelopeInput: MajikSignatureEnvelope | MajikSignatureEnvelopeJSON,
     publicKeys: MajikSignerPublicKeys,
     MajikSig: MajikSignatureStaticAdapter,
     options?: ExtractOptions & { expectedSignerId?: string },
     debug: boolean = false,
   ): Promise<VerificationResult[]> {
-    const bytes = await blobToBytes(file);
-    const mimeType = options?.mimeType ?? detectMimeType(bytes, file.type);
-    const handler = DEFAULT_REGISTRY.resolve(bytes, mimeType);
+    const { bytes, handler } = await MajikSignatureEmbed._prepare(
+      file,
+      options,
+    );
 
-    // Strip the file to ensure we verify against clean bytes
+    const envelope = MajikSignatureEnvelope.from(envelopeInput);
     const originalBytes = await handler.strip(bytes);
 
     if (debug) {
-      const recomputedHash = bytesToBase64(hashContent(originalBytes));
-      console.log("verifyDetached — original bytes hash:", recomputedHash);
-    }
-
-    // ── Allowlist integrity check ──────────────────────────────────────────
-    if (envelope.allowlist && envelope.allowlistSignerId) {
-      const recomputedAllowlistHash = hashAllowlist(envelope.allowlist);
-      const establisherSig = envelope.signatures.find(
-        (s) => s.signerId === envelope.allowlistSignerId,
+      console.log(
+        "verifyDetached — original bytes hash:",
+        bytesToBase64(hashContent(originalBytes)),
       );
-      if (!establisherSig) {
-        return [
-          {
-            valid: false,
-            reason: `Allowlist establisher "${envelope.allowlistSignerId}" has no signature in this envelope`,
-            timestamp: new Date().toISOString(),
-          },
-        ];
-      }
-      if (establisherSig.allowlistHash !== recomputedAllowlistHash) {
-        return [
-          {
-            valid: false,
-            reason:
-              "Allowlist integrity check failed — allowlist may have been tampered with",
-            timestamp: new Date().toISOString(),
-          },
-        ];
-      }
     }
 
-    // ── Filter by expectedSignerId if provided ─────────────────────────────
-    const sigsToVerify = options?.expectedSignerId
-      ? envelope.signatures.filter(
-          (s) => s.signerId === options.expectedSignerId,
-        )
-      : envelope.signatures;
-
-    if (sigsToVerify.length === 0) {
+    const integrity = envelope.verifyAllowlistIntegrity();
+    if (!integrity.valid) {
       return [
         {
           valid: false,
-          reason: options?.expectedSignerId
-            ? `No signature found for signerId "${options.expectedSignerId}"`
-            : "Envelope contains no signatures",
+          reason: integrity.reason,
           timestamp: new Date().toISOString(),
         },
       ];
     }
 
-    // ── Verify each signature ──────────────────────────────────────────────
-    const results: VerificationResult[] = [];
-    for (const sig of sigsToVerify) {
-      const result = MajikSig.verify(originalBytes, sig, publicKeys);
-      results.push({ ...result, handler: handler.name });
-    }
-
-    return results;
+    return MajikSignatureEmbed._verifySignatures(
+      envelope,
+      originalBytes,
+      publicKeys,
+      MajikSig,
+      handler.name,
+      options?.expectedSignerId,
+    );
   }
 
   // ── verifyDetachedWithKey ──────────────────────────────────────────────────
 
   static async verifyDetachedWithKey(
     file: Blob,
-    envelope: MajikSignatureEnvelope,
+    envelopeInput: MajikSignatureEnvelope | MajikSignatureEnvelopeJSON,
     key: MajikKey,
     MajikSig: MajikSignatureStaticAdapter,
     options?: ExtractOptions & { expectedSignerId?: string },
@@ -650,7 +477,7 @@ export class MajikSignatureEmbed {
     const publicKeys = MajikSig.publicKeysFromMajikKey(key);
     return MajikSignatureEmbed.verifyDetached(
       file,
-      envelope,
+      envelopeInput,
       publicKeys,
       MajikSig,
       options,
@@ -662,17 +489,7 @@ export class MajikSignatureEmbed {
 
   /**
    * Seal a multi-sig envelope, preventing any further signatures.
-   *
-   * Rules:
-   *   - Only the issuer (allowlistSignerId) may seal
-   *   - The envelope must have an allowlist (must be a restricted multi-sig file)
-   *   - The envelope must not already be sealed
-   *   - The key must be unlocked
-   *
-   * The seal hash is SHA3-512 of all current signatories + sealTimestamp,
-   * prefixed with MAJIK_SEAL_DOMAIN. It is stored in the envelope alongside
-   * the sealTimestamp and sealedBy fields. No new cryptographic signature
-   * is produced — the seal is a hash-based integrity lock.
+   * Issuer-only / already-sealed checks are enforced by envelope.withSeal().
    */
   static async seal(
     file: Blob,
@@ -684,9 +501,10 @@ export class MajikSignatureEmbed {
     handler: string;
     mimeType: string;
   }> {
-    const bytes = await blobToBytes(file);
-    const mimeType = options?.mimeType ?? detectMimeType(bytes, file.type);
-    const handler = DEFAULT_REGISTRY.resolve(bytes, mimeType);
+    const { bytes, mimeType, handler } = await MajikSignatureEmbed._prepare(
+      file,
+      options,
+    );
 
     const raw = await handler.extract(bytes);
     if (!raw) {
@@ -695,397 +513,121 @@ export class MajikSignatureEmbed {
       );
     }
 
-    const envelope = parseEnvelope(raw);
-
-    // // Must be a restricted multi-sig file (has an allowlist)
-    // if (!envelope.allowlist || !envelope.allowlistSignerId) {
-    //   throw new MajikSignatureError(
-    //     "Cannot seal an open-signing file. Sealing is only available for files with an allowlist.",
-    //   );
-    // }
-
-    // Must be a restricted multi-sig file (has an allowlist)
-    if (!!envelope.allowlist && !!envelope.allowlistSignerId?.trim()) {
-      // Only the issuer may seal
-      if (key.fingerprint !== envelope.allowlistSignerId) {
-        throw new MajikSignatureKeyError(
-          `Only the issuer ("${envelope.allowlistSignerId}") may seal this file. ` +
-            `Provided key fingerprint: "${key.fingerprint}".`,
-        );
-      }
-    }
-
-    // Already sealed
-    if (envelope.sealHash) {
-      throw new MajikSignatureError("This envelope is already sealed.");
-    }
-
-    const sealTimestamp = options?.timestamp ?? new Date().toISOString();
-    const sealHash = computeSealHash(envelope.signatures, sealTimestamp);
-
-    const sealedEnvelope: MultiSigEnvelope = {
-      ...envelope,
-      sealHash,
-      sealTimestamp,
-      sealedBy: key.fingerprint,
-    };
+    const envelope = MajikSignatureEnvelope.fromJSON(raw);
+    // Throws MajikSignatureError (already sealed) or MajikSignatureKeyError
+    // (wrong issuer) — same failure modes as the previous implementation.
+    const sealedEnvelope = envelope.withSeal(
+      key.fingerprint,
+      options?.timestamp,
+    );
 
     const originalBytes = await handler.strip(bytes);
     const resultBytes = await handler.embed(
       originalBytes,
-      JSON.stringify(sealedEnvelope),
+      JSON.stringify(sealedEnvelope.toJSON()),
     );
     const blob = bytesToBlob(resultBytes, mimeType);
 
-    const sealInfo: SealInfo = {
-      sealHash,
-      sealTimestamp,
-      sealedBy: key.fingerprint,
+    return {
+      blob,
+      sealInfo: sealedEnvelope.getSealInfo()!,
+      handler: handler.name,
+      mimeType,
     };
-
-    return { blob, sealInfo, handler: handler.name, mimeType };
   }
 
   // ── verifySeal ─────────────────────────────────────────────────────────────
 
-  /**
-   * Verify the seal hash against the current signatories and sealTimestamp.
-   * Returns invalid if the envelope is not sealed.
-   * Does NOT verify the individual cryptographic signatures — call verify() for that.
-   */
   static async verifySeal(
     file: Blob,
     options?: ExtractOptions,
   ): Promise<SealVerificationResult> {
     const result = await MajikSignatureEmbed.extract(file, options);
-
-    if (!result) {
-      return {
-        valid: false,
-        reason: "No embedded envelope found",
-      };
-    }
-
-    const { envelope } = result;
-
-    if (!envelope.sealHash || !envelope.sealTimestamp || !envelope.sealedBy) {
-      return {
-        valid: false,
-        reason: "Envelope is not sealed",
-      };
-    }
-
-    const recomputed = computeSealHash(
-      envelope.signatures,
-      envelope.sealTimestamp,
-    );
-
-    if (recomputed !== envelope.sealHash) {
-      return {
-        valid: false,
-        sealedBy: envelope.sealedBy,
-        sealTimestamp: envelope.sealTimestamp,
-        reason:
-          "Seal hash does not match — signatories or timestamp may have been tampered with",
-      };
-    }
-
-    return {
-      valid: true,
-      sealedBy: envelope.sealedBy,
-      sealTimestamp: envelope.sealTimestamp,
-    };
+    if (!result) return { valid: false, reason: "No embedded envelope found" };
+    return result.envelope.verifySeal();
   }
 
   // ── getSealInfo ────────────────────────────────────────────────────────────
 
-  /**
-   * Return seal metadata without verifying.
-   * Returns null if the envelope is not sealed or has no envelope.
-   */
   static async getSealInfo(
     file: Blob,
     options?: ExtractOptions,
   ): Promise<SealInfo | null> {
     const result = await MajikSignatureEmbed.extract(file, options);
-    if (!result) return null;
-
-    const { envelope } = result;
-    if (!envelope.sealHash || !envelope.sealTimestamp || !envelope.sealedBy) {
-      return null;
-    }
-
-    return {
-      sealHash: envelope.sealHash,
-      sealTimestamp: envelope.sealTimestamp,
-      sealedBy: envelope.sealedBy,
-    };
+    return result ? result.envelope.getSealInfo() : null;
   }
 
   // ── isSealed ───────────────────────────────────────────────────────────────
 
-  /**
-   * Returns true if the file has a sealed envelope (structural check only).
-   * Does not verify the seal hash.
-   */
   static async isSealed(
     file: Blob,
     options?: ExtractOptions,
   ): Promise<boolean> {
     const result = await MajikSignatureEmbed.extract(file, options);
-    if (!result) return false;
-    return result.envelope.sealHash !== undefined;
+    return result ? result.envelope.isSealed() : false;
   }
 
   // ── isMultiSig ─────────────────────────────────────────────────────────────
 
-  /**
-   * Returns true when the file has a restricted multi-sig envelope
-   * (allowlist present with more than one expected signer).
-   * Returns false for unsigned files, open-signing files, or single-signer files.
-   */
   static async isMultiSig(
     file: Blob,
     options?: ExtractOptions,
   ): Promise<boolean> {
     const result = await MajikSignatureEmbed.extract(file, options);
-    if (!result) return false;
-    const { envelope } = result;
-    return envelope.allowlist !== undefined && envelope.allowlist.length > 1;
+    return result ? result.envelope.isMultiSig() : false;
   }
 
   // ── canSign ────────────────────────────────────────────────────────────────
 
-  /**
-   * Check whether a MajikKey is permitted to add a signature to this file.
-   *
-   * Returns false (with a reason) when:
-   *   - The file is sealed
-   *   - The file has an allowlist and the key is not on it (all three fields checked)
-   *
-   * Returns true when:
-   *   - The file has no envelope (unsigned — anyone may sign)
-   *   - The file has no allowlist (open signing — anyone may sign)
-   *   - The key is on the allowlist
-   *
-   * Always requires a full MajikKey — fingerprint-only checks are not supported
-   * because they cannot verify the public key fields required by the allowlist.
-   */
   static async canSign(
     file: Blob,
     key: MajikKey,
     options?: ExtractOptions,
   ): Promise<{ permitted: boolean; reason?: string }> {
     const result = await MajikSignatureEmbed.extract(file, options);
-
     // No envelope — unsigned file, anyone may sign
     if (!result) return { permitted: true };
-
-    const { envelope } = result;
-
-    // Sealed — no one may sign
-    if (envelope.sealHash) {
-      return {
-        permitted: false,
-        reason: "The envelope is sealed. No further signatures are permitted.",
-      };
-    }
-
-    // No allowlist — open signing
-    if (!envelope.allowlist || envelope.allowlist.length === 0) {
-      return { permitted: true };
-    }
-
-    // Issuer bypass — always permitted regardless of allowlist membership
-    if (envelope.allowlistSignerId === key.fingerprint) {
-      return { permitted: true };
-    }
-
-    // Allowlist present — check all three fields
-    const check = checkAllowlist(envelope, key);
-    if (!check.permitted) {
-      return {
-        permitted: false,
-        reason: `Signer "${key.fingerprint}" is not on the allowlist for this file.`,
-      };
-    }
-
-    return { permitted: true };
+    return result.envelope.canSign(key);
   }
 
   // ── getSignatories ─────────────────────────────────────────────────────────
 
-  /**
-   * Core signatories method. Returns all, signed, and pending arrays.
-   * Pass filter to narrow the return — the filtered array is still returned
-   * inside the full SignatoriesResult so callers always have the complete picture.
-   *
-   * Returns null if the file has no envelope.
-   */
   static async getSignatories(
     file: Blob,
     options?: ExtractOptions,
     filter?: SignatoriesFilter,
   ): Promise<SignatoriesResult | null> {
     const result = await MajikSignatureEmbed.extract(file, options);
-    if (!result) return null;
-
-    const signatories = buildSignatoriesResult(result.envelope);
-    if (!signatories) return null;
-
-    // When filter is provided, return only the requested slice
-    // but still within the full SignatoriesResult shape for consistency
-    if (filter && filter !== "all") {
-      const filtered = signatories[filter];
-      return {
-        all: signatories.all,
-        signed: filter === "signed" ? filtered : signatories.signed,
-        pending: filter === "pending" ? filtered : signatories.pending,
-      };
-    }
-
-    return signatories;
+    return result ? result.envelope.getSignatories(filter) : null;
   }
 
   // ── getIssuer ──────────────────────────────────────────────────────────────
 
-  /**
-   * Return the issuer (the signer who established the allowlist and controls sealing).
-   * Returns null for open-signing files or unsigned files.
-   */
   static async getIssuer(
     file: Blob,
     options?: ExtractOptions,
   ): Promise<import("../../core/types").SignatoryInfo | null> {
     const result = await MajikSignatureEmbed.extract(file, options);
-    if (!result) return null;
-
-    const { envelope } = result;
-
-    // 1. Check strict allowlist issuer first
-    if (envelope.allowlistSignerId) {
-      const issuerEntry = envelope.allowlist?.find(
-        (e) => e.signerId === envelope.allowlistSignerId,
-      );
-      const issuerSig = envelope.signatures.find(
-        (s) => s.signerId === envelope.allowlistSignerId,
-      );
-
-      if (issuerEntry) {
-        return {
-          signerId: issuerEntry.signerId,
-          edPublicKey: issuerEntry.edPublicKey,
-          mlDsaPublicKey: issuerEntry.mlDsaPublicKey,
-          hasSigned: issuerSig !== undefined,
-          signedAt: issuerSig?.timestamp,
-        };
-      }
-    }
-
-    // 2. FALLBACK: The very first signer is the issuer (Open Signing)
-    if (envelope.signatures.length > 0) {
-      const firstSig = envelope.signatures[0];
-      return {
-        signerId: firstSig.signerId,
-        edPublicKey: firstSig.signerEdPublicKey,
-        mlDsaPublicKey: firstSig.signerMlDsaPublicKey,
-        hasSigned: true,
-        signedAt: firstSig.timestamp,
-      };
-    }
-
-    return null;
+    return result ? result.envelope.resolveIssuer() : null;
   }
 
   // ── getEnvelopeInfo ────────────────────────────────────────────────────────
 
-  /**
-   * Return a full summary of the envelope state in a single file read.
-   * Useful for rendering UI state (badge, status, signatories list) without
-   * making multiple separate calls.
-   * Returns null if the file has no envelope.
-   */
   static async getEnvelopeInfo(
     file: Blob,
     options?: ExtractOptions,
   ): Promise<EnvelopeInfo | null> {
     const result = await MajikSignatureEmbed.extract(file, options);
-    if (!result) return null;
-
-    const { envelope } = result;
-
-    const isSealed = envelope.sealHash !== undefined;
-
-    const hasMultipleSignatories = envelope.signatures.length > 1;
-
-    const isMultiSig =
-      (envelope.allowlist !== undefined && envelope.allowlist.length > 0) ||
-      hasMultipleSignatories;
-
-    const sealInfo: SealInfo | undefined =
-      envelope.sealHash && envelope.sealTimestamp && envelope.sealedBy
-        ? {
-            sealHash: envelope.sealHash,
-            sealTimestamp: envelope.sealTimestamp,
-            sealedBy: envelope.sealedBy,
-          }
-        : undefined;
-
-    const signatories = buildSignatoriesResult(envelope);
-
-    // Build issuer info
-    let issuer: import("../../core/types").SignatoryInfo | null = null;
-
-    // 1. Check strict allowlist issuer first
-    if (envelope.allowlistSignerId) {
-      const issuerEntry = envelope.allowlist?.find(
-        (e) => e.signerId === envelope.allowlistSignerId,
-      );
-      const issuerSig = envelope.signatures.find(
-        (s) => s.signerId === envelope.allowlistSignerId,
-      );
-
-      if (issuerEntry) {
-        issuer = {
-          signerId: issuerEntry.signerId,
-          edPublicKey: issuerEntry.edPublicKey,
-          mlDsaPublicKey: issuerEntry.mlDsaPublicKey,
-          hasSigned: issuerSig !== undefined,
-          signedAt: issuerSig?.timestamp,
-        };
-      }
-    }
-
-    // 2. FALLBACK: The very first signer is the issuer (Open Signing)
-    if (envelope.signatures.length > 0) {
-      const firstSig = envelope.signatures[0];
-      issuer = {
-        signerId: firstSig.signerId,
-        edPublicKey: firstSig.signerEdPublicKey,
-        mlDsaPublicKey: firstSig.signerMlDsaPublicKey,
-        hasSigned: true,
-        signedAt: firstSig.timestamp,
-      };
-    }
-
-    return {
-      isMultiSig,
-      hasMultipleSignatories,
-      isSealed,
-      sealInfo,
-      issuer,
-      signatories,
-      allowlist: envelope.allowlist ?? null,
-      signatureCount: envelope.signatures.length,
-    };
+    return result ? result.envelope.getEnvelopeInfo() : null;
   }
 
   // ── strip ──────────────────────────────────────────────────────────────────
 
   static async strip(file: Blob, options?: ExtractOptions): Promise<Blob> {
-    const bytes = await blobToBytes(file);
-    const mimeType = options?.mimeType ?? detectMimeType(bytes, file.type);
-    const handler = DEFAULT_REGISTRY.resolve(bytes, mimeType);
+    const { bytes, mimeType, handler } = await MajikSignatureEmbed._prepare(
+      file,
+      options,
+    );
     const stripped = await handler.strip(bytes);
     return bytesToBlob(stripped, mimeType);
   }
@@ -1107,8 +649,8 @@ export class MajikSignatureEmbed {
     options?: ExtractOptions,
   ): Promise<ExpectedSigner[] | null> {
     const result = await MajikSignatureEmbed.extract(file, options);
-    if (!result) return null;
-    return result.envelope.allowlist ?? null;
+    if (!result || !result.envelope.allowlist) return null;
+    return [...result.envelope.allowlist];
   }
 
   static readonly registry = DEFAULT_REGISTRY;
@@ -1119,57 +661,36 @@ export class MajikSignatureEmbed {
 
   // ── canAnchor ──────────────────────────────────────────────────────────────
 
-  /**
-   * Check whether a file is eligible for chain anchoring.
-   * Anchoring requires a sealed envelope — permitted = isSealed(file).
-   * Chain-agnostic: does not know or care which chain the caller intends to use.
-   */
   static async canAnchor(
     file: Blob,
     options?: ExtractOptions,
   ): Promise<{ permitted: boolean; reason?: string }> {
     const result = await MajikSignatureEmbed.extract(file, options);
-
     if (!result) {
       return {
         permitted: false,
         reason: "Cannot anchor an unsigned file — no envelope found.",
       };
     }
-
-    if (!result.envelope.sealHash) {
-      return {
-        permitted: false,
-        reason: "File is not sealed. Anchoring requires a sealed envelope.",
-      };
-    }
-
-    return { permitted: true };
+    return result.envelope.canAnchor();
   }
 
   // ── registerChainAnchor ───────────────────────────────────────────────────
 
   /**
    * Embed an already-confirmed chain anchor into the envelope.
-   * Does NOT talk to any chain — purely appends a record it's handed.
-   *
-   * Defensive checks (beyond the master plan's minimum):
-   *   - File must be sealed
-   *   - anchor.payload.digest.value must match the envelope's current sealHash —
-   *     catches a caller accidentally embedding an anchor computed against a
-   *     stale seal (e.g. file was re-sealed between notarize() and this call)
-   *   - Upserts by anchor.id rather than blind-pushing, so a duplicate call
-   *     with the same anchor (e.g. retried after a network blip) doesn't
-   *     produce two entries for the same on-chain transaction
+   * Sealed check, digest match, and upsert-by-id dedup are all enforced by
+   * envelope.withChainAnchor().
    */
   static async registerChainAnchor(
     file: Blob,
     anchor: MajikChainAnchor,
     options?: ExtractOptions,
   ): Promise<EmbedResult> {
-    const bytes = await blobToBytes(file);
-    const mimeType = options?.mimeType ?? detectMimeType(bytes, file.type);
-    const handler = DEFAULT_REGISTRY.resolve(bytes, mimeType);
+    const { bytes, mimeType, handler } = await MajikSignatureEmbed._prepare(
+      file,
+      options,
+    );
 
     const raw = await handler.extract(bytes);
     if (!raw) {
@@ -1178,34 +699,13 @@ export class MajikSignatureEmbed {
       );
     }
 
-    const envelope = parseEnvelope(raw);
-
-    if (!envelope.sealHash) {
-      throw new MajikSignatureError(
-        "Cannot register a chain anchor — file must be sealed first.",
-      );
-    }
-
-    if (anchor.payload.digest.value !== envelope.sealHash) {
-      throw new MajikSignatureError(
-        "Chain anchor digest does not match the envelope's current seal hash.",
-      );
-    }
-
-    const existing = envelope.chainAnchors ?? [];
-    const nextAnchors = existing.some((a) => a.id === anchor.id)
-      ? existing.map((a) => (a.id === anchor.id ? anchor : a))
-      : [...existing, anchor];
-
-    const nextEnvelope: MultiSigEnvelope = {
-      ...envelope,
-      chainAnchors: nextAnchors,
-    };
+    const envelope = MajikSignatureEnvelope.fromJSON(raw);
+    const nextEnvelope = envelope.withChainAnchor(anchor);
 
     const originalBytes = await handler.strip(bytes);
     const resultBytes = await handler.embed(
       originalBytes,
-      JSON.stringify(nextEnvelope),
+      JSON.stringify(nextEnvelope.toJSON()),
     );
     const blob = bytesToBlob(resultBytes, mimeType);
 
@@ -1219,8 +719,78 @@ export class MajikSignatureEmbed {
     options?: ExtractOptions,
   ): Promise<MajikChainAnchor[]> {
     const result = await MajikSignatureEmbed.extract(file, options);
-    if (!result) return [];
-    return result.envelope.chainAnchors ?? [];
+    return result ? [...result.envelope.chainAnchors] : [];
+  }
+
+  // ── Private helpers ───────────────────────────────────────────────────────
+  // Consolidates the bytes → mimeType → handler resolution and the
+  // extract-or-empty envelope read, both previously repeated at the top of
+  // nearly every public method.
+
+  private static async _prepare(
+    file: Blob,
+    options?: { mimeType?: string; forceFallback?: boolean },
+  ): Promise<{ bytes: Uint8Array; mimeType: string; handler: FormatHandler }> {
+    const bytes = await blobToBytes(file);
+    const mimeType = options?.mimeType ?? detectMimeType(bytes, file.type);
+    const handler = options?.forceFallback
+      ? new FallbackHandler()
+      : DEFAULT_REGISTRY.resolve(bytes, mimeType);
+    return { bytes, mimeType, handler };
+  }
+
+  /** Extract + parse, or a fresh empty envelope when none exists. */
+  private static async _readEnvelope(
+    handler: FormatHandler,
+    bytes: Uint8Array,
+  ): Promise<MajikSignatureEnvelope> {
+    const raw = await handler.extract(bytes);
+    return raw
+      ? MajikSignatureEnvelope.fromJSON(raw)
+      : MajikSignatureEnvelope.empty();
+  }
+
+  private static _noSignatureResult(): VerificationResult {
+    return {
+      valid: false,
+      reason: "No embedded signature found",
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Shared by verify() and verifyDetached(): filter by expectedSignerId,
+   * verify each remaining signature, and stamp the handler name onto each
+   * result. Previously duplicated near-verbatim in both methods.
+   */
+  private static _verifySignatures(
+    envelope: MajikSignatureEnvelope,
+    originalBytes: Uint8Array,
+    publicKeys: MajikSignerPublicKeys,
+    MajikSig: MajikSignatureStaticAdapter,
+    handlerName: string,
+    expectedSignerId?: string,
+  ): VerificationResult[] {
+    const sigsToVerify = expectedSignerId
+      ? envelope.signatures.filter((s) => s.signerId === expectedSignerId)
+      : envelope.signatures;
+
+    if (sigsToVerify.length === 0) {
+      return [
+        {
+          valid: false,
+          reason: expectedSignerId
+            ? `No signature found for signerId "${expectedSignerId}"`
+            : "Envelope contains no signatures",
+          timestamp: new Date().toISOString(),
+        },
+      ];
+    }
+
+    return sigsToVerify.map((sig) => ({
+      ...MajikSig.verify(originalBytes, sig, publicKeys),
+      handler: handlerName,
+    }));
   }
 }
 

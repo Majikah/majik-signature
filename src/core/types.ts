@@ -5,10 +5,11 @@
 
 import { MajikChainAnchor } from "../anchor/types";
 import type { ContentType } from "./constants";
+import type { MajikSignatureEnvelope } from "./envelope";
 
 export type { ContentType };
 
-export type MajikSignatureEnvelope = MultiSigEnvelope;
+export type MajikSignatureEnvelopeJSON = MultiSigEnvelope;
 
 /**
  * The serializable per-signer signature envelope.
@@ -341,6 +342,6 @@ export interface EmbedResult {
 
 export interface ExtractResult {
   /** The parsed MultiSigEnvelope extracted from the file */
-  envelope: MultiSigEnvelope;
+  envelope: MajikSignatureEnvelope;
   handler: string;
 }

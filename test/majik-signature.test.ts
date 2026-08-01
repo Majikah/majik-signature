@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeAll } from "vitest";
 import { MajikSignature } from "../src/majik-signature";
-import { getTestKey } from "./helpers/crypto";
+
 import { MajikKey } from "@majikah/majik-key";
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { MajikChainAnchor } from "../src/anchor/types";
+import { getTestKey } from "./helpers/crypto";
 
 const __currentDir = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(__currentDir, "fixtures");
@@ -547,7 +548,7 @@ describe("MajikSignature Class Unit Tests", () => {
       it("should reject anchoring eligibility checks on signed but unsealed files", async () => {
         const result = await MajikSignature.canAnchor(readyToSealBlob);
         expect(result.permitted).toBe(false);
-        expect(result.reason).toContain("File is not sealed");
+        expect(result.reason).toContain("Envelope is not sealed");
       });
 
       it("should permit anchoring on a sealed file", async () => {
@@ -603,7 +604,7 @@ describe("MajikSignature Class Unit Tests", () => {
 
         await expect(
           MajikSignature.registerChainAnchor(readyToSealBlob, dummyAnchor),
-        ).rejects.toThrow(/file must be sealed first/);
+        ).rejects.toThrow(/envelope must be sealed first/);
       });
 
       it("should throw when the anchor digest doesn't match the envelope's seal hash", async () => {

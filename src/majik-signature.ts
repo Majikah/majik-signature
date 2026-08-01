@@ -25,7 +25,7 @@ import { hashContent, bytesToBase64, base64ToBytes } from "./core/hash";
 import type {
   EnvelopeInfo,
   ExpectedSigner,
-  MajikSignatureEnvelope,
+  MajikSignatureEnvelopeJSON,
   MajikSignatureJSON,
   MajikSignerPublicKeys,
   MajikTimestamp,
@@ -49,6 +49,7 @@ import type {
   ImageSignatureStub,
 } from "./core/stamp";
 import { MajikChainAnchor, MajikChainAnchorMemo } from "./anchor/types";
+import { MajikSignatureEnvelope } from "./core/envelope";
 
 const secureFill = Uint8Array.prototype.fill;
 
@@ -574,7 +575,7 @@ export class MajikSignature {
       timestamp?: string;
       mimeType?: string;
       expectedSigners?: ExpectedSigner[];
-      existingEnvelope?: MajikSignatureEnvelope;
+      existingEnvelope?: MajikSignatureEnvelope | MajikSignatureEnvelopeJSON;
     },
   ): ReturnType<typeof MajikSignatureEmbed.signDetached> {
     return MajikSignatureEmbed.signDetached(file, key, MajikSignature, options);
@@ -617,7 +618,7 @@ export class MajikSignature {
    */
   static async verifyFileDetached(
     file: Blob,
-    envelope: MajikSignatureEnvelope,
+    envelope: MajikSignatureEnvelope | MajikSignatureEnvelopeJSON,
     keyOrPublicKeys: MajikKey | MajikSignerPublicKeys,
     options?: { expectedSignerId?: string; mimeType?: string },
     debug: boolean = false,

@@ -17,6 +17,8 @@ export * from "./core/constants";
 
 export * from "./core/embed/majik-embed";
 
+export * from "./core/envelope";
+
 // ── Chain Anchor ─────────────────────────────────────────────────────────────────
 export type * from "./anchor/types";
 
