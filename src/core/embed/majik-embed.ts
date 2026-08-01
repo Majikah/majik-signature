@@ -248,7 +248,11 @@ export class MajikSignatureEmbed {
       contentType?: string;
       timestamp?: string;
       expectedSigners?: ExpectedSigner[];
-      existingEnvelope?: MajikSignatureEnvelope | MajikSignatureEnvelopeJSON;
+      existingEnvelope?:
+        | MajikSignatureEnvelope
+        | MajikSignatureEnvelopeJSON
+        | Uint8Array
+        | Blob;
     },
     debug: boolean = false,
   ): Promise<{
@@ -262,9 +266,8 @@ export class MajikSignatureEmbed {
       options,
     );
 
-    // ── Resolve the working envelope ─────────────────────────────────────────
     const envelope = options?.existingEnvelope
-      ? MajikSignatureEnvelope.from(options.existingEnvelope)
+      ? await MajikSignatureEnvelope.from(options.existingEnvelope)
       : await MajikSignatureEmbed._readEnvelope(handler, bytes);
 
     envelope.assertCanSign(key);
@@ -416,13 +419,17 @@ export class MajikSignatureEmbed {
   // ── verifyDetached ─────────────────────────────────────────────────────────
 
   /**
-   * Verify a file against a provided, detached envelope (instance or JSON).
+   * Verify a file against a provided, detached envelope (instance, blob or JSON).
    * Still strips the file in case it also contains an embedded envelope,
    * ensuring verification runs against the clean original bytes.
    */
   static async verifyDetached(
     file: Blob,
-    envelopeInput: MajikSignatureEnvelope | MajikSignatureEnvelopeJSON,
+    envelopeInput:
+      | MajikSignatureEnvelope
+      | MajikSignatureEnvelopeJSON
+      | Uint8Array
+      | Blob,
     publicKeys: MajikSignerPublicKeys,
     MajikSig: MajikSignatureStaticAdapter,
     options?: ExtractOptions & { expectedSignerId?: string },
@@ -433,7 +440,7 @@ export class MajikSignatureEmbed {
       options,
     );
 
-    const envelope = MajikSignatureEnvelope.from(envelopeInput);
+    const envelope = await MajikSignatureEnvelope.from(envelopeInput);
     const originalBytes = await handler.strip(bytes);
 
     if (debug) {
@@ -468,7 +475,11 @@ export class MajikSignatureEmbed {
 
   static async verifyDetachedWithKey(
     file: Blob,
-    envelopeInput: MajikSignatureEnvelope | MajikSignatureEnvelopeJSON,
+    envelopeInput:
+      | MajikSignatureEnvelope
+      | MajikSignatureEnvelopeJSON
+      | Uint8Array
+      | Blob,
     key: MajikKey,
     MajikSig: MajikSignatureStaticAdapter,
     options?: ExtractOptions & { expectedSignerId?: string },

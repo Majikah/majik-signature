@@ -575,7 +575,11 @@ export class MajikSignature {
       timestamp?: string;
       mimeType?: string;
       expectedSigners?: ExpectedSigner[];
-      existingEnvelope?: MajikSignatureEnvelope | MajikSignatureEnvelopeJSON;
+      existingEnvelope?:
+        | MajikSignatureEnvelope
+        | MajikSignatureEnvelopeJSON
+        | Uint8Array
+        | Blob;
     },
   ): ReturnType<typeof MajikSignatureEmbed.signDetached> {
     return MajikSignatureEmbed.signDetached(file, key, MajikSignature, options);
@@ -618,7 +622,11 @@ export class MajikSignature {
    */
   static async verifyFileDetached(
     file: Blob,
-    envelope: MajikSignatureEnvelope | MajikSignatureEnvelopeJSON,
+    envelope:
+      | MajikSignatureEnvelope
+      | MajikSignatureEnvelopeJSON
+      | Uint8Array
+      | Blob,
     keyOrPublicKeys: MajikKey | MajikSignerPublicKeys,
     options?: { expectedSignerId?: string; mimeType?: string },
     debug: boolean = false,

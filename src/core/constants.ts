@@ -74,3 +74,26 @@ export const MAJIK_TSA_DOMAIN =
 export const MAJIK_NOTARY_VERSION = 1 as const;
 export const MAJIK_NOTARY_MEMO_DOMAIN =
   `majik-notary-v-${MAJIK_NOTARY_VERSION}:` as const;
+
+
+  // ─── MJKSIG binary format ───────────────────────────────────────────────────
+//
+// Layout: [magic(6)][version(1)][reserved(1)][payloadLen(4, BE u32)][payload JSON]
+// Header length is fixed at 12 bytes regardless of version — only the
+// payload shape may change between versions, never the header layout.
+// This lets fromMJKSIG() always locate and validate the header before it
+// needs to know anything about the payload's internal shape.
+
+export const MJKSIG_MAGIC = [0x4d, 0x4a, 0x4b, 0x53, 0x49, 0x47]; // "MJKSIG"
+export const MJKSIG_MAGIC_LEN = MJKSIG_MAGIC.length;
+export const MJKSIG_VERSION = 0x01;
+export const MJKSIG_SUPPORTED_VERSIONS = [MJKSIG_VERSION] as const;
+export const MJKSIG_HEADER_LEN = MJKSIG_MAGIC_LEN + 1 + 1 + 4; // 12
+
+/**
+ * Proposed IANA media type / conventional file extension for this format.
+ * Referenced here so both live in one place ahead of registration —
+ * update if/when the registration settles on different values.
+ */
+export const MJKSIG_MEDIA_TYPE = "application/vnd.majikah.mjksig" as const;
+export const MJKSIG_FILE_EXTENSION = ".mjksig" as const;

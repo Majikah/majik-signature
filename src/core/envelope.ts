@@ -22,7 +22,16 @@ import type { MajikKey } from "@majikah/majik-key";
 import { sha3_512 } from "@noble/hashes/sha3.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 
-import { MAJIK_ENVELOPE_VERSION, MAJIK_SEAL_DOMAIN } from "./constants";
+import {
+  MAJIK_ENVELOPE_VERSION,
+  MAJIK_SEAL_DOMAIN,
+  MJKSIG_HEADER_LEN,
+  MJKSIG_MAGIC,
+  MJKSIG_MAGIC_LEN,
+  MJKSIG_MEDIA_TYPE,
+  MJKSIG_SUPPORTED_VERSIONS,
+  MJKSIG_VERSION,
+} from "./constants";
 import {
   MajikSignatureAllowlistError,
   MajikSignatureError,
@@ -636,6 +645,167 @@ export class MajikSignatureEnvelope {
     }
   }
 
+  // ── MJKSIG binary format ─────────────────────────────────────────────────
+  //
+  // A dedicated, versioned, self-identifying binary container for a detached
+  // envelope — distinct from serialize()/deserialize() (plain base64 of the
+  // JSON, no header) which remains for lightweight in-app round-tripping.
+  // MJKSIG is the wire/on-disk format intended for out-of-band travel,
+  // storage, and eventual IANA registration.
+
+  // ── MJKSIG binary format ─────────────────────────────────────────────────
+  //
+  // A dedicated, versioned, self-identifying binary container for a detached
+  // envelope — distinct from serialize()/deserialize() (plain base64 of the
+  // JSON, no header) which remains for lightweight in-app round-tripping.
+  // MJKSIG is the wire/on-disk format intended for out-of-band travel,
+  // storage, and eventual IANA registration.
+
+  /**
+   * Raw MJKSIG bytes, no Blob wrapper. Exposed as a public escape hatch for
+   * non-browser contexts (Node scripts, tests, direct fs writes) where
+   * wrapping in a Blob just to immediately unwrap it again is pure overhead.
+   * toMJKSIG() is the primary API for anything Blob-facing.
+   */
+  toMJKSIGBytes(): Uint8Array {
+    const payloadJson = new TextEncoder().encode(JSON.stringify(this.toJSON()));
+    const out = new Uint8Array(MJKSIG_HEADER_LEN + payloadJson.length);
+
+    out.set(MJKSIG_MAGIC, 0);
+    out[MJKSIG_MAGIC_LEN] = MJKSIG_VERSION;
+    out[MJKSIG_MAGIC_LEN + 1] = 0x00; // reserved — always 0 in v1
+
+    const lenOffset = MJKSIG_MAGIC_LEN + 2;
+    out[lenOffset] = (payloadJson.length >>> 24) & 0xff;
+    out[lenOffset + 1] = (payloadJson.length >>> 16) & 0xff;
+    out[lenOffset + 2] = (payloadJson.length >>> 8) & 0xff;
+    out[lenOffset + 3] = payloadJson.length & 0xff;
+
+    out.set(payloadJson, MJKSIG_HEADER_LEN);
+    return out;
+  }
+
+  /**
+   * Encode this envelope as an MJKSIG file Blob.
+   * Always writes the current MJKSIG_VERSION — encoding an old payload
+   * shape under an old version tag is not supported; old versions only
+   * ever appear when *reading* pre-existing MJKSIG binaries.
+   */
+  toMJKSIG(): Blob {
+    const bytes = this.toMJKSIGBytes();
+    return new Blob([bytes as BlobPart], {
+      type: MJKSIG_MEDIA_TYPE,
+    });
+  }
+
+  /**
+   * Decode MJKSIG bytes back into a MajikSignatureEnvelope.
+   * Validates magic bytes, version, and declared payload length before
+   * attempting to parse — a truncated or corrupted buffer fails fast with
+   * a clear reason rather than an obscure JSON.parse error.
+   *
+   * Accepts either a Blob (as produced by toMJKSIG()) or raw Uint8Array
+   * (as produced by toMJKSIGBytes(), or read directly off disk) — mirrors
+   * the same "accept either shape" pattern as from(). Reading a Blob
+   * requires awaiting its bytes, which is why this method is async.
+   */
+  static async fromMJKSIG(
+    input: Blob | Uint8Array,
+  ): Promise<MajikSignatureEnvelope> {
+    const raw =
+      input instanceof Blob ? new Uint8Array(await input.arrayBuffer()) : input;
+
+    return MajikSignatureEnvelope.#parseMJKSIGBytes(raw);
+  }
+
+  /** Core MJKSIG byte parser — shared by fromMJKSIG() after Blob resolution. */
+  static #parseMJKSIGBytes(raw: Uint8Array): MajikSignatureEnvelope {
+    if (raw.length < MJKSIG_HEADER_LEN + 1) {
+      // +1 == at least one byte of payload JSON
+      throw new MajikSignatureSerializationError(
+        "Malformed MJKSIG: too short to contain a valid header",
+      );
+    }
+
+    for (let i = 0; i < MJKSIG_MAGIC_LEN; i++) {
+      if (raw[i] !== MJKSIG_MAGIC[i]) {
+        throw new MajikSignatureSerializationError(
+          'Malformed MJKSIG: missing "MJKSIG" magic bytes',
+        );
+      }
+    }
+
+    const version = raw[MJKSIG_MAGIC_LEN];
+    if (!(MJKSIG_SUPPORTED_VERSIONS as readonly number[]).includes(version)) {
+      throw new MajikSignatureSerializationError(
+        `Unsupported MJKSIG version: ${version} (supported: ${MJKSIG_SUPPORTED_VERSIONS.join(", ")})`,
+      );
+    }
+
+    const lenOffset = MJKSIG_MAGIC_LEN + 2;
+    const payloadLen =
+      (raw[lenOffset] << 24) |
+      (raw[lenOffset + 1] << 16) |
+      (raw[lenOffset + 2] << 8) |
+      raw[lenOffset + 3];
+
+    if (payloadLen <= 0) {
+      throw new MajikSignatureSerializationError(
+        "Malformed MJKSIG: invalid payload length",
+      );
+    }
+
+    const payloadStart = MJKSIG_HEADER_LEN;
+    const payloadEnd = payloadStart + payloadLen;
+    if (payloadEnd > raw.length) {
+      throw new MajikSignatureSerializationError(
+        "Malformed MJKSIG: declared payload length exceeds buffer",
+      );
+    }
+
+    const json = new TextDecoder().decode(raw.slice(payloadStart, payloadEnd));
+    // fromJSON() runs full #validateShape() — MJKSIG framing validity does
+    // NOT imply envelope validity, so this is not a redundant check.
+    return MajikSignatureEnvelope.fromJSON(json);
+  }
+
+  /**
+   * Cheap structural sniff — checks magic bytes only, does not parse or
+   * validate the payload. For a Blob, slices only the header bytes rather
+   * than reading the whole file, so this stays cheap even on large inputs.
+   */
+  static async isMJKSIG(input: Blob | Uint8Array): Promise<boolean> {
+    const header =
+      input instanceof Blob
+        ? new Uint8Array(await input.slice(0, MJKSIG_MAGIC_LEN).arrayBuffer())
+        : input;
+
+    if (header.length < MJKSIG_MAGIC_LEN) return false;
+    for (let i = 0; i < MJKSIG_MAGIC_LEN; i++) {
+      if (header[i] !== MJKSIG_MAGIC[i]) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Read just the version byte without parsing the payload.
+   * Returns null if the input isn't MJKSIG-shaped at all.
+   */
+  static async getMJKSIGVersion(
+    input: Blob | Uint8Array,
+  ): Promise<number | null> {
+    const header =
+      input instanceof Blob
+        ? new Uint8Array(
+            await input.slice(0, MJKSIG_MAGIC_LEN + 1).arrayBuffer(),
+          )
+        : input;
+
+    if (!(await MajikSignatureEnvelope.isMJKSIG(header))) return null;
+    if (header.length < MJKSIG_MAGIC_LEN + 1) return null;
+    return header[MJKSIG_MAGIC_LEN];
+  }
+
   // ── Creation / parsing ───────────────────────────────────────────────────────
 
   static empty(): MajikSignatureEnvelope {
@@ -698,13 +868,29 @@ export class MajikSignatureEnvelope {
     );
   }
 
-  /** Accepts either an instance or its JSON shape — normalizes to an instance. */
-  static from(
-    input: MajikSignatureEnvelope | MajikSignatureEnvelopeJSON,
-  ): MajikSignatureEnvelope {
-    return input instanceof MajikSignatureEnvelope
-      ? input
-      : MajikSignatureEnvelope.fromJSON(input);
+  /**
+   * Accepts an instance, its JSON shape, or MJKSIG bytes/Blob — normalizes to
+   * an instance. This is the single entry point that lets every downstream
+   * caller (verifyDetached, verifyDetachedWithKey, signDetached's
+   * existingEnvelope option) transparently accept a detached envelope
+   * regardless of which form it arrived in.
+   *
+   * Now async: resolving a Blob input requires awaiting its bytes. Every
+   * existing call site is already inside an async method, so this only
+   * costs an added `await` at each call site — no structural changes.
+   */
+  static async from(
+    input:
+      | MajikSignatureEnvelope
+      | MajikSignatureEnvelopeJSON
+      | Uint8Array
+      | Blob,
+  ): Promise<MajikSignatureEnvelope> {
+    if (input instanceof MajikSignatureEnvelope) return input;
+    if (input instanceof Uint8Array || input instanceof Blob) {
+      return MajikSignatureEnvelope.fromMJKSIG(input);
+    }
+    return MajikSignatureEnvelope.fromJSON(input);
   }
 
   validate(): void {

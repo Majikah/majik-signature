@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { MajikChainAnchor } from "../src/anchor/types";
 import { getTestKey } from "./helpers/crypto";
+import { MajikSignatureEnvelope } from "../src/core/envelope";
 
 const __currentDir = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(__currentDir, "fixtures");
@@ -838,6 +839,167 @@ describe("MajikSignature Class Unit Tests", () => {
 
       // Verification should fail because the cryptographic validation checks won't match
       expect(results.some((r) => r.valid)).toBe(false);
+    });
+  });
+
+  // ─── DETACHED SIGNATURES & MJKSIG FEATURE TESTS ──────────────────────────────
+
+  describe("Detached Signatures & MJKSIG Features", () => {
+    let mockKey: MajikKey;
+
+    beforeAll(async () => {
+      mockKey = await getTestKey();
+    });
+
+    describe("Detached File Signing and Verification (.signFileDetached & .verifyFileDetached)", () => {
+      it.each(FILE_FIXTURES)(
+        "should sign $label ($file) detached and verify successfully",
+        async ({ file, contentType }) => {
+          const fileContent = loadFixture(file);
+          const originalBlob = new Blob([fileContent as BlobPart], {
+            type: contentType,
+          });
+
+          // 1. Sign detached
+          const { blob: strippedBlob, envelope } =
+            await MajikSignature.signFileDetached(originalBlob, mockKey, {
+              contentType,
+            });
+
+          expect(envelope).toBeInstanceOf(MajikSignatureEnvelope);
+          expect(envelope.signatures.length).toBe(1);
+          expect(envelope.signatures[0].signerId).toBe(mockKey.fingerprint);
+
+          // 2. Verify detached using MajikKey
+          const results = await MajikSignature.verifyFileDetached(
+            strippedBlob,
+            envelope,
+            mockKey,
+          );
+
+          expect(results).toHaveLength(1);
+          expect(results[0].valid).toBe(true);
+          expect(results[0].signerId).toBe(mockKey.fingerprint);
+        },
+      );
+
+      it.each(FILE_FIXTURES)(
+        "should reject detached verification on corrupted $label ($file) content",
+        async ({ file, contentType }) => {
+          const fileContent = loadFixture(file);
+          const originalBlob = new Blob([fileContent as BlobPart], {
+            type: contentType,
+          });
+
+          const { blob: strippedBlob, envelope } =
+            await MajikSignature.signFileDetached(originalBlob, mockKey, {
+              contentType,
+            });
+
+          // Corrupt the stripped content blob
+          const corruptedBlob = await corruptBlob(strippedBlob);
+
+          const results = await MajikSignature.verifyFileDetached(
+            corruptedBlob,
+            envelope,
+            mockKey,
+          );
+
+          expect(results).toHaveLength(1);
+          expect(results[0].valid).toBe(false);
+        },
+      );
+    });
+
+    describe("MJKSIG Binary Format Conversions & Verification", async () => {
+      it.each(FILE_FIXTURES)(
+        "should convert detached envelope for $label ($file) to MJKSIG binary and verify back",
+        async ({ file, contentType }) => {
+          const fileContent = loadFixture(file);
+          const originalBlob = new Blob([fileContent as BlobPart], {
+            type: contentType,
+          });
+
+          // 1. Sign detached
+          const { blob: strippedBlob, envelope } =
+            await MajikSignature.signFileDetached(originalBlob, mockKey, {
+              contentType,
+            });
+
+          // 2. Encode envelope to MJKSIG binary
+          const mjksigBlob = envelope.toMJKSIG();
+          const bytes = envelope.toMJKSIGBytes();
+          expect(mjksigBlob).toBeInstanceOf(Blob);
+          expect(bytes.length).toBeGreaterThan(12); // Header (12 bytes) + payload
+
+          // 3. Inspect header metadata with static sniffers
+          expect(await MajikSignatureEnvelope.isMJKSIG(mjksigBlob)).toBe(true);
+          expect(
+            await MajikSignatureEnvelope.getMJKSIGVersion(mjksigBlob),
+          ).toBe(1);
+
+          // 4. Verify detached directly using raw MJKSIG Uint8Array
+          const directVerifyResults = await MajikSignature.verifyFileDetached(
+            strippedBlob,
+            mjksigBlob,
+            mockKey,
+          );
+
+          expect(directVerifyResults).toHaveLength(1);
+          expect(directVerifyResults[0].valid).toBe(true);
+          expect(directVerifyResults[0].signerId).toBe(mockKey.fingerprint);
+
+          // 5. Decode back from MJKSIG binary and check structural integrity
+          const decodedEnvelope =
+            await MajikSignatureEnvelope.fromMJKSIG(mjksigBlob);
+
+          expect(decodedEnvelope).toBeInstanceOf(MajikSignatureEnvelope);
+          expect(decodedEnvelope.isValid()).toBe(true);
+          expect(decodedEnvelope.signatures[0].contentHash).toBe(
+            envelope.signatures[0].contentHash,
+          );
+
+          // 6. Verify detached using restored envelope instance
+          const restoredVerifyResults = await MajikSignature.verifyFileDetached(
+            strippedBlob,
+            decodedEnvelope,
+            mockKey,
+          );
+
+          expect(restoredVerifyResults[0].valid).toBe(true);
+        },
+      );
+
+      describe("MJKSIG Sniffing and Error Handling", () => {
+        it("should return false for isMJKSIG on non-MJKSIG bytes", async () => {
+          const dummyBytes = new TextEncoder().encode(
+            "Hello World, Not MJKSIG!",
+          );
+          const isMJKSIG = await MajikSignatureEnvelope.isMJKSIG(dummyBytes);
+          expect(isMJKSIG).toBe(false);
+          expect(
+            await MajikSignatureEnvelope.getMJKSIGVersion(dummyBytes),
+          ).toBeNull();
+        });
+
+        it("should throw when decoding corrupted or truncated MJKSIG bytes", async () => {
+          // Test 1: Too short to be a valid header
+          const shortBuffer = new Uint8Array([0x4d, 0x4a, 0x4b]); // "MJK"
+          await expect(
+            MajikSignatureEnvelope.fromMJKSIG(shortBuffer),
+          ).rejects.toThrow(
+            "Malformed MJKSIG: too short to contain a valid header",
+          );
+
+          // Test 2: Long enough to pass length check, but missing magic bytes
+          // Using a 32-byte array of zeroes guarantees it bypasses the length check
+          const badMagic = new Uint8Array(32);
+
+          await expect(
+            MajikSignatureEnvelope.fromMJKSIG(badMagic),
+          ).rejects.toThrow('Malformed MJKSIG: missing "MJKSIG" magic bytes');
+        });
+      });
     });
   });
 });
