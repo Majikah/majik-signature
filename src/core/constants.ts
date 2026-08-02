@@ -97,3 +97,23 @@ export const MJKSIG_HEADER_LEN = MJKSIG_MAGIC_LEN + 1 + 1 + 4; // 12
  */
 export const MJKSIG_MEDIA_TYPE = "application/vnd.majikah.mjksig" as const;
 export const MJKSIG_FILE_EXTENSION = ".mjksig" as const;
+
+
+// ─── MJKSMAP binary format ───────────────────────────────────────────────────
+//
+// Layout: [magic(7)][version(1)][reserved(1)][payloadLen(4, BE u32)][payload JSON]
+// A single manifest file mapping every file in a batch/zip to its detached
+// MajikSignatureEnvelope — one file to track instead of N loose .mjksig files.
+// Header layout mirrors MJKSIG deliberately; only the magic differs.
+
+export const MJKSMAP_MAGIC = [0x4d, 0x4a, 0x4b, 0x53, 0x4d, 0x41, 0x50]; // "MJKSMAP"
+export const MJKSMAP_MAGIC_LEN = MJKSMAP_MAGIC.length;
+export const MJKSMAP_VERSION = 0x01;
+export const MJKSMAP_SUPPORTED_VERSIONS = [MJKSMAP_VERSION] as const;
+export const MJKSMAP_HEADER_LEN = MJKSMAP_MAGIC_LEN + 1 + 1 + 4; // 13
+
+export const MJKSMAP_MEDIA_TYPE = "application/vnd.majikah.mjksmap";
+export const MJKSMAP_FILE_EXTENSION = ".mjksmap";
+
+/** Conventional name/location when packaged in a signed batch zip. */
+export const MJKSMAP_DEFAULT_FILENAME = "signatures.mjksmap";

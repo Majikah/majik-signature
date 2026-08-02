@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import { MajikSignature } from "../src/majik-signature";
 
 import { MajikKey } from "@majikah/majik-key";
@@ -9,6 +9,8 @@ import { dirname, join } from "node:path";
 import { MajikChainAnchor } from "../src/anchor/types";
 import { getTestKey } from "./helpers/crypto";
 import { MajikSignatureEnvelope } from "../src/core/envelope";
+import { MajikSignatureMap } from "../src/core/mjksmap";
+import type { MajikTimestamp } from "../src/core/types";
 
 const __currentDir = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(__currentDir, "fixtures");
@@ -54,39 +56,67 @@ function tamperBytes(bytes: Uint8Array): Uint8Array {
   return tampered;
 }
 
-/** Simulates data corruption on an embedded Blob (modifies original content, keeping envelope parsing intact if appended) */
+/** Simulates data corruption on an embedded/detached Blob's raw bytes. */
 async function corruptBlob(blob: Blob): Promise<Blob> {
   const buffer = await blob.arrayBuffer();
   const view = new Uint8Array(buffer);
   if (view.length > 0) {
-    // Flip a byte to break the content hash validation
     view[0] = view[0] ^ 0xff;
   }
   return new Blob([view], { type: blob.type });
 }
 
-// ─── 2. TEST SUITE ──────────────────────────────────────────────────────────
+// ─── TEST SUITE ──────────────────────────────────────────────────────────────
 
 describe("MajikSignature Class Unit Tests", () => {
-  let mockKey: MajikKey;
   const dummyContent = "Hello, post-quantum world!";
 
+  // ── SHARED KEY POOL ─────────────────────────────────────────────────────
+  //
+  // Created ONCE, in parallel, at the very top of the suite. Every describe
+  // block below reuses these instead of minting a fresh MajikKey — key
+  // generation is the expensive part of these tests (ML-KEM/ML-DSA
+  // keygen), and nothing about signing/verifying mutates key state in a
+  // way that would make reuse across tests unsafe.
+  //
+  // Roles are assigned semantically so test bodies stay readable:
+  //   keyA   — primary signer / issuer in multi-sig & batch tests
+  //   keyB   — second signer
+  //   keyC   — third signer (used where a distinct third party matters,
+  //            e.g. allowlists with >2 members)
+  //   keyD   — the "intruder" / unauthorized signer in negative tests
+  //   tsaKey — a dedicated authority key, kept separate from signer keys
+  //            since it plays a structurally different role (timestamping
+  //            authority, not a file signer)
+  let keyA: MajikKey;
+  let keyB: MajikKey;
+  let keyC: MajikKey;
+  let keyD: MajikKey;
+  let tsaKey: MajikKey;
+
   beforeAll(async () => {
-    vi.clearAllMocks();
-    mockKey = await getTestKey();
-  }, 60000); // ← timeout in ms as the 2nd arg to beforeAll
+    console.log("[majik-key] Generating shared key pool (5 keys, parallel)...");
+    [keyA, keyB, keyC, keyD, tsaKey] = await Promise.all([
+      getTestKey(),
+      getTestKey(),
+      getTestKey(),
+      getTestKey(),
+      getTestKey(),
+    ]);
+    console.log("[majik-key] Shared key pool ready.");
+  }, 120000);
 
   // ── SIGNING TESTS ─────────────────────────────────────────────────────────
 
   describe("Signing Content (.sign)", () => {
     it("should successfully generate a MajikSignature instance with valid arguments", async () => {
-      const signature = await MajikSignature.sign(dummyContent, mockKey, {
+      const signature = await MajikSignature.sign(dummyContent, keyA, {
         contentType: "text/plain",
       });
 
       expect(signature).toBeInstanceOf(MajikSignature);
       expect(signature.version).toBe(1);
-      expect(signature.signerId).toBe(mockKey.fingerprint);
+      expect(signature.signerId).toBe(keyA.fingerprint);
       expect(signature.contentType).toBe("text/plain");
       expect(signature.contentHash).toBeDefined();
       expect(signature.edSignature).toBeDefined();
@@ -101,13 +131,13 @@ describe("MajikSignature Class Unit Tests", () => {
           const blob = new Blob([fileContent as BlobPart], {
             type: contentType,
           });
-          const { signature } = await MajikSignature.signFile(blob, mockKey, {
+          const { signature } = await MajikSignature.signFile(blob, keyA, {
             contentType,
           });
 
           expect(signature).toBeInstanceOf(MajikSignature);
           expect(signature.version).toBe(1);
-          expect(signature.signerId).toBe(mockKey.fingerprint);
+          expect(signature.signerId).toBe(keyA.fingerprint);
           expect(signature.contentType).toBe(contentType);
           expect(signature.contentHash).toBeDefined();
           expect(signature.edSignature).toBeDefined();
@@ -120,18 +150,18 @@ describe("MajikSignature Class Unit Tests", () => {
   // ── VERIFICATION TESTS ────────────────────────────────────────────────────
   describe("Verification (.verify)", () => {
     it("should return a validation true object if cryptographic checks pass", async () => {
-      const signature = await MajikSignature.sign(dummyContent, mockKey);
-      const publicKeys = MajikSignature.publicKeysFromMajikKey(mockKey);
+      const signature = await MajikSignature.sign(dummyContent, keyA);
+      const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
 
       const result = MajikSignature.verify(dummyContent, signature, publicKeys);
 
       expect(result.valid).toBe(true);
-      expect(result.signerId).toBe(mockKey.fingerprint);
+      expect(result.signerId).toBe(keyA.fingerprint);
     });
 
     it("should return valid false if the verified content hash does not match original signature", async () => {
-      const signature = await MajikSignature.sign(dummyContent, mockKey);
-      const publicKeys = MajikSignature.publicKeysFromMajikKey(mockKey);
+      const signature = await MajikSignature.sign(dummyContent, keyA);
+      const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
 
       const result = MajikSignature.verify(
         "Tampered content!",
@@ -143,11 +173,11 @@ describe("MajikSignature Class Unit Tests", () => {
     });
 
     it("should allow verification directly using an instance of a MajikKey (.verifyWithKey)", async () => {
-      const signature = await MajikSignature.sign(dummyContent, mockKey);
+      const signature = await MajikSignature.sign(dummyContent, keyA);
       const result = MajikSignature.verifyWithKey(
         dummyContent,
         signature,
-        mockKey,
+        keyA,
       );
 
       expect(result.valid).toBe(true);
@@ -158,10 +188,10 @@ describe("MajikSignature Class Unit Tests", () => {
         "should verify $label ($file) content correctly",
         async ({ file, contentType }) => {
           const fileContent = loadFixture(file);
-          const signature = await MajikSignature.sign(fileContent, mockKey, {
+          const signature = await MajikSignature.sign(fileContent, keyA, {
             contentType,
           });
-          const publicKeys = MajikSignature.publicKeysFromMajikKey(mockKey);
+          const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
 
           const result = MajikSignature.verify(
             fileContent,
@@ -170,7 +200,7 @@ describe("MajikSignature Class Unit Tests", () => {
           );
 
           expect(result.valid).toBe(true);
-          expect(result.signerId).toBe(mockKey.fingerprint);
+          expect(result.signerId).toBe(keyA.fingerprint);
         },
       );
 
@@ -178,10 +208,10 @@ describe("MajikSignature Class Unit Tests", () => {
         "should reject tampered $label ($file) content",
         async ({ file, contentType }) => {
           const fileContent = loadFixture(file);
-          const signature = await MajikSignature.sign(fileContent, mockKey, {
+          const signature = await MajikSignature.sign(fileContent, keyA, {
             contentType,
           });
-          const publicKeys = MajikSignature.publicKeysFromMajikKey(mockKey);
+          const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
 
           const tampered = tamperBytes(fileContent);
           const result = MajikSignature.verify(tampered, signature, publicKeys);
@@ -199,13 +229,10 @@ describe("MajikSignature Class Unit Tests", () => {
           });
           const { signature, blob: signedBlob } = await MajikSignature.signFile(
             blob,
-            mockKey,
-            {
-              contentType,
-            },
+            keyA,
+            { contentType },
           );
 
-          // Recover what was actually signed, not the raw pre-strip fixture
           const strippedBlob = await MajikSignature.stripFrom(signedBlob, {
             mimeType: contentType,
           });
@@ -216,7 +243,7 @@ describe("MajikSignature Class Unit Tests", () => {
           const result = MajikSignature.verifyWithKey(
             strippedBytes,
             signature,
-            mockKey,
+            keyA,
           );
           expect(result.valid).toBe(true);
         },
@@ -231,13 +258,11 @@ describe("MajikSignature Class Unit Tests", () => {
           });
           const { blob: signedBlob } = await MajikSignature.signFile(
             blob,
-            mockKey,
-            {
-              contentType,
-            },
+            keyA,
+            { contentType },
           );
 
-          const results = await MajikSignature.verifyFile(signedBlob, mockKey);
+          const results = await MajikSignature.verifyFile(signedBlob, keyA);
           expect(results[0].valid).toBe(true);
         },
       );
@@ -259,7 +284,7 @@ describe("MajikSignature Class Unit Tests", () => {
   // ── SERIALIZATION TESTS ───────────────────────────────────────────────────
   describe("Serialization and Parsing", () => {
     it("should cleanly execute string round-trips via serialize and deserialize", async () => {
-      const signature = await MajikSignature.sign(dummyContent, mockKey);
+      const signature = await MajikSignature.sign(dummyContent, keyA);
 
       const serializedBase64 = signature.serialize();
       expect(typeof serializedBase64).toBe("string");
@@ -271,7 +296,7 @@ describe("MajikSignature Class Unit Tests", () => {
     });
 
     it("should cleanly compile JSON primitives via toJSON and fromJSON", async () => {
-      const signature = await MajikSignature.sign(dummyContent, mockKey);
+      const signature = await MajikSignature.sign(dummyContent, keyA);
       const jsonOutput = signature.toJSON();
 
       expect(jsonOutput.version).toBe(1);
@@ -285,31 +310,26 @@ describe("MajikSignature Class Unit Tests", () => {
   // ── HELPER & COMPLIANCE METHODS ───────────────────────────────────────────
   describe("Instance Compliance & Key Helpers", () => {
     it("should accurately handle validation flags", async () => {
-      const signature = await MajikSignature.sign(dummyContent, mockKey);
+      const signature = await MajikSignature.sign(dummyContent, keyA);
       expect(signature.isValid()).toBe(true);
     });
 
     it("should successfully slice out public key components into independent objects", async () => {
-      const signature = await MajikSignature.sign(dummyContent, mockKey);
+      const signature = await MajikSignature.sign(dummyContent, keyA);
       const keys = signature.extractPublicKeys();
 
-      expect(keys.signerId).toBe(mockKey.fingerprint);
+      expect(keys.signerId).toBe(keyA.fingerprint);
       expect(keys.edPublicKey).toBeInstanceOf(Uint8Array);
       expect(keys.mlDsaPublicKey).toBeInstanceOf(Uint8Array);
     });
 
     it("should correctly format expected signer profiles from raw key structures", () => {
-      const profile = MajikSignature.expectedSignerFromKey(mockKey);
+      const profile = MajikSignature.expectedSignerFromKey(keyA);
 
-      expect(profile.signerId).toBe(mockKey.fingerprint);
-
-      // We add the '!' to satisfy TypeScript that edPublicKey is not undefined
+      expect(profile.signerId).toBe(keyA.fingerprint);
       expect(profile.edPublicKey).toBe(
-        btoa(String.fromCharCode(...mockKey.edPublicKey!)),
+        btoa(String.fromCharCode(...keyA.edPublicKey!)),
       );
-
-      // We assert the post-quantum key was extracted and encoded as a string,
-      // but avoid spreading its 2592 bytes to prevent call stack overflows!
       expect(typeof profile.mlDsaPublicKey).toBe("string");
       expect(profile.mlDsaPublicKey.length).toBeGreaterThan(0);
     });
@@ -319,56 +339,37 @@ describe("MajikSignature Class Unit Tests", () => {
   describe("Sub-module Framework Redirection Contracts", () => {
     it("should redirect file-signing assertions to MajikSignatureEmbed", async () => {
       const dummyBlob = new Blob(["test"], { type: "text/plain" });
-      const result = await MajikSignature.signFile(dummyBlob, mockKey);
+      const result = await MajikSignature.signFile(dummyBlob, keyA);
       expect(result).toBeDefined();
     });
   });
 
   // ── MULTI-PARTY SIGNING (OPEN & RESTRICTED) ────────────────────────────────
   describe("Multi-Party File Signing Workflow", () => {
-    let issuerKey: MajikKey;
-    let allowedKey1: MajikKey;
-    let allowedKey2: MajikKey;
-    let intruderKey: MajikKey;
     let baseBlob: Blob;
 
-    beforeAll(async () => {
-      console.log("Creating Test Keys");
-      issuerKey = await getTestKey();
-      console.log("[majik-key] Issuer Key Created");
-
-      allowedKey1 = await getTestKey();
-      console.log("[majik-key] Allowed Key 1 Created");
-
-      allowedKey2 = await getTestKey();
-      console.log("[majik-key] Allowed Key 2 Created");
-
-      intruderKey = await getTestKey();
-      console.log("[majik-key] Intruder Key Created");
-
+    beforeAll(() => {
       baseBlob = new Blob(["Majik Multi-sig test data"], {
         type: "text/plain",
       });
-    }, 120000); // ← timeout in ms as the 2nd arg to beforeAll
+    });
 
     describe("Open Signing (No Allowlist)", () => {
       it("should permit multiple signatures sequentially from different keys", async () => {
-        // Signer 1
         const { blob: sig1Blob } = await MajikSignature.signFile(
           baseBlob,
-          allowedKey1,
+          keyB,
         );
-        // Signer 2 appends to envelope
         const { blob: sig2Blob } = await MajikSignature.signFile(
           sig1Blob,
-          allowedKey2,
+          keyC,
         );
 
         const info = await MajikSignature.getEnvelopeInfo(sig2Blob);
         expect(info?.signatureCount).toBe(2);
         expect(info?.isMultiSig).toBe(true);
 
-        const results = await MajikSignature.verifyFile(sig2Blob, allowedKey2);
+        const results = await MajikSignature.verifyFile(sig2Blob, keyC);
         expect(results.some((r) => r.valid)).toBe(true);
       });
     });
@@ -378,40 +379,40 @@ describe("MajikSignature Class Unit Tests", () => {
 
       it("should successfully establish an allowlist on first sign", async () => {
         const expectedSigners = [
-          MajikSignature.expectedSignerFromKey(issuerKey),
-          MajikSignature.expectedSignerFromKey(allowedKey1),
-          MajikSignature.expectedSignerFromKey(allowedKey2),
+          MajikSignature.expectedSignerFromKey(keyA),
+          MajikSignature.expectedSignerFromKey(keyB),
+          MajikSignature.expectedSignerFromKey(keyC),
         ];
 
-        const { blob } = await MajikSignature.signFile(baseBlob, issuerKey, {
+        const { blob } = await MajikSignature.signFile(baseBlob, keyA, {
           expectedSigners,
         });
         restrictedBlob = blob;
 
         const info = await MajikSignature.getEnvelopeInfo(restrictedBlob);
         expect(info?.isMultiSig).toBe(true);
-        expect(info?.issuer?.signerId).toBe(issuerKey.fingerprint);
+        expect(info?.issuer?.signerId).toBe(keyA.fingerprint);
         expect(info?.allowlist?.length).toBe(3);
       });
 
       it("should permit a signature from an allowlisted key", async () => {
         const { blob: doubleSignedBlob } = await MajikSignature.signFile(
           restrictedBlob,
-          allowedKey1,
+          keyB,
         );
 
         const info = await MajikSignature.getEnvelopeInfo(doubleSignedBlob);
         expect(info?.signatureCount).toBe(2);
         expect(
           info?.signatories?.signed.some(
-            (s) => s.signerId === allowedKey1.fingerprint,
+            (s) => s.signerId === keyB.fingerprint,
           ),
         ).toBe(true);
       });
 
       it("should reject a signature attempt from a key not on the allowlist", async () => {
         await expect(
-          MajikSignature.signFile(restrictedBlob, intruderKey),
+          MajikSignature.signFile(restrictedBlob, keyD),
         ).rejects.toThrow(/not permitted to sign this file/);
       });
 
@@ -419,14 +420,10 @@ describe("MajikSignature Class Unit Tests", () => {
         const signatories =
           await MajikSignature.getPendingSignatories(restrictedBlob);
         expect(
-          signatories?.pending.some(
-            (s) => s.signerId === allowedKey2.fingerprint,
-          ),
+          signatories?.pending.some((s) => s.signerId === keyC.fingerprint),
         ).toBe(true);
         expect(
-          signatories?.pending.some(
-            (s) => s.signerId === intruderKey.fingerprint,
-          ),
+          signatories?.pending.some((s) => s.signerId === keyD.fingerprint),
         ).toBe(false);
       });
     });
@@ -437,37 +434,31 @@ describe("MajikSignature Class Unit Tests", () => {
       let readyToSealBlob: Blob;
 
       beforeAll(async () => {
-        // Setup a restricted file with signatures
         const expectedSigners = [
-          MajikSignature.expectedSignerFromKey(issuerKey),
-          MajikSignature.expectedSignerFromKey(allowedKey1),
+          MajikSignature.expectedSignerFromKey(keyA),
+          MajikSignature.expectedSignerFromKey(keyB),
         ];
-        const { blob: step1 } = await MajikSignature.signFile(
-          baseBlob,
-          issuerKey,
-          { expectedSigners },
-        );
-        const { blob: step2 } = await MajikSignature.signFile(
-          step1,
-          allowedKey1,
-        );
+        const { blob: step1 } = await MajikSignature.signFile(baseBlob, keyA, {
+          expectedSigners,
+        });
+        const { blob: step2 } = await MajikSignature.signFile(step1, keyB);
         readyToSealBlob = step2;
       });
 
       it("should reject sealing attempts from non-issuers", async () => {
         await expect(
-          MajikSignature.seal(readyToSealBlob, allowedKey1),
+          MajikSignature.seal(readyToSealBlob, keyB),
         ).rejects.toThrow(/Only the issuer.*may seal this file/);
       });
 
       it("should allow the issuer to seal the multi-sig envelope", async () => {
         const { blob, sealInfo } = await MajikSignature.seal(
           readyToSealBlob,
-          issuerKey,
+          keyA,
         );
         sealedBlob = blob;
 
-        expect(sealInfo.sealedBy).toBe(issuerKey.fingerprint);
+        expect(sealInfo.sealedBy).toBe(keyA.fingerprint);
 
         const isSealed = await MajikSignature.isSealed(sealedBlob);
         expect(isSealed).toBe(true);
@@ -476,36 +467,31 @@ describe("MajikSignature Class Unit Tests", () => {
       it("should successfully verify an intact seal", async () => {
         const result = await MajikSignature.verifySeal(sealedBlob);
         expect(result.valid).toBe(true);
-        expect(result.sealedBy).toBe(issuerKey.fingerprint);
+        expect(result.sealedBy).toBe(keyA.fingerprint);
       });
 
       it("should strictly reject any new signatures once the envelope is sealed", async () => {
-        // Even the issuer shouldn't be able to re-sign a sealed file
-        await expect(
-          MajikSignature.signFile(sealedBlob, issuerKey),
-        ).rejects.toThrow(/Cannot sign a sealed envelope/);
+        await expect(MajikSignature.signFile(sealedBlob, keyA)).rejects.toThrow(
+          /Cannot sign a sealed envelope/,
+        );
       });
     });
 
     // ── DATA INTEGRITY & TAMPERING ───────────────────────────────────────────
     describe("Data Integrity & Tampering Checks", () => {
       it("should flag validation as false if a signed file's raw bytes are modified over the wire", async () => {
-        // Sign a file normally
         const { blob: originalSignedBlob } = await MajikSignature.signFile(
           baseBlob,
-          issuerKey,
+          keyA,
         );
 
-        // Simulate a corrupted payload (bit rot, man-in-the-middle, formatting issue)
         const tamperedBlob = await corruptBlob(originalSignedBlob);
 
-        // Verification must fail because the reconstructed payload contentHash will mismatch
         const verifyResults = await MajikSignature.verifyFile(
           tamperedBlob,
-          issuerKey,
+          keyA,
         );
 
-        // Ensure at least one result processed and returned valid = false
         expect(verifyResults.length).toBeGreaterThan(0);
         expect(verifyResults[0].valid).toBe(false);
       });
@@ -517,25 +503,19 @@ describe("MajikSignature Class Unit Tests", () => {
       let readyToSealBlob: Blob;
 
       beforeAll(async () => {
-        // Build a fresh unsealed and sealed file for anchoring checks
         const expectedSigners = [
-          MajikSignature.expectedSignerFromKey(issuerKey),
-          MajikSignature.expectedSignerFromKey(allowedKey1),
+          MajikSignature.expectedSignerFromKey(keyA),
+          MajikSignature.expectedSignerFromKey(keyB),
         ];
-        const { blob: step1 } = await MajikSignature.signFile(
-          baseBlob,
-          issuerKey,
-          { expectedSigners },
-        );
-        const { blob: step2 } = await MajikSignature.signFile(
-          step1,
-          allowedKey1,
-        );
+        const { blob: step1 } = await MajikSignature.signFile(baseBlob, keyA, {
+          expectedSigners,
+        });
+        const { blob: step2 } = await MajikSignature.signFile(step1, keyB);
         readyToSealBlob = step2;
 
         const { blob: step3 } = await MajikSignature.seal(
           readyToSealBlob,
-          issuerKey,
+          keyA,
         );
         sealedBlob = step3;
       });
@@ -564,10 +544,7 @@ describe("MajikSignature Class Unit Tests", () => {
           payload: {
             chain: "solana",
             network: "mainnet-beta",
-            digest: {
-              algorithm: "SHA3-512",
-              value: "dummy-seal-hash",
-            },
+            digest: { algorithm: "SHA3-512", value: "dummy-seal-hash" },
           },
           memo: "majik-notary-v1:dummy-seal-hash",
           txSignature: "dummy-tx-signature",
@@ -590,10 +567,7 @@ describe("MajikSignature Class Unit Tests", () => {
           payload: {
             chain: "solana",
             network: "mainnet-beta",
-            digest: {
-              algorithm: "SHA3-512",
-              value: sealInfo!.sealHash,
-            },
+            digest: { algorithm: "SHA3-512", value: sealInfo!.sealHash },
           },
           memo: `majik-notary-v1:${sealInfo!.sealHash}`,
           txSignature: "dummy-tx-signature",
@@ -645,10 +619,7 @@ describe("MajikSignature Class Unit Tests", () => {
           payload: {
             chain: "solana",
             network: "mainnet-beta",
-            digest: {
-              algorithm: "SHA3-512",
-              value: sealInfo!.sealHash,
-            },
+            digest: { algorithm: "SHA3-512", value: sealInfo!.sealHash },
           },
           memo: `majik-notary-v1:${sealInfo!.sealHash}`,
           txSignature: "52GgP8F9abcdefghijklmnopqrstuvwxyz",
@@ -658,17 +629,14 @@ describe("MajikSignature Class Unit Tests", () => {
           status: "confirmed",
         };
 
-        // Assert initially empty list of anchors
         let anchors = await MajikSignature.getChainAnchors(sealedBlob);
         expect(anchors).toEqual([]);
 
-        // Register the anchor record
         const anchoredBlob = await MajikSignature.registerChainAnchor(
           sealedBlob,
           anchor,
         );
 
-        // Retrieve and assert correctly updated anchor payload
         anchors = await MajikSignature.getChainAnchors(anchoredBlob);
         expect(anchors).toHaveLength(1);
         expect(anchors[0]).toEqual(anchor);
@@ -684,10 +652,7 @@ describe("MajikSignature Class Unit Tests", () => {
           payload: {
             chain: "solana",
             network: "mainnet-beta",
-            digest: {
-              algorithm: "SHA3-512",
-              value: sealInfo!.sealHash,
-            },
+            digest: { algorithm: "SHA3-512", value: sealInfo!.sealHash },
           },
           memo: `majik-notary-v1:${sealInfo!.sealHash}`,
           txSignature: "original-tx-sig",
@@ -697,27 +662,24 @@ describe("MajikSignature Class Unit Tests", () => {
           status: "pending",
         };
 
-        // Register first time
         const anchoredBlob1 = await MajikSignature.registerChainAnchor(
           sealedBlob,
           anchor,
         );
 
-        // Update transaction status parameters for the duplicate register check
         const updatedAnchor: MajikChainAnchor = {
           ...anchor,
           txSignature: "finalized-tx-sig",
           status: "confirmed",
         };
 
-        // Register a second time with modified properties but identical anchor ID
         const anchoredBlob2 = await MajikSignature.registerChainAnchor(
           anchoredBlob1,
           updatedAnchor,
         );
 
         const anchors = await MajikSignature.getChainAnchors(anchoredBlob2);
-        expect(anchors).toHaveLength(1); // Length is still 1 (the record was upserted)
+        expect(anchors).toHaveLength(1);
         expect(anchors[0].status).toBe("confirmed");
         expect(anchors[0].txSignature).toBe("finalized-tx-sig");
       });
@@ -726,98 +688,88 @@ describe("MajikSignature Class Unit Tests", () => {
 
   // ── DETACHED SIGNING & VERIFICATION FLOW (FULL FLOW) ──────────────────────
   describe("Detached File Signing & Verification (Full Flow)", () => {
-    let activeKey1: MajikKey;
-    let activeKey2: MajikKey;
     let baseBlob: Blob;
 
-    beforeAll(async () => {
-      // Generate genuine keys for full cryptographic flow testing (no mocks)
-      console.log("[majik-key] Generating activeKey1 for detached flow...");
-      activeKey1 = await getTestKey();
-
-      console.log("[majik-key] Generating activeKey2 for detached flow...");
-      activeKey2 = await getTestKey();
-
+    beforeAll(() => {
       const fileContent = loadFixture("sample.txt");
       baseBlob = new Blob([fileContent as BlobPart], { type: "text/plain" });
-    }, 120000);
+    });
 
-    it("should successfully sign and verify a file using the detached flow", async () => {
-      // 1. Sign Detached
-      const { blob: strippedBlob, envelope: detachedEnvelope } =
-        await MajikSignature.signFileDetached(baseBlob, activeKey1, {
-          contentType: "text/plain",
-        });
+    it("should successfully sign and verify a file using the detached flow, returning both envelope and signature", async () => {
+      const {
+        blob: strippedBlob,
+        envelope: detachedEnvelope,
+        signature,
+      } = await MajikSignature.signFileDetached(baseBlob, keyA, {
+        contentType: "text/plain",
+      });
 
       expect(detachedEnvelope).toBeDefined();
       expect(detachedEnvelope.signatures.length).toBe(1);
 
-      // 2. Verify Detached against the stripped file
+      // The most recent signature is returned directly — no need to
+      // re-extract it from the envelope via findSignature().
+      expect(signature).toBeInstanceOf(MajikSignature);
+      expect(signature.signerId).toBe(keyA.fingerprint);
+
       const results = await MajikSignature.verifyFileDetached(
         strippedBlob,
         detachedEnvelope,
-        activeKey1,
+        keyA,
       );
 
       expect(results).toHaveLength(1);
       expect(results[0].valid).toBe(true);
-      expect(results[0].signerId).toBe(activeKey1.fingerprint);
+      expect(results[0].signerId).toBe(keyA.fingerprint);
     });
 
     it("should support passing an existing envelope out-of-band for multi-sig", async () => {
-      // 1. First signer generates the initial detached envelope
       const { blob: stripped1, envelope: env1 } =
-        await MajikSignature.signFileDetached(baseBlob, activeKey1, {
+        await MajikSignature.signFileDetached(baseBlob, keyA, {
           contentType: "text/plain",
         });
 
-      // 2. Second signer adds their signature to the existing envelope
       const { blob: stripped2, envelope: env2 } =
-        await MajikSignature.signFileDetached(stripped1, activeKey2, {
+        await MajikSignature.signFileDetached(stripped1, keyB, {
           existingEnvelope: env1,
           contentType: "text/plain",
         });
 
       expect(env2.signatures.length).toBe(2);
 
-      // 3. Verify Signer 1 independently
       const results1 = await MajikSignature.verifyFileDetached(
         stripped2,
         env2,
-        activeKey1,
-        { expectedSignerId: activeKey1.fingerprint },
+        keyA,
+        { expectedSignerId: keyA.fingerprint },
       );
       expect(results1).toHaveLength(1);
       expect(results1[0].valid).toBe(true);
-      expect(results1[0].signerId).toBe(activeKey1.fingerprint);
+      expect(results1[0].signerId).toBe(keyA.fingerprint);
 
-      // 4. Verify Signer 2 independently
       const results2 = await MajikSignature.verifyFileDetached(
         stripped2,
         env2,
-        activeKey2,
-        { expectedSignerId: activeKey2.fingerprint },
+        keyB,
+        { expectedSignerId: keyB.fingerprint },
       );
       expect(results2).toHaveLength(1);
       expect(results2[0].valid).toBe(true);
-      expect(results2[0].signerId).toBe(activeKey2.fingerprint);
+      expect(results2[0].signerId).toBe(keyB.fingerprint);
     });
 
     it("should reject verification if the detached file bytes are tampered with", async () => {
-      // 1. Generate valid detached signature
       const { blob: strippedBlob, envelope: detachedEnvelope } =
-        await MajikSignature.signFileDetached(baseBlob, activeKey1, {
+        await MajikSignature.signFileDetached(baseBlob, keyA, {
           contentType: "text/plain",
         });
 
-      // 2. Simulate data corruption on the raw file
       const tamperedBlob = await corruptBlob(strippedBlob);
 
-      // 3. Attempt verification against the tampered data
       const results = await MajikSignature.verifyFileDetached(
         tamperedBlob,
         detachedEnvelope,
-        activeKey1,
+        keyA,
       );
 
       expect(results.length).toBeGreaterThan(0);
@@ -826,18 +778,16 @@ describe("MajikSignature Class Unit Tests", () => {
 
     it("should reject verification when evaluated against mismatched public keys", async () => {
       const { blob: strippedBlob, envelope: detachedEnvelope } =
-        await MajikSignature.signFileDetached(baseBlob, activeKey1, {
+        await MajikSignature.signFileDetached(baseBlob, keyA, {
           contentType: "text/plain",
         });
 
-      // Verify the envelope signed by activeKey1 using activeKey2's context
       const results = await MajikSignature.verifyFileDetached(
         strippedBlob,
         detachedEnvelope,
-        activeKey2,
+        keyB,
       );
 
-      // Verification should fail because the cryptographic validation checks won't match
       expect(results.some((r) => r.valid)).toBe(false);
     });
   });
@@ -845,12 +795,6 @@ describe("MajikSignature Class Unit Tests", () => {
   // ─── DETACHED SIGNATURES & MJKSIG FEATURE TESTS ──────────────────────────────
 
   describe("Detached Signatures & MJKSIG Features", () => {
-    let mockKey: MajikKey;
-
-    beforeAll(async () => {
-      mockKey = await getTestKey();
-    });
-
     describe("Detached File Signing and Verification (.signFileDetached & .verifyFileDetached)", () => {
       it.each(FILE_FIXTURES)(
         "should sign $label ($file) detached and verify successfully",
@@ -860,26 +804,24 @@ describe("MajikSignature Class Unit Tests", () => {
             type: contentType,
           });
 
-          // 1. Sign detached
           const { blob: strippedBlob, envelope } =
-            await MajikSignature.signFileDetached(originalBlob, mockKey, {
+            await MajikSignature.signFileDetached(originalBlob, keyA, {
               contentType,
             });
 
           expect(envelope).toBeInstanceOf(MajikSignatureEnvelope);
           expect(envelope.signatures.length).toBe(1);
-          expect(envelope.signatures[0].signerId).toBe(mockKey.fingerprint);
+          expect(envelope.signatures[0].signerId).toBe(keyA.fingerprint);
 
-          // 2. Verify detached using MajikKey
           const results = await MajikSignature.verifyFileDetached(
             strippedBlob,
             envelope,
-            mockKey,
+            keyA,
           );
 
           expect(results).toHaveLength(1);
           expect(results[0].valid).toBe(true);
-          expect(results[0].signerId).toBe(mockKey.fingerprint);
+          expect(results[0].signerId).toBe(keyA.fingerprint);
         },
       );
 
@@ -892,17 +834,16 @@ describe("MajikSignature Class Unit Tests", () => {
           });
 
           const { blob: strippedBlob, envelope } =
-            await MajikSignature.signFileDetached(originalBlob, mockKey, {
+            await MajikSignature.signFileDetached(originalBlob, keyA, {
               contentType,
             });
 
-          // Corrupt the stripped content blob
           const corruptedBlob = await corruptBlob(strippedBlob);
 
           const results = await MajikSignature.verifyFileDetached(
             corruptedBlob,
             envelope,
-            mockKey,
+            keyA,
           );
 
           expect(results).toHaveLength(1);
@@ -911,7 +852,7 @@ describe("MajikSignature Class Unit Tests", () => {
       );
     });
 
-    describe("MJKSIG Binary Format Conversions & Verification", async () => {
+    describe("MJKSIG Binary Format Conversions & Verification", () => {
       it.each(FILE_FIXTURES)(
         "should convert detached envelope for $label ($file) to MJKSIG binary and verify back",
         async ({ file, contentType }) => {
@@ -920,36 +861,31 @@ describe("MajikSignature Class Unit Tests", () => {
             type: contentType,
           });
 
-          // 1. Sign detached
           const { blob: strippedBlob, envelope } =
-            await MajikSignature.signFileDetached(originalBlob, mockKey, {
+            await MajikSignature.signFileDetached(originalBlob, keyA, {
               contentType,
             });
 
-          // 2. Encode envelope to MJKSIG binary
           const mjksigBlob = envelope.toMJKSIG();
           const bytes = envelope.toMJKSIGBytes();
           expect(mjksigBlob).toBeInstanceOf(Blob);
-          expect(bytes.length).toBeGreaterThan(12); // Header (12 bytes) + payload
+          expect(bytes.length).toBeGreaterThan(12);
 
-          // 3. Inspect header metadata with static sniffers
           expect(await MajikSignatureEnvelope.isMJKSIG(mjksigBlob)).toBe(true);
           expect(
             await MajikSignatureEnvelope.getMJKSIGVersion(mjksigBlob),
           ).toBe(1);
 
-          // 4. Verify detached directly using raw MJKSIG Uint8Array
           const directVerifyResults = await MajikSignature.verifyFileDetached(
             strippedBlob,
             mjksigBlob,
-            mockKey,
+            keyA,
           );
 
           expect(directVerifyResults).toHaveLength(1);
           expect(directVerifyResults[0].valid).toBe(true);
-          expect(directVerifyResults[0].signerId).toBe(mockKey.fingerprint);
+          expect(directVerifyResults[0].signerId).toBe(keyA.fingerprint);
 
-          // 5. Decode back from MJKSIG binary and check structural integrity
           const decodedEnvelope =
             await MajikSignatureEnvelope.fromMJKSIG(mjksigBlob);
 
@@ -959,11 +895,10 @@ describe("MajikSignature Class Unit Tests", () => {
             envelope.signatures[0].contentHash,
           );
 
-          // 6. Verify detached using restored envelope instance
           const restoredVerifyResults = await MajikSignature.verifyFileDetached(
             strippedBlob,
             decodedEnvelope,
-            mockKey,
+            keyA,
           );
 
           expect(restoredVerifyResults[0].valid).toBe(true);
@@ -983,7 +918,6 @@ describe("MajikSignature Class Unit Tests", () => {
         });
 
         it("should throw when decoding corrupted or truncated MJKSIG bytes", async () => {
-          // Test 1: Too short to be a valid header
           const shortBuffer = new Uint8Array([0x4d, 0x4a, 0x4b]); // "MJK"
           await expect(
             MajikSignatureEnvelope.fromMJKSIG(shortBuffer),
@@ -991,14 +925,662 @@ describe("MajikSignature Class Unit Tests", () => {
             "Malformed MJKSIG: too short to contain a valid header",
           );
 
-          // Test 2: Long enough to pass length check, but missing magic bytes
-          // Using a 32-byte array of zeroes guarantees it bypasses the length check
           const badMagic = new Uint8Array(32);
-
           await expect(
             MajikSignatureEnvelope.fromMJKSIG(badMagic),
           ).rejects.toThrow('Malformed MJKSIG: missing "MJKSIG" magic bytes');
         });
+      });
+    });
+  });
+
+  // ─── TRUSTED TIMESTAMPS (TSA) ─────────────────────────────────────────────────
+
+  describe("Trusted Timestamps (TSA)", () => {
+    async function issueTsaFor(
+      signature: MajikSignature,
+    ): Promise<MajikTimestamp> {
+      const request = signature.buildTSARequestPayload();
+      return MajikSignature.signTSA(request, tsaKey, {
+        id: "tsa.majikah.solutions",
+        signerFingerprint: tsaKey.fingerprint,
+      });
+    }
+
+    it("should sign a TSA payload and produce a valid MajikTimestamp", async () => {
+      const signature = await MajikSignature.sign(dummyContent, keyA);
+      const ts = await issueTsaFor(signature);
+
+      expect(ts.version).toBe(1);
+      expect(ts.payload.digest.value).toBe(signature.contentHash);
+      expect(ts.payload.tsa.signerFingerprint).toBe(tsaKey.fingerprint);
+    });
+
+    it("should attach a TSA to a signature via addTSA and successfully re-verify it", async () => {
+      const signature = await MajikSignature.sign(dummyContent, keyA);
+      const ts = await issueTsaFor(signature);
+
+      signature.addTSA(ts);
+      expect(signature.hasTSA).toBe(true);
+
+      const result = signature.verifyTSA();
+      expect(result.valid).toBe(true);
+    });
+
+    it("should reject addTSA if the TSA digest does not match this signature's contentHash", async () => {
+      const signature = await MajikSignature.sign(dummyContent, keyA);
+      const otherSignature = await MajikSignature.sign(
+        "a completely different payload",
+        keyB,
+      );
+      const mismatchedTsa = await issueTsaFor(otherSignature);
+
+      expect(() => signature.addTSA(mismatchedTsa)).toThrow(
+        /TSA digest does not match signature contentHash/,
+      );
+    });
+
+    it("should reject attaching a second TSA once one is already set", async () => {
+      const signature = await MajikSignature.sign(dummyContent, keyA);
+      const ts = await issueTsaFor(signature);
+
+      signature.addTSA(ts);
+      expect(() => signature.addTSA(ts)).toThrow(
+        /TSA is already set and cannot be replaced/,
+      );
+    });
+
+    it("should carry the TSA through a toJSON/fromJSON round-trip", async () => {
+      const signature = await MajikSignature.sign(dummyContent, keyA);
+      const ts = await issueTsaFor(signature);
+      signature.addTSA(ts);
+
+      const restored = MajikSignature.fromJSON(signature.toJSON());
+      expect(restored.hasTSA).toBe(true);
+      expect(restored.verifyTSA().valid).toBe(true);
+    });
+
+    describe("signFileDetached with options.tsa", () => {
+      it("should attach a TSA during detached signing when options.tsa is provided", async () => {
+        const fileContent = loadFixture("sample.txt");
+        const blob = new Blob([fileContent as BlobPart], {
+          type: "text/plain",
+        });
+
+        // Content hash only depends on bytes, not on timestamp — signing
+        // the same content twice (once here to obtain a contentHash for the
+        // TSA request, once for real inside signFileDetached) yields the
+        // same contentHash both times, so the TSA's digest still matches.
+        const precomputed = await MajikSignature.sign(fileContent, keyA, {
+          contentType: "text/plain",
+        });
+        const ts = await issueTsaFor(precomputed);
+
+        const { envelope, signature } = await MajikSignature.signFileDetached(
+          blob,
+          keyA,
+          { contentType: "text/plain", tsa: ts },
+        );
+
+        expect(signature.hasTSA).toBe(true);
+        expect(envelope.signatures[0].tsa).toBeDefined();
+        expect(envelope.signatures[0].tsa?.payload.digest.value).toBe(
+          signature.contentHash,
+        );
+      });
+
+      it("should reject options.tsa whose digest doesn't match the file actually being signed", async () => {
+        const blobA = new Blob(["file A content"], { type: "text/plain" });
+        const blobB = new Blob(["completely different file B content"], {
+          type: "text/plain",
+        });
+
+        const sigForB = await MajikSignature.sign(
+          new Uint8Array(await blobB.arrayBuffer()),
+          keyA,
+          { contentType: "text/plain" },
+        );
+        const tsaForB = await issueTsaFor(sigForB);
+
+        await expect(
+          MajikSignature.signFileDetached(blobA, keyA, {
+            contentType: "text/plain",
+            tsa: tsaForB,
+          }),
+        ).rejects.toThrow(/TSA digest does not match signature contentHash/);
+      });
+    });
+  });
+
+  // ─── MJKSMAP & BATCH SIGNING / VERIFICATION ──────────────────────────────────
+
+  describe("MajikSignatureMap (.mjksmap) & Batch Signing", () => {
+    describe("Core Map Operations", () => {
+      it("creates an empty map and adds entries immutably", async () => {
+        const map0 = MajikSignatureMap.empty();
+        expect(map0.size).toBe(0);
+
+        const fileContent = loadFixture("sample.txt");
+        const blob = new Blob([fileContent as BlobPart], {
+          type: "text/plain",
+        });
+        const { envelope } = await MajikSignature.signFileDetached(blob, keyA, {
+          contentType: "text/plain",
+        });
+
+        const map1 = map0.withEntry({
+          path: "docs/report.txt",
+          contentHash: envelope.signatures[0].contentHash,
+          size: blob.size,
+          mimeType: "text/plain",
+          envelope: envelope.toJSON(),
+        });
+
+        expect(map0.size).toBe(0); // original untouched — immutable builder
+        expect(map1.size).toBe(1);
+        expect(map1.getEntry("docs/report.txt")).toBeDefined();
+      });
+
+      it("normalizes backslash paths and drive letters to the same key", () => {
+        const map = MajikSignatureMap.empty().withEntry({
+          path: "C:\\docs\\a.pdf",
+          contentHash: "deadbeef",
+          envelope: { version: 1, signatures: [] } as any,
+        });
+
+        expect(map.getEntry("docs/a.pdf")).toBeDefined();
+        expect(map.hasEntry("docs\\a.pdf")).toBe(true);
+      });
+
+      it("replaces an entry on re-add at the same path (withEntry upsert)", () => {
+        let map = MajikSignatureMap.empty().withEntry({
+          path: "a.txt",
+          contentHash: "hash1",
+          envelope: { version: 1, signatures: [] } as any,
+        });
+        map = map.withEntry({
+          path: "a.txt",
+          contentHash: "hash2",
+          envelope: { version: 1, signatures: [] } as any,
+        });
+
+        expect(map.size).toBe(1);
+        expect(map.getEntry("a.txt")?.contentHash).toBe("hash2");
+      });
+
+      it("removes an entry via withoutEntry", () => {
+        let map = MajikSignatureMap.empty().withEntry({
+          path: "a.txt",
+          contentHash: "hash1",
+          envelope: { version: 1, signatures: [] } as any,
+        });
+        map = map.withoutEntry("a.txt");
+        expect(map.size).toBe(0);
+      });
+    });
+
+    describe("MJKSMAP Serialization Round-Trip", () => {
+      it("round-trips through toJSON/fromJSON", async () => {
+        const fileContent = loadFixture("sample.txt");
+        const blob = new Blob([fileContent as BlobPart], {
+          type: "text/plain",
+        });
+        const { envelope } = await MajikSignature.signFileDetached(blob, keyA, {
+          contentType: "text/plain",
+        });
+
+        const map = MajikSignatureMap.empty().withEntry({
+          path: "sample.txt",
+          contentHash: envelope.signatures[0].contentHash,
+          envelope: envelope.toJSON(),
+        });
+
+        const restored = MajikSignatureMap.fromJSON(map.toJSON());
+        expect(restored.size).toBe(1);
+        expect(restored.getEntry("sample.txt")?.contentHash).toBe(
+          envelope.signatures[0].contentHash,
+        );
+      });
+
+      it("round-trips through toMJKSMAP/fromMJKSMAP binary format", async () => {
+        const fileContent = loadFixture("sample.txt");
+        const blob = new Blob([fileContent as BlobPart], {
+          type: "text/plain",
+        });
+        const { envelope } = await MajikSignature.signFileDetached(blob, keyA, {
+          contentType: "text/plain",
+        });
+
+        const map = MajikSignatureMap.empty().withEntry({
+          path: "sample.txt",
+          contentHash: envelope.signatures[0].contentHash,
+          envelope: envelope.toJSON(),
+        });
+
+        const mapBlob = map.toMJKSMAP();
+        expect(mapBlob).toBeInstanceOf(Blob);
+        expect(await MajikSignatureMap.isMJKSMAP(mapBlob)).toBe(true);
+
+        const restored = await MajikSignatureMap.fromMJKSMAP(mapBlob);
+        expect(restored).toBeInstanceOf(MajikSignatureMap);
+        expect(restored.size).toBe(1);
+        expect(restored.isValid()).toBe(true);
+      });
+
+      it("returns false for isMJKSMAP on unrelated bytes", async () => {
+        const dummy = new TextEncoder().encode("not a map");
+        expect(await MajikSignatureMap.isMJKSMAP(dummy)).toBe(false);
+      });
+    });
+
+    describe("Lookup: getEntry / findEntry / findEntriesByHash / resolveEntry", () => {
+      let map: MajikSignatureMap;
+      let fileA: Blob;
+      let fileB: Blob;
+      let fileADup: Blob; // same content as fileA, different Blob instance
+
+      beforeAll(async () => {
+        const contentA = loadFixture("sample.txt");
+        const contentB = loadFixture("sample.csv");
+
+        fileA = new Blob([contentA as BlobPart], { type: "text/plain" });
+        fileB = new Blob([contentB as BlobPart], { type: "text/csv" });
+        fileADup = new Blob([contentA as BlobPart], { type: "text/plain" });
+
+        const { envelope: envA } = await MajikSignature.signFileDetached(
+          fileA,
+          keyA,
+          { contentType: "text/plain" },
+        );
+        const { envelope: envB } = await MajikSignature.signFileDetached(
+          fileB,
+          keyB,
+          { contentType: "text/csv" },
+        );
+
+        map = MajikSignatureMap.empty()
+          .withEntry({
+            path: "docs/a.txt",
+            contentHash: envA.signatures[0].contentHash,
+            envelope: envA.toJSON(),
+          })
+          .withEntry({
+            path: "docs/b.csv",
+            contentHash: envB.signatures[0].contentHash,
+            envelope: envB.toJSON(),
+          });
+      }, 60000);
+
+      it("getEntry finds by exact normalized path", () => {
+        expect(map.getEntry("docs/a.txt")).toBeDefined();
+        expect(map.getEntry("docs\\a.txt")).toBeDefined();
+        expect(map.getEntry("nope.txt")).toBeUndefined();
+      });
+
+      it("findEntry confirms hash match for unmodified content", async () => {
+        const result = await map.findEntry("docs/a.txt", fileA);
+        expect(result.found).toBe(true);
+        expect(result.hashMatches).toBe(true);
+      });
+
+      it("findEntry flags hash mismatch for content modified under the same path", async () => {
+        const tamperedBytes = tamperBytes(
+          new Uint8Array(await fileA.arrayBuffer()),
+        );
+        const tamperedBlob = new Blob([tamperedBytes as BlobPart], {
+          type: "text/plain",
+        });
+
+        const result = await map.findEntry("docs/a.txt", tamperedBlob);
+        expect(result.found).toBe(true);
+        expect(result.hashMatches).toBe(false);
+      });
+
+      it("findEntry reports not found for an unknown path", async () => {
+        const result = await map.findEntry("unknown/path.txt", fileA);
+        expect(result.found).toBe(false);
+      });
+
+      it("findEntriesByHash finds a file by content regardless of path", async () => {
+        const entries = await map.findEntriesByHash(fileADup);
+        expect(entries.length).toBe(1);
+        expect(entries[0].path).toBe("docs/a.txt");
+      });
+
+      it("resolveEntry returns path_match for an unmodified file at its original path", async () => {
+        const result = await map.resolveEntry("docs/a.txt", fileA);
+        expect(result.status).toBe("path_match");
+      });
+
+      it("resolveEntry returns path_tampered when content no longer matches at the expected path", async () => {
+        const tamperedBytes = tamperBytes(
+          new Uint8Array(await fileA.arrayBuffer()),
+        );
+        const tamperedBlob = new Blob([tamperedBytes as BlobPart], {
+          type: "text/plain",
+        });
+
+        const result = await map.resolveEntry("docs/a.txt", tamperedBlob);
+        expect(result.status).toBe("path_tampered");
+      });
+
+      it("resolveEntry returns relocated when the file is found by content at a different path", async () => {
+        const result = await map.resolveEntry(
+          "moved/somewhere/a.txt",
+          fileADup,
+        );
+        expect(result.status).toBe("relocated");
+        expect(result.originalPath).toBe("docs/a.txt");
+      });
+
+      it("resolveEntry returns not_found when the file matches nothing at all", async () => {
+        const unrelated = new Blob(["totally unrelated content"], {
+          type: "text/plain",
+        });
+        const result = await map.resolveEntry("unknown.txt", unrelated);
+        expect(result.status).toBe("not_found");
+      });
+
+      it("getEnvelope returns a rich MajikSignatureEnvelope instance for a known path", () => {
+        const envelope = map.getEnvelope("docs/a.txt");
+        expect(envelope).toBeInstanceOf(MajikSignatureEnvelope);
+      });
+
+      it("getEnvelope returns null for an unknown path", () => {
+        expect(map.getEnvelope("nope.txt")).toBeNull();
+      });
+
+      it("getAllEnvelopes returns every entry paired with a rich envelope instance", () => {
+        const all = map.getAllEnvelopes();
+        expect(all.length).toBe(2);
+        for (const { envelope } of all) {
+          expect(envelope).toBeInstanceOf(MajikSignatureEnvelope);
+        }
+      });
+    });
+
+    describe("Batch Signing (.signBatchDetached)", () => {
+      it("signs a batch in 'map' mode (default) and produces a valid MajikSignatureMap", async () => {
+        const files = [
+          {
+            path: "docs/one.txt",
+            blob: new Blob([loadFixture("sample.txt") as BlobPart], {
+              type: "text/plain",
+            }),
+          },
+          {
+            path: "docs/two.csv",
+            blob: new Blob([loadFixture("sample.csv") as BlobPart], {
+              type: "text/csv",
+            }),
+          },
+        ];
+
+        const result = await MajikSignature.signBatchDetached(files, keyA);
+
+        expect(result.mode).toBe("map");
+        if (result.mode === "map") {
+          expect(result.map.size).toBe(2);
+          expect(result.map.hasEntry("docs/one.txt")).toBe(true);
+          expect(result.map.hasEntry("docs/two.csv")).toBe(true);
+          expect(result.mapBlob).toBeInstanceOf(Blob);
+          expect(result.failures).toHaveLength(0);
+        }
+      });
+
+      it("signs a batch in 'separate' mode and produces one .mjksig Blob per file", async () => {
+        const files = [
+          {
+            path: "docs/one.txt",
+            blob: new Blob([loadFixture("sample.txt") as BlobPart], {
+              type: "text/plain",
+            }),
+          },
+          {
+            path: "docs/two.csv",
+            blob: new Blob([loadFixture("sample.csv") as BlobPart], {
+              type: "text/csv",
+            }),
+          },
+        ];
+
+        const result = await MajikSignature.signBatchDetached(files, keyA, {
+          mode: "separate",
+        });
+
+        expect(result.mode).toBe("separate");
+        if (result.mode === "separate") {
+          expect(result.signatures).toHaveLength(2);
+          for (const { blob } of result.signatures) {
+            expect(blob).toBeInstanceOf(Blob);
+          }
+          expect(result.failures).toHaveLength(0);
+        }
+      });
+
+      it("rejects a batch with duplicate paths before doing any signing", async () => {
+        const files = [
+          {
+            path: "docs/dup.txt",
+            blob: new Blob(["a"], { type: "text/plain" }),
+          },
+          {
+            path: "docs/dup.txt",
+            blob: new Blob(["b"], { type: "text/plain" }),
+          },
+        ];
+
+        await expect(
+          MajikSignature.signBatchDetached(files, keyA),
+        ).rejects.toThrow(/Duplicate path in batch/);
+      });
+
+      it("rejects an empty batch", async () => {
+        await expect(
+          MajikSignature.signBatchDetached([], keyA),
+        ).rejects.toThrow(/Batch must contain at least one file/);
+      });
+
+      it("establishes an allowlist on each file's envelope when expectedSigners is provided", async () => {
+        const expectedSigners = [
+          MajikSignature.expectedSignerFromKey(keyA),
+          MajikSignature.expectedSignerFromKey(keyB),
+        ];
+
+        const files = [
+          {
+            path: "restricted/one.txt",
+            blob: new Blob(["restricted content one"], { type: "text/plain" }),
+          },
+        ];
+
+        const result = await MajikSignature.signBatchDetached(files, keyA, {
+          expectedSigners,
+        });
+
+        expect(result.mode).toBe("map");
+        if (result.mode === "map") {
+          const envelope = result.map.getEnvelope("restricted/one.txt");
+          expect(envelope?.hasAllowlist()).toBe(true);
+          expect(envelope?.allowlistSignerId).toBe(keyA.fingerprint);
+        }
+      });
+
+      describe("continueOnError behavior", () => {
+        // "bad" blob deliberately omits arrayBuffer() to trigger a natural,
+        // per-file failure inside signDetached — avoids needing to mock any
+        // frozen static methods (MajikSignature is Object.freeze()'d).
+        function badBlob(): Blob {
+          return { size: 0, type: "text/plain" } as unknown as Blob;
+        }
+
+        it("aborts the whole batch on the first failure by default", async () => {
+          const files = [
+            { path: "bad.txt", blob: badBlob() },
+            {
+              path: "good.txt",
+              blob: new Blob(["good content"], { type: "text/plain" }),
+            },
+          ];
+
+          await expect(
+            MajikSignature.signBatchDetached(files, keyA),
+          ).rejects.toThrow(/Batch signing failed on "bad.txt"/);
+        });
+
+        it("collects failures and continues when continueOnError is true", async () => {
+          const files = [
+            { path: "bad.txt", blob: badBlob() },
+            {
+              path: "good.txt",
+              blob: new Blob(["good content"], { type: "text/plain" }),
+            },
+          ];
+
+          const result = await MajikSignature.signBatchDetached(files, keyA, {
+            continueOnError: true,
+          });
+
+          expect(result.mode).toBe("map");
+          if (result.mode === "map") {
+            expect(result.failures).toHaveLength(1);
+            expect(result.failures[0].path).toBe("bad.txt");
+            expect(result.map.hasEntry("good.txt")).toBe(true);
+            expect(result.map.hasEntry("bad.txt")).toBe(false);
+          }
+        });
+      });
+    });
+
+    describe("Batch Verification (.verifyFilesFromMjksMap)", () => {
+      let map: MajikSignatureMap;
+      let signedFiles: { path: string; blob: Blob }[];
+
+      beforeAll(async () => {
+        signedFiles = [
+          {
+            path: "docs/one.txt",
+            blob: new Blob([loadFixture("sample.txt") as BlobPart], {
+              type: "text/plain",
+            }),
+          },
+          {
+            path: "docs/two.csv",
+            blob: new Blob([loadFixture("sample.csv") as BlobPart], {
+              type: "text/csv",
+            }),
+          },
+        ];
+
+        const result = await MajikSignature.signBatchDetached(
+          signedFiles,
+          keyA,
+        );
+        if (result.mode !== "map") throw new Error("expected map mode");
+        map = result.map;
+      }, 60000);
+
+      it("reports 'verified' for every unmodified, correctly-placed file", async () => {
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+        const results = await MajikSignature.verifyFilesFromMjksMap(
+          map,
+          signedFiles,
+          publicKeys,
+        );
+
+        expect(results).toHaveLength(2);
+        for (const r of results) {
+          expect(r.status).toBe("verified");
+          expect(r.results?.every((vr) => vr.valid)).toBe(true);
+        }
+
+        const summary = MajikSignature.summarizeBatchVerification(results);
+        expect(summary.allValid).toBe(true);
+        expect(summary.verified).toBe(2);
+        expect(summary.total).toBe(2);
+      });
+
+      it("reports 'tampered' for a file whose content changed under its signed path", async () => {
+        const tamperedBytes = tamperBytes(
+          new Uint8Array(await signedFiles[0].blob.arrayBuffer()),
+        );
+        const tamperedFiles = [
+          {
+            path: "docs/one.txt",
+            blob: new Blob([tamperedBytes as BlobPart], { type: "text/plain" }),
+          },
+          signedFiles[1],
+        ];
+
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+        const results = await MajikSignature.verifyFilesFromMjksMap(
+          map,
+          tamperedFiles,
+          publicKeys,
+        );
+
+        const tamperedResult = results.find((r) => r.path === "docs/one.txt");
+        expect(tamperedResult?.status).toBe("tampered");
+      });
+
+      it("reports 'not_in_map' for a file with no corresponding entry", async () => {
+        const strayFile = [
+          {
+            path: "unrelated.txt",
+            blob: new Blob(["stray"], { type: "text/plain" }),
+          },
+        ];
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+        const results = await MajikSignature.verifyFilesFromMjksMap(
+          map,
+          strayFile,
+          publicKeys,
+        );
+
+        expect(results[0].status).toBe("not_in_map");
+      });
+
+      it("throws when requireAllPresent is set and a file is missing", async () => {
+        const strayFile = [
+          {
+            path: "unrelated.txt",
+            blob: new Blob(["stray"], { type: "text/plain" }),
+          },
+        ];
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+
+        await expect(
+          MajikSignature.verifyFilesFromMjksMap(map, strayFile, publicKeys, {
+            requireAllPresent: true,
+          }),
+        ).rejects.toThrow(/was not found in the signature map/);
+      });
+
+      it("reports 'verified' with relocatedFrom when a file moved to a different path", async () => {
+        const relocatedFiles = [
+          { path: "moved/one.txt", blob: signedFiles[0].blob },
+          signedFiles[1],
+        ];
+
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+        const results = await MajikSignature.verifyFilesFromMjksMap(
+          map,
+          relocatedFiles,
+          publicKeys,
+        );
+
+        const relocatedResult = results.find((r) => r.path === "moved/one.txt");
+        expect(relocatedResult?.status).toBe("verified");
+        expect(relocatedResult?.relocatedFrom).toBe("docs/one.txt");
+      });
+
+      it("verifyFilesFromMjksMapWithKey resolves public keys automatically from a MajikKey", async () => {
+        const results = await MajikSignature.verifyFilesFromMjksMapWithKey(
+          map,
+          signedFiles,
+          keyA,
+        );
+        expect(results.every((r) => r.status === "verified")).toBe(true);
       });
     });
   });

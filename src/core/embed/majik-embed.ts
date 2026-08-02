@@ -24,16 +24,25 @@
 import type { MajikKey } from "@majikah/majik-key";
 
 import type {
+  BatchFileInput,
+  BatchSignFailure,
+  BatchSignOptions,
+  BatchSignResult,
+  BatchVerifyInput,
+  BatchVerifyOptions,
+  BatchVerifySummary,
   EmbedOptions,
   EmbedResult,
   EnvelopeInfo,
   ExpectedSigner,
   ExtractOptions,
   ExtractResult,
+  FileVerifyResult,
   FormatHandler,
   MajikSignatureEnvelopeJSON,
   MajikSignatureJSON,
   MajikSignerPublicKeys,
+  MajikTimestamp,
   SealInfo,
   SealVerificationResult,
   SignatoriesFilter,
@@ -57,8 +66,9 @@ import { OfficeHandler } from "./handlers/office";
 import { TextHandler } from "./handlers/text";
 import { FallbackHandler } from "./fallback";
 import { bytesToBase64, hashContent } from "../hash";
-import { MajikSignatureError } from "../errors";
+import { MajikSignatureError, MajikSignatureValidationError } from "../errors";
 import { MajikChainAnchor } from "../../anchor/types";
+import { MajikSignatureMap } from "../mjksmap";
 
 // ─── Adapter interfaces ───────────────────────────────────────────────────────
 // Unchanged — these solve the crypto-side circular dependency, orthogonal to
@@ -66,6 +76,12 @@ import { MajikChainAnchor } from "../../anchor/types";
 
 export interface MajikSignatureAdapter {
   toJSON(): MajikSignatureJSON;
+  /**
+   * Optional — attach a TSA timestamp to this signature. Present because
+   * MajikSignature implements it; declared optional here so any future
+   * adapter that doesn't support TSA still satisfies this interface.
+   */
+  addTSA?(tsa: MajikTimestamp): void;
 }
 
 export interface MajikSignatureStaticAdapter {
@@ -237,10 +253,26 @@ export class MajikSignatureEmbed {
   // ── signDetached ───────────────────────────────────────────────────────────
 
   /**
-   * Sign a file and return the envelope detached.
-   * Same flow as signAndEmbed(), minus the final embed step.
+   * Sign a file and return the envelope detached, along with the specific
+   * signature just produced.
+   *
+   * If options.tsa is provided, it's attached to this signer's signature
+   * via addTSA() immediately after signing and before it's upserted into
+   * the envelope — addTSA() itself validates that the TSA's digest matches
+   * this content's hash and that the TSA's own signature verifies, so no
+   * duplicate validation is needed here. If the adapter doesn't support
+   * addTSA (i.e. MajikSig.addTSA is undefined), a TSA option is a hard
+   * error rather than a silent no-op — attaching a timestamp is something
+   * the caller explicitly asked for, so failing to do it must be loud.
+   *
+   * Returns `signature` — the most recent signature produced by this call
+   * (with the TSA attached, if one was provided) — in addition to the full
+   * `envelope`, so callers don't have to re-extract it via
+   * envelope.findSignature(key.fingerprint) themselves.
    */
-  static async signDetached(
+  static async signDetached<
+    T extends MajikSignatureAdapter = MajikSignatureAdapter,
+  >(
     file: Blob,
     key: MajikKey,
     MajikSig: MajikSignatureStaticAdapter,
@@ -253,11 +285,13 @@ export class MajikSignatureEmbed {
         | MajikSignatureEnvelopeJSON
         | Uint8Array
         | Blob;
+      tsa?: MajikTimestamp;
     },
     debug: boolean = false,
   ): Promise<{
     blob: Blob;
     envelope: MajikSignatureEnvelope;
+    signature: T;
     handler: string;
     mimeType: string;
   }> {
@@ -294,6 +328,19 @@ export class MajikSignatureEmbed {
         : {}),
     });
 
+    // ── Attach TSA, if provided ──────────────────────────────────────────────
+    // Must happen before toJSON()/upsert — the envelope needs the signature
+    // WITH its tsa field already set, not a bare signature followed by a
+    // separate mutation the caller has to remember to do.
+    if (options?.tsa) {
+      if (typeof signature.addTSA !== "function") {
+        throw new MajikSignatureError(
+          "options.tsa was provided, but the given MajikSig adapter does not support TSA attachment (addTSA is not implemented).",
+        );
+      }
+      signature.addTSA(options.tsa);
+    }
+
     const establishingAllowlist =
       envelope.isFirstSigner() && !!options?.expectedSigners?.length;
 
@@ -308,7 +355,154 @@ export class MajikSignatureEmbed {
     // ── Return DETACHED (no embedding) ───────────────────────────────────────
     const blob = bytesToBlob(originalBytes, mimeType);
 
-    return { blob, handler: handler.name, mimeType, envelope: nextEnvelope };
+    return {
+      blob,
+      handler: handler.name,
+      mimeType,
+      envelope: nextEnvelope,
+      signature: signature as T,
+    };
+  }
+
+  // ── signBatchDetached ────────────────────────────────────────────────────────
+
+  /**
+   * Sign a batch of files (folder or zip contents) as detached envelopes,
+   * packaged either as one MajikSignatureMap (default) or as separate
+   * .mjksig Blobs per file.
+   *
+   * Reuses signDetached() per file — no duplicated crypto path. The only
+   * new logic here is path-uniqueness validation and result packaging.
+   */
+  static async signBatchDetached(
+    files: BatchFileInput[],
+    key: MajikKey,
+    MajikSig: MajikSignatureStaticAdapter,
+    options?: BatchSignOptions,
+    debug: boolean = false,
+  ): Promise<BatchSignResult> {
+    MajikSignatureEmbed._assertValidBatch(files);
+
+    const mode = options?.mode ?? "map";
+    const continueOnError = options?.continueOnError ?? false;
+
+    const failures: BatchSignFailure[] = [];
+    let map = mode === "map" ? MajikSignatureMap.empty() : undefined;
+    const signatures: { path: string; blob: Blob }[] = [];
+
+    for (const file of files) {
+      try {
+        const { envelope, contentHash } =
+          await MajikSignatureEmbed._signOneDetached(
+            file,
+            key,
+            MajikSig,
+            options,
+            debug,
+          );
+
+        if (mode === "map") {
+          map = map!.withEntry({
+            path: file.path,
+            contentHash,
+            size: file.blob.size,
+            mimeType: file.blob.type || undefined,
+            envelope: envelope.toJSON(),
+          });
+        } else {
+          signatures.push({ path: file.path, blob: envelope.toMJKSIG() });
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+
+        if (!continueOnError) {
+          throw err instanceof MajikSignatureError
+            ? err
+            : new MajikSignatureError(
+                `Batch signing failed on "${file.path}": ${message}`,
+                err,
+              );
+        }
+
+        failures.push({ path: file.path, error: message });
+      }
+    }
+
+    return mode === "map"
+      ? { mode: "map", map: map!, mapBlob: map!.toMJKSMAP(), failures }
+      : { mode: "separate", signatures, failures };
+  }
+
+  // ── Private batch helpers ───────────────────────────────────────────────────
+
+  /**
+   * Sign one file detached and extract the contentHash this signer produced
+   * for it — needed to populate the map entry without re-hashing separately.
+   */
+  private static async _signOneDetached(
+    file: BatchFileInput,
+    key: MajikKey,
+    MajikSig: MajikSignatureStaticAdapter,
+    options: BatchSignOptions | undefined,
+    debug: boolean,
+  ): Promise<{ envelope: MajikSignatureEnvelope; contentHash: string }> {
+    const { envelope } = await MajikSignatureEmbed.signDetached(
+      file.blob,
+      key,
+      MajikSig,
+      {
+        contentType: options?.contentType,
+        timestamp: options?.timestamp,
+        expectedSigners: options?.expectedSigners,
+      },
+      debug,
+    );
+
+    const sig = envelope.findSignature(key.fingerprint);
+    if (!sig) {
+      // Should be unreachable — signDetached() always upserts this signer's
+      // entry — but fail loudly rather than silently omitting the file from
+      // the map if signDetached's contract is ever violated.
+      throw new MajikSignatureError(
+        `Internal error: no signature found for this signer after signing "${file.path}"`,
+      );
+    }
+
+    return { envelope, contentHash: sig.contentHash };
+  }
+
+  /**
+   * Validate the batch before touching any crypto: non-empty, every file has
+   * a non-empty path, and no two files share a path. Duplicate paths would
+   * otherwise silently overwrite each other's map entry via withEntry()'s
+   * replace-on-match semantics — catching it here means the failure is
+   * "your batch has a duplicate path" up front, not a mysteriously missing
+   * entry discovered later.
+   */
+  private static _assertValidBatch(files: BatchFileInput[]): void {
+    if (!files || files.length === 0) {
+      throw new MajikSignatureValidationError(
+        "Batch must contain at least one file.",
+        "files",
+      );
+    }
+
+    const seen = new Set<string>();
+    for (const file of files) {
+      if (!file.path || !file.path.trim()) {
+        throw new MajikSignatureValidationError(
+          "Every batch file must have a non-empty path.",
+          "path",
+        );
+      }
+      if (seen.has(file.path)) {
+        throw new MajikSignatureValidationError(
+          `Duplicate path in batch: "${file.path}"`,
+          "path",
+        );
+      }
+      seen.add(file.path);
+    }
   }
 
   // ── extract ────────────────────────────────────────────────────────────────
@@ -494,6 +688,166 @@ export class MajikSignatureEmbed {
       options,
       debug,
     );
+  }
+
+  // ── verifyFilesFromMjksMap ───────────────────────────────────────────────────
+
+  /**
+   * Verify a batch of extracted files against a MajikSignatureMap.
+   *
+   * For each file: resolve against the map (tolerating relocation — a file
+   * moved or renamed after signing is still found and verified by content,
+   * not just by its original path), then run the normal signature
+   * verification via the envelope stored in that entry. Never throws
+   * per-file — every outcome (missing, tampered, relocated-but-valid,
+   * invalid, verified) is reported in the returned array, so a caller can
+   * render a full per-file status table in one pass instead of catching
+   * exceptions.
+   *
+   * Set options.requireAllPresent to escalate a missing file to a thrown
+   * error instead — useful when the caller expects a closed, complete set
+   * (e.g. "this zip must contain everything the map lists").
+   */
+  static async verifyFilesFromMjksMap(
+    map: MajikSignatureMap,
+    files: BatchVerifyInput[],
+    publicKeys: MajikSignerPublicKeys,
+    MajikSig: MajikSignatureStaticAdapter,
+    options?: BatchVerifyOptions,
+    debug: boolean = false,
+  ): Promise<FileVerifyResult[]> {
+    const results: FileVerifyResult[] = [];
+
+    for (const file of files) {
+      const resolved = await map.resolveEntry(file.path, file.blob);
+
+      if (resolved.status === "not_found") {
+        if (options?.requireAllPresent) {
+          throw new MajikSignatureError(
+            `File "${file.path}" was not found in the signature map.`,
+          );
+        }
+        results.push({
+          path: file.path,
+          status: "not_in_map",
+          reason: `No signature entry found for "${file.path}" (checked by path and by content).`,
+        });
+        continue;
+      }
+
+      if (resolved.status === "path_tampered") {
+        results.push({
+          path: file.path,
+          status: "tampered",
+          reason:
+            "File content no longer matches what was signed — it may have been modified after signing.",
+        });
+        continue;
+      }
+
+      // At this point status is "path_match" or "relocated" — both have a
+      // confirmed content match against resolved.entry, so verification
+      // proceeds identically. Only the reported metadata differs.
+      const originalBytes = new Uint8Array(await file.blob.arrayBuffer());
+
+      if (debug) {
+        console.log(
+          `verifyFilesFromMjksMap — "${file.path}" bytes hash:`,
+          bytesToBase64(hashContent(originalBytes)),
+        );
+      }
+
+      const envelope = MajikSignatureEnvelope.fromJSON(
+        resolved.entry!.envelope,
+      );
+      const integrity = envelope.verifyAllowlistIntegrity();
+
+      const relocatedFrom =
+        resolved.status === "relocated" ? resolved.originalPath : undefined;
+
+      if (!integrity.valid) {
+        results.push({
+          path: file.path,
+          status: "invalid",
+          reason: integrity.reason,
+          ...(relocatedFrom ? { relocatedFrom } : {}),
+        });
+        continue;
+      }
+
+      const verifyResults = MajikSignatureEmbed._verifySignatures(
+        envelope,
+        originalBytes,
+        publicKeys,
+        MajikSig,
+        "mjksmap",
+        options?.expectedSignerId,
+      );
+
+      const allValid = verifyResults.every((r) => r.valid);
+      results.push({
+        path: file.path,
+        status: allValid ? "verified" : "invalid",
+        results: verifyResults,
+        ...(relocatedFrom ? { relocatedFrom } : {}),
+        ...(relocatedFrom
+          ? {
+              reason: allValid
+                ? `Verified by content match — originally signed as "${relocatedFrom}".`
+                : undefined,
+            }
+          : {}),
+      });
+    }
+
+    return results;
+  }
+
+  /** Convenience overload — resolves public keys from a MajikKey. */
+  static async verifyFilesFromMjksMapWithKey(
+    map: MajikSignatureMap,
+    files: BatchVerifyInput[],
+    key: MajikKey,
+    MajikSig: MajikSignatureStaticAdapter,
+    options?: BatchVerifyOptions,
+    debug: boolean = false,
+  ): Promise<FileVerifyResult[]> {
+    const publicKeys = MajikSig.publicKeysFromMajikKey(key);
+    return MajikSignatureEmbed.verifyFilesFromMjksMap(
+      map,
+      files,
+      publicKeys,
+      MajikSig,
+      options,
+      debug,
+    );
+  }
+
+  /**
+   * Summarize a batch verification result — one glance at pass/fail counts
+   * without the caller re-deriving it from the array each time.
+   */
+  static summarizeBatchVerification(
+    results: FileVerifyResult[],
+  ): BatchVerifySummary {
+    const summary = {
+      total: results.length,
+      verified: 0,
+      invalid: 0,
+      tampered: 0,
+      notInMap: 0,
+      allValid: false,
+    };
+
+    for (const r of results) {
+      if (r.status === "verified") summary.verified++;
+      else if (r.status === "invalid") summary.invalid++;
+      else if (r.status === "tampered") summary.tampered++;
+      else if (r.status === "not_in_map") summary.notInMap++;
+    }
+
+    summary.allValid = summary.verified === summary.total && summary.total > 0;
+    return summary;
   }
 
   // ── seal ───────────────────────────────────────────────────────────────────

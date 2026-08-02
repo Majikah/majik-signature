@@ -3,6 +3,7 @@
  * Public types for the MajikSignature library.
  */
 
+import { ISODateString } from "@majikah/majik-key";
 import { MajikChainAnchor } from "../anchor/types";
 import type { ContentType } from "./constants";
 import type { MajikSignatureEnvelope } from "./envelope";
@@ -344,4 +345,142 @@ export interface ExtractResult {
   /** The parsed MultiSigEnvelope extracted from the file */
   envelope: MajikSignatureEnvelope;
   handler: string;
+}
+
+/**
+ * A single file's entry in a MajikSignatureMap.
+ * Keyed by `path` (unique within a batch) — NOT by contentHash alone,
+ * since duplicate-content files (identical boilerplate, empty templates)
+ * are a real case and hash-as-primary-key would silently collide them.
+ */
+export interface MjksMapEntry {
+  /** Relative path within the batch, POSIX-normalized: forward slashes,
+   *  no leading slash, no drive letters. */
+  path: string;
+  /** SHA-256 of the file's original (unsigned) content, base64.
+   *  Used as an integrity check on lookup-by-path, and as the index
+   *  for lookup-by-hash. */
+  contentHash: string;
+  /** Optional cheap-to-show metadata, no need to open the file for it */
+  size?: number;
+  mimeType?: string;
+  /** The full detached envelope for this specific file */
+  envelope: MajikSignatureEnvelopeJSON;
+}
+
+export interface MjksMapJSON {
+  version: 1;
+  createdAt: ISODateString; // ISO 8601
+  entries: MjksMapEntry[];
+}
+
+export interface MjksMapFindResult {
+  found: boolean;
+  entry?: MjksMapEntry;
+  /** Only meaningful when found === true. False means the file at this
+   *  path was modified after signing — same name, different content. */
+  hashMatches?: boolean;
+}
+
+// ─── Batch signing ────────────────────────────────────────────────────────────
+
+export interface BatchFileInput {
+  /** Relative path within the batch — must be unique across the batch. */
+  path: string;
+  blob: Blob;
+}
+
+export interface BatchSignOptions {
+  contentType?: string;
+  timestamp?: string;
+  expectedSigners?: ExpectedSigner[];
+  /** "map" (default) produces one MajikSignatureMap covering the whole
+   *  batch. "separate" produces one .mjksig Blob per file. */
+  mode?: "map" | "separate";
+  /**
+   * If false (default), the batch aborts on the first file that fails to
+   * sign — signing is security-sensitive, so silent partial failure is
+   * worse than a loud abort. Set true to collect failures and continue,
+   * useful for large batches where a handful of unreadable files
+   * shouldn't block everything else.
+   */
+  continueOnError?: boolean;
+}
+
+export interface BatchSignFailure {
+  path: string;
+  error: string;
+}
+
+export type BatchSignResult =
+  | {
+      mode: "map";
+      map: import("./mjksmap").MajikSignatureMap;
+      mapBlob: Blob;
+      failures: BatchSignFailure[];
+    }
+  | {
+      mode: "separate";
+      signatures: { path: string; blob: Blob }[];
+      failures: BatchSignFailure[];
+    };
+
+// ─── Batch verification ───────────────────────────────────────────────────────
+
+export interface BatchVerifyInput {
+  path: string;
+  blob: Blob;
+}
+
+export type FileVerifyStatus =
+  | "verified" // found in map, hash matches, all signatures valid
+  | "invalid" // found in map, hash matches, but a signature failed
+  | "tampered" // found in map, but current content no longer matches
+  | "not_in_map"; // path has no entry in the map at all
+
+export interface FileVerifyResult {
+  path: string;
+  status: FileVerifyStatus;
+  /** Present for "verified" / "invalid" / "tampered" — absent for "not_in_map" */
+  results?: VerificationResult[];
+  /** Human-readable summary — always present, safe to show directly in UI */
+  reason?: string;
+  /** Present only when the file was found by content match at a different
+   *  path than requested — i.e. it moved after signing but is still valid. */
+  relocatedFrom?: string;
+}
+
+export interface BatchVerifyOptions {
+  expectedSignerId?: string;
+  /**
+   * If true, a file with status "not_in_map" is a hard error for the whole
+   * batch call (throws). Default false — missing files are reported per-file
+   * instead, since a batch verify is usually a "tell me what's wrong with
+   * each file" operation, not an all-or-nothing gate.
+   */
+  requireAllPresent?: boolean;
+}
+
+export interface BatchVerifySummary {
+  total: number;
+  verified: number;
+  invalid: number;
+  tampered: number;
+  notInMap: number;
+  /** True only when every file is "verified" — the one-glance pass/fail check */
+  allValid: boolean;
+}
+
+export type MjksMapResolveStatus =
+  | "path_match" // found at the expected path, hash confirms it's unmodified
+  | "path_tampered" // found at the expected path, but content no longer matches
+  | "relocated" // not found at the given path, but found elsewhere by hash
+  | "not_found"; // no entry matches this file by path or by content, anywhere
+
+export interface MjksMapResolveResult {
+  status: MjksMapResolveStatus;
+  entry?: MjksMapEntry;
+  /** Only set when status === "relocated" — where the file now lives
+   *  vs. where the map says it was originally signed. */
+  originalPath?: string;
 }

@@ -23,8 +23,13 @@ import { MajikSignatureValidator } from "./core/validator";
 import { buildSigningPayload, buildTSACanonicalBytes } from "./core/payload";
 import { hashContent, bytesToBase64, base64ToBytes } from "./core/hash";
 import type {
+  BatchFileInput,
+  BatchSignOptions,
+  BatchVerifyInput,
+  BatchVerifyOptions,
   EnvelopeInfo,
   ExpectedSigner,
+  FileVerifyResult,
   MajikSignatureEnvelopeJSON,
   MajikSignatureJSON,
   MajikSignerPublicKeys,
@@ -50,6 +55,7 @@ import type {
 } from "./core/stamp";
 import { MajikChainAnchor, MajikChainAnchorMemo } from "./anchor/types";
 import { MajikSignatureEnvelope } from "./core/envelope";
+import { MajikSignatureMap } from "./core/mjksmap";
 
 const secureFill = Uint8Array.prototype.fill;
 
@@ -562,10 +568,16 @@ export class MajikSignature {
    * into the multi-sig structure, but does NOT embed it back.
    * Useful for external verification workflows where payloads and envelopes travel out-of-band.
    *
+   * Pass options.tsa to attach a Trusted Timestamp to this signature before
+   * it's added to the envelope — the digest-match and TSA-signature checks
+   * happen automatically inside addTSA().
+   *
    * @example
-   *   const { blob, signature } = await MajikSignature.signFileDetached(file, aliceKey, {
-   *     existingEnvelope: outOfBandEnvelope // Optionally pass state from an external source
+   *   const { blob, envelope, signature } = await MajikSignature.signFileDetached(file, aliceKey, {
+   *     existingEnvelope: outOfBandEnvelope, // Optionally pass state from an external source
+   *     tsa: myTsaTimestamp, // Optionally attach a Trusted Timestamp
    *   });
+   *   console.log(signature.hasTSA); // true if tsa was provided and accepted
    */
   static async signFileDetached(
     file: Blob,
@@ -580,9 +592,46 @@ export class MajikSignature {
         | MajikSignatureEnvelopeJSON
         | Uint8Array
         | Blob;
+      tsa?: MajikTimestamp;
     },
-  ): ReturnType<typeof MajikSignatureEmbed.signDetached> {
-    return MajikSignatureEmbed.signDetached(file, key, MajikSignature, options);
+  ): ReturnType<typeof MajikSignatureEmbed.signDetached<MajikSignature>> {
+    return MajikSignatureEmbed.signDetached<MajikSignature>(
+      file,
+      key,
+      MajikSignature,
+      options,
+    );
+  }
+
+  /**
+   * Sign a batch of files (e.g. a folder or zip's contents) as detached
+   * envelopes. Packaged either as one MajikSignatureMap covering the whole
+   * batch (default — meant to sit at the root of the zip as one .mjksmap),
+   * or as separate .mjksig Blobs per file when options.mode === "separate".
+   *
+   * @example
+   *   const result = await MajikSignature.signBatchDetached(
+   *     [
+   *       { path: "docs/report.pdf", blob: reportBlob },
+   *       { path: "docs/appendix.pdf", blob: appendixBlob },
+   *     ],
+   *     aliceKey,
+   *   );
+   *   if (result.mode === "map") {
+   *     zip.file("signatures.mjksmap", await result.mapBlob.arrayBuffer());
+   *   }
+   */
+  static async signBatchDetached(
+    files: BatchFileInput[],
+    key: MajikKey,
+    options?: BatchSignOptions,
+  ): ReturnType<typeof MajikSignatureEmbed.signBatchDetached> {
+    return MajikSignatureEmbed.signBatchDetached(
+      files,
+      key,
+      MajikSignature,
+      options,
+    );
   }
 
   /**
@@ -649,6 +698,62 @@ export class MajikSignature {
       options,
       debug,
     );
+  }
+
+  /**
+   * Verify a batch of extracted files against a MajikSignatureMap (loaded via
+   * MajikSignatureMap.fromMJKSMAP()). Reports a per-file status rather than
+   * throwing — a missing, tampered, or invalidly-signed file is a normal
+   * possible outcome to display, not an exceptional one to catch.
+   *
+   * @example
+   *   const map = await MajikSignatureMap.fromMJKSMAP(mjksmapBlob);
+   *   const results = await MajikSignature.verifyFilesFromMjksMap(
+   *     map,
+   *     extractedFiles,
+   *     publicKeys,
+   *   );
+   *   const summary = MajikSignature.summarizeBatchVerification(results);
+   *   if (!summary.allValid) { ... }
+   */
+  static async verifyFilesFromMjksMap(
+    map: MajikSignatureMap,
+    files: BatchVerifyInput[],
+    publicKeys: MajikSignerPublicKeys,
+    options?: BatchVerifyOptions,
+    debug: boolean = false,
+  ): Promise<FileVerifyResult[]> {
+    return MajikSignatureEmbed.verifyFilesFromMjksMap(
+      map,
+      files,
+      publicKeys,
+      MajikSignature,
+      options,
+      debug,
+    );
+  }
+
+  static async verifyFilesFromMjksMapWithKey(
+    map: MajikSignatureMap,
+    files: BatchVerifyInput[],
+    key: MajikKey,
+    options?: BatchVerifyOptions,
+    debug: boolean = false,
+  ): Promise<FileVerifyResult[]> {
+    return MajikSignatureEmbed.verifyFilesFromMjksMapWithKey(
+      map,
+      files,
+      key,
+      MajikSignature,
+      options,
+      debug,
+    );
+  }
+
+  static summarizeBatchVerification(
+    results: FileVerifyResult[],
+  ): ReturnType<typeof MajikSignatureEmbed.summarizeBatchVerification> {
+    return MajikSignatureEmbed.summarizeBatchVerification(results);
   }
 
   /**
