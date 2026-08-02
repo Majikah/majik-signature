@@ -55,8 +55,7 @@
     "@noble/post-quantum": "^0.6.1",
     "@stablelib/ed25519": "^2.1.0",
     "@stablelib/sha256": "^2.0.1",
-    "fflate": "^0.8.3",
-    "pdf-lib": "^1.17.1"
+    "fflate": "^0.8.3"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
