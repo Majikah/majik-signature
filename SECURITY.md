@@ -151,7 +151,6 @@ Majik Signature has a deliberately small dependency surface and **no native bind
 | `@stablelib/ed25519`        | Ed25519 implementation                                  |
 | `@stablelib/sha256`         | SHA-256 hashing                                         |
 | `fflate`                    | ZIP handling for Office/ODF format embedding            |
-| `pdf-lib`                   | PDF-related utilities                                   |
 | `@majikah/majik-key` (peer) | Key generation, unlocking, and secret material handling |
 
 Cryptographic primitives are delegated entirely to the underlying libraries above — this project does not implement its own Ed25519, ML-DSA-87, or SHA-256/SHA3-512 primitives. Vulnerabilities in the cryptographic math itself should generally be reported upstream to those projects as well as to us, since we would need to update the dependency to ship a fix.
