@@ -69,6 +69,7 @@ import { bytesToBase64, hashContent } from "../hash";
 import { MajikSignatureError, MajikSignatureValidationError } from "../errors";
 import { MajikChainAnchor } from "../../anchor/types";
 import { MajikSignatureMap } from "../mjksmap";
+import { SignatureOrderResult, verifySignatureOrder, VerifySignatureOrderOptions } from "../order";
 
 // ─── Adapter interfaces ───────────────────────────────────────────────────────
 // Unchanged — these solve the crypto-side circular dependency, orthogonal to
@@ -848,6 +849,87 @@ export class MajikSignatureEmbed {
 
     summary.allValid = summary.verified === summary.total && summary.total > 0;
     return summary;
+  }
+
+  /**
+   * Verify the chronological signing order of a file's embedded envelope
+   * against an expected sequence of signers.
+   * expectedOrder accepts MajikKey instances and/or ExpectedSigner objects,
+   * mixed freely — normalized internally.
+   */
+  static async verifyFileOrder(
+    file: Blob,
+    expectedOrder: readonly (MajikKey | ExpectedSigner)[],
+    MajikSig: MajikSignatureStaticAdapter,
+    options?: ExtractOptions & VerifySignatureOrderOptions,
+  ): Promise<SignatureOrderResult> {
+    const { bytes, handler } = await MajikSignatureEmbed._prepare(
+      file,
+      options,
+    );
+
+    const raw = await handler.extract(bytes);
+    const envelope = raw
+      ? MajikSignatureEnvelope.fromJSON(raw)
+      : MajikSignatureEnvelope.empty();
+
+    if (raw) {
+      const integrity = envelope.verifyAllowlistIntegrity();
+      if (!integrity.valid) {
+        throw new MajikSignatureError(
+          integrity.reason ?? "Allowlist integrity check failed",
+        );
+      }
+    }
+
+    const originalBytes = raw ? await handler.strip(bytes) : bytes;
+
+    return verifySignatureOrder(
+      envelope,
+      originalBytes,
+      expectedOrder,
+      (content, sig, pk) => MajikSig.verify(content, sig, pk),
+      { strict: options?.strict },
+    );
+  }
+
+  /**
+   * Verify the chronological signing order against a detached envelope
+   * (instance, JSON, MJKSIG bytes, or Blob).
+   */
+  static async verifyDetachedOrder(
+    file: Blob,
+    envelopeInput:
+      | MajikSignatureEnvelope
+      | MajikSignatureEnvelopeJSON
+      | Uint8Array
+      | Blob,
+    expectedOrder: readonly (MajikKey | ExpectedSigner)[],
+    MajikSig: MajikSignatureStaticAdapter,
+    options?: ExtractOptions & VerifySignatureOrderOptions,
+  ): Promise<SignatureOrderResult> {
+    const { bytes, handler } = await MajikSignatureEmbed._prepare(
+      file,
+      options,
+    );
+
+    const envelope = await MajikSignatureEnvelope.from(envelopeInput);
+    const integrity = envelope.verifyAllowlistIntegrity();
+    if (!integrity.valid) {
+      throw new MajikSignatureError(
+        integrity.reason ?? "Allowlist integrity check failed",
+      );
+    }
+
+    const originalBytes = await handler.strip(bytes);
+
+    return verifySignatureOrder(
+      envelope,
+      originalBytes,
+      expectedOrder,
+      (content, sig, pk) => MajikSig.verify(content, sig, pk),
+      { strict: options?.strict },
+    );
   }
 
   // ── seal ───────────────────────────────────────────────────────────────────

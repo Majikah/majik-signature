@@ -56,6 +56,10 @@ import type {
 import { MajikChainAnchor, MajikChainAnchorMemo } from "./anchor/types";
 import { MajikSignatureEnvelope } from "./core/envelope";
 import { MajikSignatureMap } from "./core/mjksmap";
+import {
+  SignatureOrderResult,
+  normalizeExpectedOrder as normalizeExpectedOrderUtil,
+} from "./core/order";
 
 const secureFill = Uint8Array.prototype.fill;
 
@@ -754,6 +758,61 @@ export class MajikSignature {
     results: FileVerifyResult[],
   ): ReturnType<typeof MajikSignatureEmbed.summarizeBatchVerification> {
     return MajikSignatureEmbed.summarizeBatchVerification(results);
+  }
+
+  /**
+   * Verify that a file's embedded signatures were produced in the given
+   * order. expectedOrder accepts MajikKey instances and/or ExpectedSigner
+   * objects, mixed freely.
+   *
+   * @example
+   *   const result = await MajikSignature.verifyFileOrder(file, [bobKey, daveKey]);
+   *   if (!result.valid) console.warn(result.reason);
+   */
+  static async verifyFileOrder(
+    file: Blob,
+    expectedOrder: readonly (MajikKey | ExpectedSigner)[],
+    options?: { mimeType?: string; strict?: boolean },
+  ): Promise<SignatureOrderResult> {
+    return MajikSignatureEmbed.verifyFileOrder(
+      file,
+      expectedOrder,
+      MajikSignature,
+      options,
+    );
+  }
+
+  /**
+   * Verify signing order against a detached envelope.
+   */
+  static async verifyFileDetachedOrder(
+    file: Blob,
+    envelope:
+      | MajikSignatureEnvelope
+      | MajikSignatureEnvelopeJSON
+      | Uint8Array
+      | Blob,
+    expectedOrder: readonly (MajikKey | ExpectedSigner)[],
+    options?: { mimeType?: string; strict?: boolean },
+  ): Promise<SignatureOrderResult> {
+    return MajikSignatureEmbed.verifyDetachedOrder(
+      file,
+      envelope,
+      expectedOrder,
+      MajikSignature,
+      options,
+    );
+  }
+
+  /**
+   * Normalize a mixed array of MajikKey instances / ExpectedSigner objects
+   * into a plain ExpectedSigner[]. Exposed standalone in case you want to
+   * cache/store the normalized order without immediately verifying.
+   */
+  static normalizeExpectedOrder(
+    expectedOrder: readonly (MajikKey | ExpectedSigner)[],
+  ): ExpectedSigner[] {
+    return normalizeExpectedOrderUtil(expectedOrder);
   }
 
   /**
