@@ -1584,4 +1584,322 @@ describe("MajikSignature Class Unit Tests", () => {
       });
     });
   });
+
+  // ─── CHRONOLOGICAL ORDER VERIFICATION (.verifyFileOrder & .verifyFileDetachedOrder) ───
+
+  describe("Chronological Order Verification (.verifyFileOrder & .verifyFileDetachedOrder)", () => {
+    const t1 = "2026-08-01T10:00:00.000Z";
+    const t2 = "2026-08-01T10:05:00.000Z";
+    const t3 = "2026-08-01T10:10:00.000Z";
+
+    let baseBlob: Blob;
+
+    beforeAll(() => {
+      baseBlob = new Blob(["Order Verification Test Document"], {
+        type: "text/plain",
+      });
+    });
+
+    // ── NORMALIZATION ────────────────────────────────────────────────────────
+
+    describe("normalizeExpectedOrder", () => {
+      it("should accept mixed MajikKey instances and ExpectedSigner objects and normalize them", () => {
+        const profileB = MajikSignature.expectedSignerFromKey(keyB);
+        const normalized = MajikSignature.normalizeExpectedOrder([
+          keyA,
+          profileB,
+        ]);
+
+        expect(normalized).toHaveLength(2);
+        expect(normalized[0].signerId).toBe(keyA.fingerprint);
+        expect(normalized[1].signerId).toBe(keyB.fingerprint);
+        expect(typeof normalized[0].edPublicKey).toBe("string");
+        expect(typeof normalized[0].mlDsaPublicKey).toBe("string");
+      });
+
+      it("should throw a validation error if expectedOrder is empty", async () => {
+        const { blob } = await MajikSignature.signFile(baseBlob, keyA);
+        await expect(MajikSignature.verifyFileOrder(blob, [])).rejects.toThrow(
+          /expectedOrder must contain at least one signer/,
+        );
+      });
+
+      it("should throw a validation error if expectedOrder contains duplicates", async () => {
+        const { blob } = await MajikSignature.signFile(baseBlob, keyA);
+        await expect(
+          MajikSignature.verifyFileOrder(blob, [keyA, keyA]),
+        ).rejects.toThrow(/Duplicate signerId in expectedOrder/);
+      });
+    });
+
+    // ── HAPPY PATH (CORRECT ORDER) ───────────────────────────────────────────
+
+    describe("Valid Chronological Signing", () => {
+      it("should return valid=true when all expected signers sign in the correct sequence (embedded)", async () => {
+        // keyA @ t1 -> keyB @ t2 -> keyC @ t3
+        const { blob: step1 } = await MajikSignature.signFile(baseBlob, keyA, {
+          timestamp: t1,
+        });
+        const { blob: step2 } = await MajikSignature.signFile(step1, keyB, {
+          timestamp: t2,
+        });
+        const { blob: finalBlob } = await MajikSignature.signFile(step2, keyC, {
+          timestamp: t3,
+        });
+
+        const result = await MajikSignature.verifyFileOrder(finalBlob, [
+          keyA,
+          keyB,
+          keyC,
+        ]);
+
+        expect(result.valid).toBe(true);
+        expect(result.allExpectedSigned).toBe(true);
+        expect(result.allValid).toBe(true);
+        expect(result.orderRespected).toBe(true);
+        expect(result.pendingSigners).toHaveLength(0);
+        expect(result.invalidSigners).toHaveLength(0);
+        expect(result.violations).toHaveLength(0);
+        expect(result.usesUnattestedTimestamp).toBe(true); // Self-reported local clocks used
+      });
+
+      it("should support mixed key types in expectedOrder (MajikKey + ExpectedSigner profile)", async () => {
+        const { blob: step1 } = await MajikSignature.signFile(baseBlob, keyA, {
+          timestamp: t1,
+        });
+        const { blob: finalBlob } = await MajikSignature.signFile(step1, keyB, {
+          timestamp: t2,
+        });
+
+        const expectedOrder = [
+          keyA,
+          MajikSignature.expectedSignerFromKey(keyB),
+        ];
+
+        const result = await MajikSignature.verifyFileOrder(
+          finalBlob,
+          expectedOrder,
+        );
+
+        expect(result.valid).toBe(true);
+        expect(result.orderRespected).toBe(true);
+      });
+
+      it("should correctly verify order against detached envelope via verifyFileDetachedOrder", async () => {
+        const { blob: stripped1, envelope: env1 } =
+          await MajikSignature.signFileDetached(baseBlob, keyA, {
+            timestamp: t1,
+          });
+
+        const { blob: stripped2, envelope: finalEnv } =
+          await MajikSignature.signFileDetached(stripped1, keyB, {
+            existingEnvelope: env1,
+            timestamp: t2,
+          });
+
+        const result = await MajikSignature.verifyFileDetachedOrder(
+          stripped2,
+          finalEnv,
+          [keyA, keyB],
+        );
+
+        expect(result.valid).toBe(true);
+        expect(result.allExpectedSigned).toBe(true);
+        expect(result.orderRespected).toBe(true);
+      });
+    });
+
+    // ── ORDER VIOLATIONS (OUT OF ORDER) ──────────────────────────────────────
+
+    describe("Out-of-Order Signing Violations", () => {
+      it("should detect order violations when signers sign out of the expected sequence", async () => {
+        // Expected order: keyA then keyB
+        // Actual signing: keyB @ t1 then keyA @ t2
+        const { blob: step1 } = await MajikSignature.signFile(baseBlob, keyB, {
+          timestamp: t1,
+        });
+        const { blob: finalBlob } = await MajikSignature.signFile(step1, keyA, {
+          timestamp: t2,
+        });
+
+        const result = await MajikSignature.verifyFileOrder(finalBlob, [
+          keyA,
+          keyB,
+        ]);
+
+        expect(result.valid).toBe(false);
+        expect(result.allExpectedSigned).toBe(true);
+        expect(result.allValid).toBe(true);
+        expect(result.orderRespected).toBe(false);
+        expect(result.violations).toHaveLength(1);
+
+        const violation = result.violations[0];
+        expect(violation.earlier).toBe(keyA.fingerprint);
+        expect(violation.later).toBe(keyB.fingerprint);
+        expect(violation.earlierTimestamp).toBe(t2);
+        expect(violation.laterTimestamp).toBe(t1);
+      });
+    });
+
+    // ── PENDING SIGNERS (INCOMPLETE) ─────────────────────────────────────────
+
+    describe("Pending / Missing Signers", () => {
+      it("should flag allExpectedSigned=false and populate pendingSigners when expected signers are missing", async () => {
+        // Expected: keyA -> keyB -> keyC, but only keyA and keyB signed
+        const { blob: step1 } = await MajikSignature.signFile(baseBlob, keyA, {
+          timestamp: t1,
+        });
+        const { blob: finalBlob } = await MajikSignature.signFile(step1, keyB, {
+          timestamp: t2,
+        });
+
+        const result = await MajikSignature.verifyFileOrder(finalBlob, [
+          keyA,
+          keyB,
+          keyC,
+        ]);
+
+        expect(result.valid).toBe(false);
+        expect(result.allExpectedSigned).toBe(false);
+        expect(result.pendingSigners).toEqual([keyC.fingerprint]);
+        expect(result.orderRespected).toBe(true); // Signatures present were in order
+      });
+    });
+
+    // ── INVALID / TAMPERED SIGNATURES ────────────────────────────────────────
+
+    describe("Invalid & Tampered Signatures in Sequence", () => {
+      it("should flag allValid=false and populate invalidSigners when payload is corrupted", async () => {
+        const { blob: step1 } = await MajikSignature.signFile(baseBlob, keyA, {
+          timestamp: t1,
+        });
+        const { blob: step2 } = await MajikSignature.signFile(step1, keyB, {
+          timestamp: t2,
+        });
+
+        const tamperedBlob = await corruptBlob(step2);
+
+        const result = await MajikSignature.verifyFileOrder(tamperedBlob, [
+          keyA,
+          keyB,
+        ]);
+
+        expect(result.valid).toBe(false);
+        expect(result.allValid).toBe(false);
+        expect(result.invalidSigners.length).toBeGreaterThan(0);
+      });
+    });
+
+    // ── STRICT MODE & UNEXPECTED SIGNERS ────────────────────────────────────
+
+    describe("Strict Mode Enforcement ({ strict: true })", () => {
+      it("should allow unlisted signers in non-strict mode if expected order is valid", async () => {
+        // Signed by keyA @ t1, keyB @ t2, and an extra keyD @ t3
+        const { blob: step1 } = await MajikSignature.signFile(baseBlob, keyA, {
+          timestamp: t1,
+        });
+        const { blob: step2 } = await MajikSignature.signFile(step1, keyB, {
+          timestamp: t2,
+        });
+        const { blob: finalBlob } = await MajikSignature.signFile(step2, keyD, {
+          timestamp: t3,
+        });
+
+        const result = await MajikSignature.verifyFileOrder(
+          finalBlob,
+          [keyA, keyB],
+          { strict: false },
+        );
+
+        expect(result.valid).toBe(true);
+        expect(result.strict).toBe(false);
+        // Since strict mode is false, the library doesn't compile unexpected signers.
+        expect(result.unexpectedSigners).toEqual([]);
+      });
+      
+      it("should reject and flag unexpectedSigners in strict mode", async () => {
+        const { blob: step1 } = await MajikSignature.signFile(baseBlob, keyA, {
+          timestamp: t1,
+        });
+        const { blob: step2 } = await MajikSignature.signFile(step1, keyB, {
+          timestamp: t2,
+        });
+        const { blob: finalBlob } = await MajikSignature.signFile(step2, keyD, {
+          timestamp: t3,
+        });
+
+        const result = await MajikSignature.verifyFileOrder(
+          finalBlob,
+          [keyA, keyB],
+          { strict: true },
+        );
+
+        expect(result.valid).toBe(false);
+        expect(result.strict).toBe(true);
+        expect(result.unexpectedSigners).toEqual([keyD.fingerprint]);
+        expect(result.reason).toContain("Unexpected signer(s) present");
+      });
+    });
+
+    // ── TSA VS. UNATTESTED TIMESTAMPS ────────────────────────────────────────
+
+    describe("TSA vs Unattested Timestamp Detection", () => {
+      it("should set usesUnattestedTimestamp=false when all signatures carry a TSA token", async () => {
+        // Prepare TSA token for keyA
+        const sigA = await MajikSignature.sign(
+          new Uint8Array(await baseBlob.arrayBuffer()),
+          keyA,
+          { contentType: "text/plain", timestamp: t1 },
+        );
+        const tsaReqA = sigA.buildTSARequestPayload();
+        const tsaTokenA = await MajikSignature.signTSA(tsaReqA, tsaKey, {
+          id: "tsa.majikah.solutions",
+          signerFingerprint: tsaKey.fingerprint,
+        });
+
+        const { blob: stripped, envelope } =
+          await MajikSignature.signFileDetached(baseBlob, keyA, {
+            contentType: "text/plain",
+            timestamp: t1,
+            tsa: tsaTokenA,
+          });
+
+        const result = await MajikSignature.verifyFileDetachedOrder(
+          stripped,
+          envelope,
+          [keyA],
+        );
+
+        expect(result.valid).toBe(true);
+        expect(result.usesUnattestedTimestamp).toBe(false); // TSA timestamp used
+      });
+    });
+
+    // ── SOFT-TIE TIMESTAMP WARNINGS ─────────────────────────────────────────
+
+    describe("Soft-Tie Timestamp Warnings", () => {
+      it("should generate softTieWarnings when two signers have identical timestamps", async () => {
+        // Both sign with identical timestamp t1
+        const { blob: step1 } = await MajikSignature.signFile(baseBlob, keyA, {
+          timestamp: t1,
+        });
+        const { blob: finalBlob } = await MajikSignature.signFile(step1, keyB, {
+          timestamp: t1,
+        });
+
+        const result = await MajikSignature.verifyFileOrder(finalBlob, [
+          keyA,
+          keyB,
+        ]);
+
+        expect(result.valid).toBe(true);
+        expect(result.softTieWarnings).toHaveLength(1);
+        expect(result.softTieWarnings[0]).toEqual({
+          a: keyA.fingerprint,
+          b: keyB.fingerprint,
+          timestamp: t1,
+        });
+      });
+    });
+  });
 });
