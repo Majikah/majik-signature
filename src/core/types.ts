@@ -69,6 +69,27 @@ export interface MajikTSAPayload {
   };
 }
 
+/**
+ * Wire-optimized signature envelope — omits signerEdPublicKey / signerMlDsaPublicKey.
+ *
+ * Safe to use ONLY when the verifier resolves the signer's public keys from
+ * an external, trusted source (e.g. your MUID/key registry) rather than
+ * trusting whatever is embedded in the payload. This is the correct model
+ * for anything that already requires a live network round-trip to verify
+ * (like MajikSLink), but is NOT a drop-in replacement for offline/portable
+ * file signatures where self-containment matters.
+ */
+export interface MajikSignatureCompactJSON {
+  v: 1;
+  signerId: string;
+  contentHash: string;
+  contentType?: string;
+  timestamp: string;
+  edSignature: string;
+  mlDsaSignature: string;
+  allowlistHash?: string;
+}
+
 export interface MajikTSARequest {
   digest: {
     algorithm: "SHA-256";

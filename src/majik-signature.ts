@@ -30,6 +30,7 @@ import type {
   EnvelopeInfo,
   ExpectedSigner,
   FileVerifyResult,
+  MajikSignatureCompactJSON,
   MajikSignatureEnvelopeJSON,
   MajikSignatureJSON,
   MajikSignerPublicKeys,
@@ -1247,6 +1248,86 @@ export class MajikSignature {
     options?: { mimeType?: string },
   ): Promise<MajikChainAnchor[]> {
     return MajikSignatureEmbed.getChainAnchors(file, options);
+  }
+
+  // ── COMPACT FORMAT ─────────────────────────────────────────────────────────
+
+  /**
+   * Strip the embedded public keys, producing the wire/storage-optimized form.
+   * The verifier must supply the signer's public keys out-of-band via
+   * fromCompact() / verifyCompact() — never trust keys recovered from the
+   * compact payload itself, because there are none.
+   */
+  toCompact(): MajikSignatureCompactJSON {
+    return {
+      v: this._version,
+      signerId: this._signerId,
+      contentHash: this._contentHash,
+      contentType: this._contentType,
+      timestamp: this._timestamp,
+      edSignature: this._edSignature,
+      mlDsaSignature: this._mlDsaSignature,
+      allowlistHash: this._allowlistHash,
+    };
+  }
+
+  /**
+   * Rehydrate a full MajikSignature from a compact payload + externally
+   * resolved public keys. Throws if signerId doesn't match the supplied keys —
+   * this is a cheap sanity check, not a substitute for verify().
+   */
+  static fromCompact(
+    compact: MajikSignatureCompactJSON,
+    publicKeys: Pick<MajikSignerPublicKeys, "edPublicKey" | "mlDsaPublicKey">,
+  ): MajikSignature {
+    if (!publicKeys?.edPublicKey || !publicKeys?.mlDsaPublicKey) {
+      throw new MajikSignatureKeyError(
+        "fromCompact() requires the signer's public keys — resolve them by compact.signerId from your key registry / MUID service.",
+      );
+    }
+
+    const full: MajikSignatureJSON = {
+      version: compact.v,
+      signerId: compact.signerId,
+      signerEdPublicKey: bytesToBase64(publicKeys.edPublicKey),
+      signerMlDsaPublicKey: bytesToBase64(publicKeys.mlDsaPublicKey),
+      contentHash: compact.contentHash,
+      contentType: compact.contentType,
+      timestamp: compact.timestamp,
+      edSignature: compact.edSignature,
+      mlDsaSignature: compact.mlDsaSignature,
+      allowlistHash: compact.allowlistHash,
+    };
+
+    return MajikSignature.fromJSON(full);
+  }
+
+  /**
+   * Verify content against a compact envelope. signerId is checked against
+   * publicKeys.signerId before any crypto runs, so a mismatched lookup fails
+   * fast with a clear reason instead of a cryptic signature failure.
+   *
+   * @example
+   *   const keys = await resolvePublicKeysForMuid(slink.muid); // your registry
+   *   const result = MajikSignature.verifyCompact(canonical, slink.signatureJSON, keys);
+   */
+  static verifyCompact(
+    content: Uint8Array | string,
+    compact: MajikSignatureCompactJSON,
+    publicKeys: MajikSignerPublicKeys,
+  ): VerificationResult {
+    if (compact.signerId !== publicKeys.signerId) {
+      return {
+        valid: false,
+        signerId: compact.signerId,
+        contentHash: compact.contentHash,
+        timestamp: compact.timestamp,
+        contentType: compact.contentType,
+        reason: `signerId mismatch: envelope is "${compact.signerId}", provided publicKeys are for "${publicKeys.signerId}"`,
+      };
+    }
+    const full = MajikSignature.fromCompact(compact, publicKeys);
+    return MajikSignature.verify(content, full, publicKeys);
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
