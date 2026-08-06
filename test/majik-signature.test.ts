@@ -23,6 +23,7 @@ interface FileFixture {
 
 const FILE_FIXTURES: FileFixture[] = [
   { label: "Plain Text", file: "sample.txt", contentType: "text/plain" },
+  { label: "WEBP Image", file: "sample.webp", contentType: "image/webp" },
   { label: "MP4 Video", file: "sample.mp4", contentType: "video/mp4" },
   { label: "WAV Audio", file: "sample.wav", contentType: "audio/wav" },
   {
@@ -1816,7 +1817,7 @@ describe("MajikSignature Class Unit Tests", () => {
         // Since strict mode is false, the library doesn't compile unexpected signers.
         expect(result.unexpectedSigners).toEqual([]);
       });
-      
+
       it("should reject and flag unexpectedSigners in strict mode", async () => {
         const { blob: step1 } = await MajikSignature.signFile(baseBlob, keyA, {
           timestamp: t1,
