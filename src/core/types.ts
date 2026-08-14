@@ -3,8 +3,8 @@
  * Public types for the MajikSignature library.
  */
 
-import { ISODateString } from "@majikah/majik-key";
-import { MajikChainAnchor } from "../anchor/types";
+import type { ISODateString, MajikKeyFingerprint } from "@majikah/majik-key";
+import type { MajikChainAnchor } from "../anchor/types";
 import type { ContentType } from "./constants";
 import type { MajikSignatureEnvelope } from "./envelope";
 
@@ -179,7 +179,7 @@ export interface MultiSigEnvelope {
  */
 export interface MajikSignerPublicKeys {
   /** MajikKey fingerprint */
-  signerId: string;
+  signerId: MajikKeyFingerprint;
   /** Ed25519 public key bytes (32 bytes) */
   edPublicKey: Uint8Array;
   /** ML-DSA-87 public key bytes (2592 bytes) */
@@ -209,7 +209,7 @@ export interface SignOptions {
  */
 export interface VerificationResult {
   valid: boolean;
-  signerId?: string;
+  signerId?: MajikKeyFingerprint;
   contentHash?: string;
   timestamp: string;
   contentType?: string;
@@ -226,7 +226,7 @@ export interface SealVerificationResult {
   /** Whether the seal hash is valid and matches all current signatories */
   valid: boolean;
   /** Fingerprint of who sealed the envelope */
-  sealedBy?: string;
+  sealedBy?: MajikKeyFingerprint;
   /** ISO 8601 timestamp of when the seal was applied */
   sealTimestamp?: string;
   /** Human-readable failure reason when valid is false */
@@ -243,7 +243,7 @@ export interface SealInfo {
   /** ISO 8601 timestamp of when the seal was applied */
   sealTimestamp: string;
   /** Fingerprint of the issuer who applied the seal */
-  sealedBy: string;
+  sealedBy: MajikKeyFingerprint;
 }
 
 /**
@@ -252,7 +252,7 @@ export interface SealInfo {
  */
 export interface SignatoryInfo {
   /** MajikKey fingerprint */
-  signerId: string;
+  signerId: MajikKeyFingerprint;
   /** Ed25519 public key, base64 */
   edPublicKey: string;
   /** ML-DSA-87 public key, base64 */

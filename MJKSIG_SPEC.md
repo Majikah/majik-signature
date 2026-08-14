@@ -1,6 +1,6 @@
 # MJKSIG — Majik Signature Envelope Format
 
-<!-- [![Static Badge](https://img.shields.io/badge/IANA-vnd.majikah.mjksig-green)](https://www.iana.org/assignments/media-types/application/vnd.majikah.mjksig) -->
+[![Static Badge](https://img.shields.io/badge/IANA-vnd.majikah.mjksig-green)](https://www.iana.org/assignments/media-types/application/vnd.majikah.mjksig)
 
 **File Extension:** `.mjksig`
 **Proposed Media Type:** `application/vnd.majikah.mjksig`
