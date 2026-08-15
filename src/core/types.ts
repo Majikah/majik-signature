@@ -3,7 +3,11 @@
  * Public types for the MajikSignature library.
  */
 
-import type { ISODateString, MajikKeyFingerprint } from "@majikah/majik-key";
+import type {
+  ISODateString,
+  MajikKeyFingerprint,
+  MajikKeyAddress,
+} from "@majikah/majik-key";
 import type { MajikChainAnchor } from "../anchor/types";
 import type { ContentType } from "./constants";
 import type { MajikSignatureEnvelope } from "./envelope";
@@ -11,6 +15,9 @@ import type { MajikSignatureEnvelope } from "./envelope";
 export type { ContentType };
 
 export type MajikSignatureEnvelopeJSON = MultiSigEnvelope;
+
+export type ED25519Signature = string;
+export type MLDSA87Signature = string;
 
 /**
  * The serializable per-signer signature envelope.
@@ -21,7 +28,7 @@ export interface MajikSignatureJSON {
   version: 1;
 
   /** MajikKey fingerprint (SHA-256 of X25519 public key, base64) */
-  signerId: string;
+  signerId: MajikKeyFingerprint;
 
   /** Ed25519 public key, base64 (32 bytes) */
   signerEdPublicKey: string;
@@ -36,13 +43,13 @@ export interface MajikSignatureJSON {
   contentType?: string;
 
   /** ISO 8601 timestamp of when the signature was created */
-  timestamp: string;
+  timestamp: ISODateString;
 
   /** Ed25519 signature over the canonical payload, base64 (64 bytes) */
-  edSignature: string;
+  edSignature: ED25519Signature;
 
   /** ML-DSA-87 signature over the canonical payload, base64 (4595 bytes) */
-  mlDsaSignature: string;
+  mlDsaSignature: MLDSA87Signature;
 
   /**
    * SHA-256 hash of the canonical allowlist JSON, base64 (44 chars).
@@ -52,6 +59,15 @@ export interface MajikSignatureJSON {
    * Absent on all other signers and on any signature made before multi-sig support.
    */
   allowlistHash?: string;
+
+  /**
+   * Optional ISO 8601 expiry. When present, verify() treats the signature
+   * as invalid once the current time is past this value. Absent = never
+   * expires (matches all pre-existing signatures — fully backward compatible).
+   * Covered by the canonical signing payload when present, so it cannot be
+   * stripped or extended post-hoc without breaking both signatures.
+   */
+  validUntil?: ISODateString;
 
   tsa?: MajikTimestamp;
 }
@@ -81,13 +97,14 @@ export interface MajikTSAPayload {
  */
 export interface MajikSignatureCompactJSON {
   v: 1;
-  signerId: string;
+  signerId: MajikKeyFingerprint;
   contentHash: string;
   contentType?: string;
-  timestamp: string;
-  edSignature: string;
-  mlDsaSignature: string;
+  timestamp: ISODateString;
+  edSignature: ED25519Signature;
+  mlDsaSignature: MLDSA87Signature;
   allowlistHash?: string;
+  validUntil?: ISODateString;
 }
 
 export interface MajikTSARequest {
@@ -110,7 +127,7 @@ export interface MajikTimestamp {
  */
 export interface ExpectedSigner {
   /** MajikKey fingerprint (SHA-256 of X25519 public key, base64) */
-  signerId: string;
+  signerId: MajikKeyFingerprint;
   /** Ed25519 public key, base64 (32 bytes) */
   edPublicKey: string;
   /** ML-DSA-87 public key, base64 (2592 bytes) */
@@ -145,7 +162,7 @@ export interface MultiSigEnvelope {
    * their signature verification.
    * Absent when allowlist is absent.
    */
-  allowlistSignerId?: string;
+  allowlistSignerId?: MajikKeyFingerprint;
 
   /** All per-signer envelopes. One entry per signer, keyed logically by signerId. */
   signatures: MajikSignatureJSON[];
@@ -162,7 +179,7 @@ export interface MultiSigEnvelope {
    * ISO 8601 timestamp of when the seal was applied.
    * Included in the seal hash input — changing this breaks the seal.
    */
-  sealTimestamp?: string;
+  sealTimestamp?: ISODateString;
 
   /**
    * Fingerprint of the signer who applied the seal.
@@ -193,7 +210,7 @@ export interface SignOptions {
   /** Advisory content type label */
   contentType?: string;
   /** Override timestamp (useful for deterministic tests) */
-  timestamp?: string;
+  timestamp?: ISODateString;
   /**
    * Restrict future signers to these keys only.
    * Only honoured when this is the first signature on a file (no existing
@@ -202,6 +219,13 @@ export interface SignOptions {
    * Each entry must include signerId + edPublicKey + mlDsaPublicKey (base64).
    */
   expectedSigners?: ExpectedSigner[];
+
+  /**
+   * ISO 8601 timestamp. If set, verify() will fail with an "expired" reason
+   * once the current time passes this value. Optional — omit for a
+   * signature that never expires.
+   */
+  validUntil?: string;
 }
 
 /**
@@ -211,12 +235,15 @@ export interface VerificationResult {
   valid: boolean;
   signerId?: MajikKeyFingerprint;
   contentHash?: string;
-  timestamp: string;
+  timestamp: ISODateString;
   contentType?: string;
   /** Present when result came from a file verify — which handler processed it */
   handler?: string;
   /** Present when valid is false — human-readable failure reason */
   reason?: string;
+
+  /** True only when the sole reason valid=false is expiry (crypto checked out fine). */
+  expired?: boolean;
 }
 
 /**
@@ -241,7 +268,7 @@ export interface SealInfo {
   /** SHA3-512 hash of the canonical seal payload, hex-encoded (128 chars) */
   sealHash: string;
   /** ISO 8601 timestamp of when the seal was applied */
-  sealTimestamp: string;
+  sealTimestamp: ISODateString;
   /** Fingerprint of the issuer who applied the seal */
   sealedBy: MajikKeyFingerprint;
 }
@@ -260,7 +287,7 @@ export interface SignatoryInfo {
   /** Whether this signatory has already signed */
   hasSigned: boolean;
   /** ISO 8601 timestamp of their signature — present only when hasSigned is true */
-  signedAt?: string;
+  signedAt?: ISODateString;
 }
 
 /**
@@ -413,8 +440,14 @@ export interface BatchFileInput {
 
 export interface BatchSignOptions {
   contentType?: string;
-  timestamp?: string;
+  timestamp?: ISODateString;
   expectedSigners?: ExpectedSigner[];
+  /**
+   * ISO 8601 expiry applied to every signature in the batch. Optional —
+   * omit for signatures that never expire. Same field, same semantics as
+   * SignOptions.validUntil, just applied uniformly across the batch.
+   */
+  validUntil?: ISODateString;
   /** "map" (default) produces one MajikSignatureMap covering the whole
    *  batch. "separate" produces one .mjksig Blob per file. */
   mode?: "map" | "separate";
@@ -472,7 +505,12 @@ export interface FileVerifyResult {
 }
 
 export interface BatchVerifyOptions {
-  expectedSignerId?: string;
+  expectedSignerId?: MajikKeyFingerprint;
+  /**
+   * Time to check validUntil against. Defaults to the current time.
+   * Every per-file verification in the batch uses this same value.
+   */
+  now?: Date;
   /**
    * If true, a file with status "not_in_map" is a hard error for the whole
    * batch call (throws). Default false — missing files are reported per-file

@@ -6,7 +6,11 @@
 
 import * as ed25519 from "@stablelib/ed25519";
 import { ml_dsa87 } from "@noble/post-quantum/ml-dsa.js";
-import type { MajikKey } from "@majikah/majik-key";
+import type {
+  ISODateString,
+  MajikKey,
+  MajikKeyFingerprint,
+} from "@majikah/majik-key";
 
 import {
   MAJIK_NOTARY_MEMO_DOMAIN,
@@ -27,6 +31,7 @@ import type {
   BatchSignOptions,
   BatchVerifyInput,
   BatchVerifyOptions,
+  ED25519Signature,
   EnvelopeInfo,
   ExpectedSigner,
   FileVerifyResult,
@@ -37,6 +42,7 @@ import type {
   MajikTimestamp,
   MajikTSAPayload,
   MajikTSARequest,
+  MLDSA87Signature,
   SealInfo,
   SealVerificationResult,
   SignatoriesFilter,
@@ -95,22 +101,34 @@ const secureFill = Uint8Array.prototype.fill;
  *   - Sealing computes a SHA3-512 hash over all current signatories + timestamp
  *   - A sealed envelope rejects all further signing attempts
  *
+ * Expiry:
+ *   - A signer may optionally set validUntil (ISO 8601) when signing
+ *   - Cryptographically committed to via the canonical payload — the field
+ *     cannot be added, stripped, or extended post-hoc without breaking both
+ *     Ed25519 and ML-DSA-87
+ *   - verify() checks expiry only AFTER both signatures pass, so an
+ *     expired-but-forged signature is reported as invalid, not "expired"
+ *   - Absent = never expires, matching every signature that predates this
+ *     feature — fully backward compatible, no migration needed
+ *
  * Canonical payload:
- *   "majik-signature-v1:" + JSON({ v, id, ts, ct, hash[, alh] })
- *   where hash = SHA-256(content), alh = SHA-256(canonical allowlist) — omitted
- *   when no allowlist is set, preserving backward compat with old signatures.
+ *   "majik-signature-v1:" + JSON({ v, id, ts, ct, hash[, alh][, vu] })
+ *   where hash = SHA-256(content), alh = SHA-256(canonical allowlist), and
+ *   vu = validUntil — each omitted (not nulled) when unset, preserving
+ *   backward compat with signatures made before that field existed.
  */
 export class MajikSignature {
   private readonly _version: 1;
-  private readonly _signerId: string;
+  private readonly _signerId: MajikKeyFingerprint;
   private readonly _signerEdPublicKey: string;
   private readonly _signerMlDsaPublicKey: string;
   private readonly _contentHash: string;
   private readonly _contentType?: string;
-  private readonly _timestamp: string;
-  private readonly _edSignature: string;
-  private readonly _mlDsaSignature: string;
+  private readonly _timestamp: ISODateString;
+  private readonly _edSignature: ED25519Signature;
+  private readonly _mlDsaSignature: MLDSA87Signature;
   private readonly _allowlistHash?: string;
+  private readonly _validUntil?: ISODateString;
   private _tsa?: MajikTimestamp;
 
   private constructor(data: MajikSignatureJSON) {
@@ -124,6 +142,7 @@ export class MajikSignature {
     this._edSignature = data.edSignature;
     this._mlDsaSignature = data.mlDsaSignature;
     this._allowlistHash = data.allowlistHash;
+    this._validUntil = data.validUntil;
     this._tsa = data.tsa;
   }
 
@@ -132,7 +151,7 @@ export class MajikSignature {
   get version(): 1 {
     return this._version;
   }
-  get signerId(): string {
+  get signerId(): MajikKeyFingerprint {
     return this._signerId;
   }
   get signerEdPublicKey(): string {
@@ -147,13 +166,13 @@ export class MajikSignature {
   get contentType(): string | undefined {
     return this._contentType;
   }
-  get timestamp(): string {
+  get timestamp(): ISODateString {
     return this._timestamp;
   }
-  get edSignature(): string {
+  get edSignature(): ED25519Signature {
     return this._edSignature;
   }
-  get mlDsaSignature(): string {
+  get mlDsaSignature(): MLDSA87Signature {
     return this._mlDsaSignature;
   }
 
@@ -166,8 +185,32 @@ export class MajikSignature {
     return this._allowlistHash;
   }
 
+  /**
+   * ISO 8601 timestamp after which this signature is considered expired by
+   * verify(). Undefined means the signature never expires — this is the case
+   * for every signature created before expiry support existed.
+   */
+  get validUntil(): ISODateString | undefined {
+    return this._validUntil;
+  }
+
   get tsa(): MajikTimestamp | undefined {
     return this._tsa;
+  }
+
+  /**
+   * Structural expiry check against this signature's validUntil — does NOT
+   * verify the cryptographic signature. Always false when validUntil is unset.
+   * Use verify() for a full trust decision; use this for a quick UI-facing
+   * "is this stale" check without needing the original content or public keys.
+   *
+   * @param now - Time to check against. Defaults to the current time.
+   */
+  isExpired(now: Date = new Date()): boolean {
+    return (
+      this._validUntil !== undefined &&
+      now.getTime() > Date.parse(this._validUntil)
+    );
   }
 
   // ── SIGN ────────────────────────────────────────────────────────────────────
@@ -178,6 +221,10 @@ export class MajikSignature {
    * Both Ed25519 and ML-DSA-87 sign the same canonical payload.
    * When options.allowlistHash is provided (injected internally by signAndEmbed),
    * it is included in the payload so both algorithms cover the allowlist.
+   * When options.validUntil is provided, it is likewise included in the payload
+   * so both algorithms cover the expiry — a verifier cannot strip or extend it
+   * without invalidating the signature. Omit it for a signature that never
+   * expires.
    */
   static async sign(
     content: Uint8Array | string,
@@ -188,6 +235,7 @@ export class MajikSignature {
     MajikSignatureValidator.validateContent(content);
     MajikSignatureValidator.assertDefined(key, "key");
     MajikSignatureValidator.validateContentType(options?.contentType);
+    MajikSignatureValidator.validateValidUntil(options?.validUntil);
 
     if (key.isLocked)
       throw new MajikSignatureKeyError(
@@ -218,6 +266,7 @@ export class MajikSignature {
       const signerId = key.fingerprint;
       const contentType = options?.contentType;
       const allowlistHash = options?.allowlistHash;
+      const validUntil = options?.validUntil; // NEW
 
       const payload = buildSigningPayload({
         signerId,
@@ -225,6 +274,7 @@ export class MajikSignature {
         contentHash,
         contentType,
         allowlistHash,
+        validUntil,
       });
 
       if (debug) console.log("Signing Payload:", payload);
@@ -256,6 +306,7 @@ export class MajikSignature {
         edSignature: bytesToBase64(edSigBytes),
         mlDsaSignature: bytesToBase64(mlDsaSigBytes),
         ...(allowlistHash !== undefined ? { allowlistHash } : {}),
+        ...(validUntil !== undefined ? { validUntil } : {}), // NEW
       };
 
       return new MajikSignature(envelope);
@@ -281,11 +332,24 @@ export class MajikSignature {
   /**
    * Verify a MajikSignature against content and the signer's public keys.
    * Both Ed25519 AND ML-DSA-87 must verify — if either fails, returns invalid.
+   *
+   * If the envelope carries a validUntil, expiry is checked only after both
+   * signatures have already passed — so a forged-but-expired signature is
+   * reported as an invalid signature (wrong reason), never mistaken for a
+   * merely-expired-but-otherwise-valid one. A signature with no validUntil
+   * never expires.
+   *
+   * @param now - Time to check expiry against. Defaults to the current time;
+   *   override for deterministic tests or to verify "as of" a past/future moment.
+   * @returns valid: false with reason "Signature expired at ..." and
+   *   expired: true when the only failure is expiry; expired is omitted
+   *   otherwise.
    */
   static verify(
     content: Uint8Array | string,
     signature: MajikSignature | MajikSignatureJSON,
     publicKeys: MajikSignerPublicKeys,
+    now: Date = new Date(),
   ): VerificationResult {
     try {
       MajikSignatureValidator.validateContent(content);
@@ -316,6 +380,7 @@ export class MajikSignature {
         contentHash: env.contentHash,
         contentType: env.contentType,
         allowlistHash: env.allowlistHash,
+        validUntil: env.validUntil,
       });
 
       let edOk: boolean;
@@ -343,6 +408,19 @@ export class MajikSignature {
         return invalid("Failed to verify ML-DSA-87 signature");
       }
       if (!mlDsaOk) return invalid("Invalid ML-DSA-87 signature");
+
+      // NEW — expiry check, only after crypto has checked out
+      if (
+        env.validUntil !== undefined &&
+        now.getTime() > Date.parse(env.validUntil)
+      ) {
+        return {
+          ...invalid(
+            `Signature expired at ${env.validUntil} (verified at ${now.toISOString()})`,
+          ),
+          expired: true,
+        };
+      }
 
       return {
         valid: true,
@@ -418,6 +496,9 @@ export class MajikSignature {
       mlDsaSignature: this._mlDsaSignature,
       ...(this._allowlistHash !== undefined
         ? { allowlistHash: this._allowlistHash }
+        : {}),
+      ...(this._validUntil !== undefined
+        ? { validUntil: this._validUntil }
         : {}),
       ...(this._tsa !== undefined ? { tsa: this._tsa } : {}),
     };
@@ -540,12 +621,19 @@ export class MajikSignature {
    * Non-allowlisted signers are rejected before any crypto (MajikSignatureAllowlistError).
    * Sealed files are always rejected.
    *
+   * Pass options.validUntil (ISO 8601) to make this specific signature expire —
+   * cryptographically bound into the payload, so it cannot be stripped or
+   * extended without invalidating the signature. Omit for a signature that
+   * never expires. In multi-sig files, expiry is per-signer: each signer's
+   * validUntil (or absence of one) applies only to their own entry.
+   *
    * @example
    *   const { blob } = await MajikSignature.signFile(file, aliceKey, {
    *     expectedSigners: [
    *       MajikSignature.expectedSignerFromKey(aliceKey),
    *       MajikSignature.expectedSignerFromKey(bobKey),
    *     ],
+   *     validUntil: "2027-01-01T00:00:00.000Z",
    *   });
    */
   static async signFile(
@@ -556,6 +644,7 @@ export class MajikSignature {
       timestamp?: string;
       mimeType?: string;
       expectedSigners?: ExpectedSigner[];
+      validUntil?: string;
     },
   ): ReturnType<typeof MajikSignatureEmbed.signAndEmbed<MajikSignature>> {
     return await MajikSignatureEmbed.signAndEmbed<MajikSignature>(
@@ -577,10 +666,15 @@ export class MajikSignature {
    * it's added to the envelope — the digest-match and TSA-signature checks
    * happen automatically inside addTSA().
    *
+   * Pass options.validUntil (ISO 8601) to make this signature expire — see
+   * signFile() for the same semantics; identical here since both funnel
+   * through the same underlying sign() call.
+   *
    * @example
    *   const { blob, envelope, signature } = await MajikSignature.signFileDetached(file, aliceKey, {
-   *     existingEnvelope: outOfBandEnvelope, // Optionally pass state from an external source
-   *     tsa: myTsaTimestamp, // Optionally attach a Trusted Timestamp
+   *     existingEnvelope: outOfBandEnvelope,
+   *     tsa: myTsaTimestamp,
+   *     validUntil: "2027-01-01T00:00:00.000Z",
    *   });
    *   console.log(signature.hasTSA); // true if tsa was provided and accepted
    */
@@ -592,6 +686,7 @@ export class MajikSignature {
       timestamp?: string;
       mimeType?: string;
       expectedSigners?: ExpectedSigner[];
+      validUntil?: string;
       existingEnvelope?:
         | MajikSignatureEnvelope
         | MajikSignatureEnvelopeJSON
@@ -614,6 +709,10 @@ export class MajikSignature {
    * batch (default — meant to sit at the root of the zip as one .mjksmap),
    * or as separate .mjksig Blobs per file when options.mode === "separate".
    *
+   * options.validUntil, if set, is applied identically to every signature in
+   * the batch — there is no per-file override. Sign files individually via
+   * signFileDetached() if different files need different expiries.
+   *
    * @example
    *   const result = await MajikSignature.signBatchDetached(
    *     [
@@ -621,6 +720,7 @@ export class MajikSignature {
    *       { path: "docs/appendix.pdf", blob: appendixBlob },
    *     ],
    *     aliceKey,
+   *     { validUntil: "2027-01-01T00:00:00.000Z" },
    *   );
    *   if (result.mode === "map") {
    *     zip.file("signatures.mjksmap", await result.mapBlob.arrayBuffer());
@@ -643,11 +743,14 @@ export class MajikSignature {
    * Verify a file's embedded signatures.
    * Returns one VerificationResult per signer. Old single-sig files return a single-item array.
    * Pass options.expectedSignerId to verify only a specific signer.
+   * Pass options.now to check expiry as of a specific time instead of the
+   * current time. Any signer whose validUntil has passed comes back with
+   * valid: false, expired: true, and a reason noting the expiry.
    */
   static async verifyFile(
     file: Blob,
     keyOrPublicKeys: MajikKey | MajikSignerPublicKeys,
-    options?: { expectedSignerId?: string; mimeType?: string },
+    options?: { expectedSignerId?: string; mimeType?: string; now?: Date },
     debug: boolean = false,
   ): Promise<VerificationResult[]> {
     if (MajikSignature._isMajikKey(keyOrPublicKeys)) {
@@ -673,6 +776,8 @@ export class MajikSignature {
    * Skips extraction and verifies the stripped file bytes directly against the provided envelope.
    * Returns one VerificationResult per signer.
    * Pass options.expectedSignerId to verify only a specific signer.
+   * Pass options.now to check expiry as of a specific time instead of the
+   * current time.
    */
   static async verifyFileDetached(
     file: Blob,
@@ -682,7 +787,7 @@ export class MajikSignature {
       | Uint8Array
       | Blob,
     keyOrPublicKeys: MajikKey | MajikSignerPublicKeys,
-    options?: { expectedSignerId?: string; mimeType?: string },
+    options?: { expectedSignerId?: string; mimeType?: string; now?: Date },
     debug: boolean = false,
   ): Promise<VerificationResult[]> {
     if (MajikSignature._isMajikKey(keyOrPublicKeys)) {
@@ -710,6 +815,11 @@ export class MajikSignature {
    * MajikSignatureMap.fromMJKSMAP()). Reports a per-file status rather than
    * throwing — a missing, tampered, or invalidly-signed file is a normal
    * possible outcome to display, not an exceptional one to catch.
+   *
+   * A file whose signature has passed its validUntil comes back with
+   * status "invalid" and results[].expired === true — same status as any
+   * other failed signature, so summarizeBatchVerification()'s allValid check
+   * still works unchanged. Pass options.now to check "as of" a specific time.
    *
    * @example
    *   const map = await MajikSignatureMap.fromMJKSMAP(mjksmapBlob);
@@ -1257,6 +1367,10 @@ export class MajikSignature {
    * The verifier must supply the signer's public keys out-of-band via
    * fromCompact() / verifyCompact() — never trust keys recovered from the
    * compact payload itself, because there are none.
+   *
+   * allowlistHash and validUntil, when present, carry over unchanged — both
+   * are already part of what was signed, so compacting doesn't affect their
+   * enforcement.
    */
   toCompact(): MajikSignatureCompactJSON {
     return {
@@ -1268,6 +1382,7 @@ export class MajikSignature {
       edSignature: this._edSignature,
       mlDsaSignature: this._mlDsaSignature,
       allowlistHash: this._allowlistHash,
+      validUntil: this._validUntil,
     };
   }
 
@@ -1275,6 +1390,11 @@ export class MajikSignature {
    * Rehydrate a full MajikSignature from a compact payload + externally
    * resolved public keys. Throws if signerId doesn't match the supplied keys —
    * this is a cheap sanity check, not a substitute for verify().
+   *
+   * allowlistHash and validUntil are carried through unchanged from the
+   * compact payload; verify() will still enforce them via the recomputed
+   * canonical payload, so an out-of-band edit to either field here would
+   * simply fail verification rather than being silently trusted.
    */
   static fromCompact(
     compact: MajikSignatureCompactJSON,
@@ -1297,6 +1417,7 @@ export class MajikSignature {
       edSignature: compact.edSignature,
       mlDsaSignature: compact.mlDsaSignature,
       allowlistHash: compact.allowlistHash,
+      validUntil: compact.validUntil,
     };
 
     return MajikSignature.fromJSON(full);
@@ -1306,6 +1427,11 @@ export class MajikSignature {
    * Verify content against a compact envelope. signerId is checked against
    * publicKeys.signerId before any crypto runs, so a mismatched lookup fails
    * fast with a clear reason instead of a cryptic signature failure.
+   *
+   * Delegates to verify() after rehydration, so allowlistHash and validUntil
+   * (when present in the compact payload) are enforced identically to the
+   * full-envelope path — including the "expired" reason/flag on a signature
+   * past its validUntil.
    *
    * @example
    *   const keys = await resolvePublicKeysForMuid(slink.muid); // your registry

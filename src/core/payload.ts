@@ -30,7 +30,11 @@
  *   existing signatures continue to verify correctly.
  */
 
-import { MAJIK_SIGNATURE_DOMAIN, MAJIK_SIGNATURE_VERSION, MAJIK_TSA_DOMAIN } from "./constants";
+import {
+  MAJIK_SIGNATURE_DOMAIN,
+  MAJIK_SIGNATURE_VERSION,
+  MAJIK_TSA_DOMAIN,
+} from "./constants";
 import { MajikTSAPayload } from "./types";
 
 export interface PayloadFields {
@@ -44,15 +48,18 @@ export interface PayloadFields {
    * Must be omitted entirely (not null) for all other signatures.
    */
   allowlistHash?: string;
+
+  validUntil?: string;
 }
 
 /**
  * Build the canonical byte payload that both algorithms sign and verify.
  * Deterministic: identical inputs always produce identical bytes.
  *
- * `alh` is conditionally spread — present only when allowlistHash is provided.
- * This is the load-bearing backward-compat guarantee: old signatures never had
- * `alh` in their payload, so we must not add it (even as null) when verifying them.
+ * `alh` and `vu` are conditionally spread — present only when allowlistHash /
+ * validUntil are provided. This is the load-bearing backward-compat guarantee:
+ * old signatures never had these keys in their payload, so we must not add
+ * them (even as null) when verifying old signatures.
  */
 export function buildSigningPayload(fields: PayloadFields): Uint8Array {
   const meta = JSON.stringify({
@@ -66,6 +73,9 @@ export function buildSigningPayload(fields: PayloadFields): Uint8Array {
     ...(fields.allowlistHash !== undefined
       ? { alh: fields.allowlistHash }
       : {}),
+    // Conditionally include vu — same reasoning: omit entirely so all
+    // pre-expiry signatures reproduce byte-identical payloads (backward compat).
+    ...(fields.validUntil !== undefined ? { vu: fields.validUntil } : {}),
   });
   const prefix = new TextEncoder().encode(MAJIK_SIGNATURE_DOMAIN);
   const body = new TextEncoder().encode(meta);

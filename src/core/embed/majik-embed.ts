@@ -21,7 +21,7 @@
  * extract/strip → delegate to the envelope class → re-embed.
  */
 
-import type { MajikKey } from "@majikah/majik-key";
+import type { ISODateString, MajikKey } from "@majikah/majik-key";
 
 import type {
   BatchFileInput,
@@ -69,7 +69,11 @@ import { bytesToBase64, hashContent } from "../hash";
 import { MajikSignatureError, MajikSignatureValidationError } from "../errors";
 import { MajikChainAnchor } from "../../anchor/types";
 import { MajikSignatureMap } from "../mjksmap";
-import { SignatureOrderResult, verifySignatureOrder, VerifySignatureOrderOptions } from "../order";
+import {
+  SignatureOrderResult,
+  verifySignatureOrder,
+  VerifySignatureOrderOptions,
+} from "../order";
 
 // ─── Adapter interfaces ───────────────────────────────────────────────────────
 // Unchanged — these solve the crypto-side circular dependency, orthogonal to
@@ -96,6 +100,7 @@ export interface MajikSignatureStaticAdapter {
     content: Uint8Array | string,
     signature: MajikSignatureAdapter | MajikSignatureJSON,
     publicKeys: MajikSignerPublicKeys,
+    now?: Date,
   ): VerificationResult;
 
   publicKeysFromMajikKey(key: MajikKey): MajikSignerPublicKeys;
@@ -180,8 +185,10 @@ export class MajikSignatureEmbed {
     MajikSig: MajikSignatureStaticAdapter,
     options?: EmbedOptions & {
       contentType?: string;
-      timestamp?: string;
+      timestamp?: ISODateString;
       expectedSigners?: ExpectedSigner[];
+      /** ISO 8601 expiry for this signature. Omit for one that never expires. */
+      validUntil?: ISODateString;
     },
     debug: boolean = false,
   ): Promise<EmbedResult & { signature: T; envelope: MajikSignatureEnvelope }> {
@@ -215,6 +222,7 @@ export class MajikSignatureEmbed {
     const signature = await MajikSig.sign(originalBytes, key, {
       contentType: options?.contentType,
       timestamp: options?.timestamp,
+      validUntil: options?.validUntil,
       ...(allowlistHashValue !== undefined
         ? { allowlistHash: allowlistHashValue }
         : {}),
@@ -279,7 +287,9 @@ export class MajikSignatureEmbed {
     MajikSig: MajikSignatureStaticAdapter,
     options?: EmbedOptions & {
       contentType?: string;
-      timestamp?: string;
+      timestamp?: ISODateString;
+      /** ISO 8601 expiry for this signature. Omit for one that never expires. */
+      validUntil?: ISODateString;
       expectedSigners?: ExpectedSigner[];
       existingEnvelope?:
         | MajikSignatureEnvelope
@@ -324,6 +334,7 @@ export class MajikSignatureEmbed {
     const signature = await MajikSig.sign(originalBytes, key, {
       contentType: options?.contentType,
       timestamp: options?.timestamp,
+      validUntil: options?.validUntil,
       ...(allowlistHashValue !== undefined
         ? { allowlistHash: allowlistHashValue }
         : {}),
@@ -455,6 +466,7 @@ export class MajikSignatureEmbed {
         contentType: options?.contentType,
         timestamp: options?.timestamp,
         expectedSigners: options?.expectedSigners,
+        validUntil: options?.validUntil,
       },
       debug,
     );
@@ -538,7 +550,7 @@ export class MajikSignatureEmbed {
     file: Blob,
     publicKeys: MajikSignerPublicKeys,
     MajikSig: MajikSignatureStaticAdapter,
-    options?: ExtractOptions & { expectedSignerId?: string },
+    options?: ExtractOptions & { expectedSignerId?: string; now?: Date },
     debug: boolean = false,
   ): Promise<VerificationResult[]> {
     const { bytes, handler } = await MajikSignatureEmbed._prepare(
@@ -589,6 +601,7 @@ export class MajikSignatureEmbed {
       MajikSig,
       handler.name,
       options?.expectedSignerId,
+      options?.now,
     );
   }
 
@@ -598,7 +611,7 @@ export class MajikSignatureEmbed {
     file: Blob,
     key: MajikKey,
     MajikSig: MajikSignatureStaticAdapter,
-    options?: ExtractOptions & { expectedSignerId?: string },
+    options?: ExtractOptions & { expectedSignerId?: string; now?: Date },
     debug: boolean = false,
   ): Promise<VerificationResult[]> {
     const publicKeys = MajikSig.publicKeysFromMajikKey(key);
@@ -627,7 +640,7 @@ export class MajikSignatureEmbed {
       | Blob,
     publicKeys: MajikSignerPublicKeys,
     MajikSig: MajikSignatureStaticAdapter,
-    options?: ExtractOptions & { expectedSignerId?: string },
+    options?: ExtractOptions & { expectedSignerId?: string; now?: Date }, // FIX
     debug: boolean = false,
   ): Promise<VerificationResult[]> {
     const { bytes, handler } = await MajikSignatureEmbed._prepare(
@@ -663,6 +676,7 @@ export class MajikSignatureEmbed {
       MajikSig,
       handler.name,
       options?.expectedSignerId,
+      options?.now, // FIX
     );
   }
 
@@ -677,7 +691,7 @@ export class MajikSignatureEmbed {
       | Blob,
     key: MajikKey,
     MajikSig: MajikSignatureStaticAdapter,
-    options?: ExtractOptions & { expectedSignerId?: string },
+    options?: ExtractOptions & { expectedSignerId?: string; now?: Date },
     debug: boolean = false,
   ): Promise<VerificationResult[]> {
     const publicKeys = MajikSig.publicKeysFromMajikKey(key);
@@ -783,6 +797,7 @@ export class MajikSignatureEmbed {
         MajikSig,
         "mjksmap",
         options?.expectedSignerId,
+        options?.now,
       );
 
       const allValid = verifyResults.every((r) => r.valid);
@@ -1217,6 +1232,7 @@ export class MajikSignatureEmbed {
     MajikSig: MajikSignatureStaticAdapter,
     handlerName: string,
     expectedSignerId?: string,
+    now?: Date, // NEW
   ): VerificationResult[] {
     const sigsToVerify = expectedSignerId
       ? envelope.signatures.filter((s) => s.signerId === expectedSignerId)
@@ -1235,7 +1251,7 @@ export class MajikSignatureEmbed {
     }
 
     return sigsToVerify.map((sig) => ({
-      ...MajikSig.verify(originalBytes, sig, publicKeys),
+      ...MajikSig.verify(originalBytes, sig, publicKeys, now),
       handler: handlerName,
     }));
   }

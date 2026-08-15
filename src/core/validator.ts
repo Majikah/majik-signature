@@ -3,6 +3,7 @@
  * Input validation and assertion helpers for MajikSignature.
  */
 
+import { ISODateString } from "@majikah/majik-key";
 import {
   MAJIK_SIGNATURE_VERSION,
   MAJIK_ENVELOPE_VERSION,
@@ -345,6 +346,16 @@ export class MajikSignatureValidator {
         `sealHash must be exactly ${SEAL_HASH_HEX_LEN} hex chars (SHA3-512)`,
         "sealHash",
       );
+  }
+
+  static validateValidUntil(value: ISODateString | undefined): void {
+    if (value === undefined) return;
+    if (typeof value !== "string" || Number.isNaN(Date.parse(value))) {
+      throw new MajikSignatureValidationError(
+        "validUntil must be a valid ISO 8601 timestamp string",
+        "validUntil",
+      );
+    }
   }
 
   // ── MultiSigEnvelope validator ───────────────────────────────────────────────
