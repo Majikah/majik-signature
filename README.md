@@ -103,17 +103,18 @@ Verification requires **both** to pass. This means:
 Both signatures cover a **domain-separated canonical payload**:
 
 ```
-"majik-signature-v1:" + JSON({ v, id, ts, ct, hash[, alh] })
+"majik-signature-v1:" + JSON({ v, id, ts, ct, hash[, alh][, vu] })
 ```
 
-| Field  | Description                                                                 |
-| ------ | ---------------------------------------------------------------------------- |
-| `v`    | Envelope version                                                             |
-| `id`   | Signer fingerprint (MajikKey identity)                                      |
-| `ts`   | ISO 8601 timestamp                                                          |
-| `ct`   | Content type (advisory, or `null`)                                          |
-| `hash` | SHA-256 of the original content, base64                                     |
-| `alh`  | SHA-256 of the canonical allowlist, base64 — **present only** when this signer is establishing an allowlist |
+| Field  | Description                                                                                                                                                                                                                                                                                                                                                 |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `v`    | Envelope version                                                                                                                                                                                                                                                                                                                                            |
+| `id`   | Signer fingerprint (MajikKey identity)                                                                                                                                                                                                                                                                                                                      |
+| `ts`   | ISO 8601 timestamp                                                                                                                                                                                                                                                                                                                                          |
+| `ct`   | Content type (advisory, or `null`)                                                                                                                                                                                                                                                                                                                          |
+| `hash` | SHA-256 of the original content, base64                                                                                                                                                                                                                                                                                                                     |
+| `alh`  | SHA-256 of the canonical allowlist, base64 — **present only** when this signer is establishing an allowlist                                                                                                                                                                                                                                                 |
+| `vu`   | Optional ISO 8601 expiry. When present, verify() treats the signature as invalid once the current time is past this value. Absent = never expires (matches all pre-existing signatures — fully backward compatible). Covered by the canonical signing payload when present, so it cannot be stripped or extended post-hoc without breaking both signatures. |
 
 `alh` is *omitted entirely* (not set to `null`) on every signature that isn't establishing an allowlist. This is a deliberate backward-compatibility guarantee: every signature produced before multi-sig support existed still verifies today, because its payload bytes are unchanged.
 
@@ -951,18 +952,18 @@ const restoredFromB64 = MajikSignature.deserialize(b64);
 
 Handlers are tried in order; the first one whose `canHandle()` matches wins. If nothing matches, the **universal trailer fallback** always applies — meaning *every* file type is signable, even ones with no dedicated handler.
 
-| Format(s)                          | Handler        | Embedding Mechanism                                             |
-| ----------------------------------- | -------------- | ----------------------------------------------------------------- |
-| PDF                                 | PDF            | Binary trailer appended after the last `%%EOF` marker (PDF 1.7 §7.5.6 compliant) |
-| PNG                                 | PNG            | `iTXt` metadata chunk                                             |
-| WAV                                 | WAV            | RIFF `LIST INFO` chunk, custom `ISIG` sub-chunk                   |
-| MP3                                 | MP3            | ID3v2 `TXXX` frame                                                 |
-| MP4, MOV, M4A, M4V                  | MP4/MOV        | `moov/udta` box, custom `majk` box type                           |
-| DOCX, XLSX, PPTX, ODT, ODS, ODP     | Office         | Dedicated `majik-signature.json` entry inside the ZIP container   |
-| MKV, WebM                           | MKV            | Custom Matroska metadata tag                                      |
-| JPEG, FLAC                          | JPEG / FLAC    | Native format metadata (non-destructive; same round-trip guarantees as other handlers) |
-| HTML, Markdown, JSON, plain text, source code | Text | Appended, format-appropriate metadata block                       |
-| Anything else                       | Fallback       | Universal binary trailer: `[original][signature JSON][8-byte length][8-byte magic "MAJIKSIG"]` |
+| Format(s)                                     | Handler     | Embedding Mechanism                                                                            |
+| --------------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------- |
+| PDF                                           | PDF         | Binary trailer appended after the last `%%EOF` marker (PDF 1.7 §7.5.6 compliant)               |
+| PNG                                           | PNG         | `iTXt` metadata chunk                                                                          |
+| WAV                                           | WAV         | RIFF `LIST INFO` chunk, custom `ISIG` sub-chunk                                                |
+| MP3                                           | MP3         | ID3v2 `TXXX` frame                                                                             |
+| MP4, MOV, M4A, M4V                            | MP4/MOV     | `moov/udta` box, custom `majk` box type                                                        |
+| DOCX, XLSX, PPTX, ODT, ODS, ODP               | Office      | Dedicated `majik-signature.json` entry inside the ZIP container                                |
+| MKV, WebM                                     | MKV         | Custom Matroska metadata tag                                                                   |
+| JPEG, FLAC                                    | JPEG / FLAC | Native format metadata (non-destructive; same round-trip guarantees as other handlers)         |
+| HTML, Markdown, JSON, plain text, source code | Text        | Appended, format-appropriate metadata block                                                    |
+| Anything else                                 | Fallback    | Universal binary trailer: `[original][signature JSON][8-byte length][8-byte magic "MAJIKSIG"]` |
 
 All handlers guarantee: files remain fully usable after signing (PDFs still open, videos still play, Office files stay editable), signing is idempotent (safe to re-sign), and `strip()` always reproduces exactly the bytes that were originally hashed — including deterministic ZIP re-canonicalization for Office formats (the ZIP is always rebuilt via a full unzip/rezip pass on `strip()`, even when no signature entry exists yet), so that identical content always strips to identical bytes regardless of when it was last re-zipped.
 
@@ -1030,9 +1031,9 @@ A batch manifest (`MjksMapJSON`, backing `MajikSignatureMap`) is a flat list of 
 **Approximate serialized sizes (per signer):**
 
 | Format            | Size   |
-| ------------------ | ------ |
-| JSON (minified)     | ~10 KB |
-| Base64 serialized   | ~14 KB |
+| ----------------- | ------ |
+| JSON (minified)   | ~10 KB |
+| Base64 serialized | ~14 KB |
 
 The dominant contributor is `mlDsaSignature` (~6 KB base64) and `signerMlDsaPublicKey` (~3.5 KB base64) — the inherent cost of post-quantum signatures, negligible relative to any real content being signed.
 
@@ -1044,10 +1045,10 @@ Two dedicated, versioned, self-identifying binary containers exist for out-of-ba
 
 Both share the same header layout: `[magic bytes][1-byte version][1-byte reserved][4-byte big-endian payload length][payload JSON]`.
 
-| Format | Magic | Magic Length | Header Length | Media Type | Extension |
-| ------ | ----- | ------------ | -------------- | ---------- | --------- |
-| `.mjksig` — a single detached envelope | `MJKSIG` | 6 bytes | 12 bytes | `application/vnd.majikah.mjksig` | `.mjksig` |
-| `.mjksmap` — a batch manifest | `MJKSMAP` | 7 bytes | 13 bytes | `application/vnd.majikah.mjksmap` | `.mjksmap` |
+| Format                                 | Magic     | Magic Length | Header Length | Media Type                        | Extension  |
+| -------------------------------------- | --------- | ------------ | ------------- | --------------------------------- | ---------- |
+| `.mjksig` — a single detached envelope | `MJKSIG`  | 6 bytes      | 12 bytes      | `application/vnd.majikah.mjksig`  | `.mjksig`  |
+| `.mjksmap` — a batch manifest          | `MJKSMAP` | 7 bytes      | 13 bytes      | `application/vnd.majikah.mjksmap` | `.mjksmap` |
 
 Both formats validate magic bytes, supported version, and declared payload length **before** attempting to parse the JSON payload — a truncated or corrupted buffer fails fast with a clear `MajikSignatureSerializationError` rather than an obscure `JSON.parse` error.
 
@@ -1074,14 +1075,14 @@ const isMjksmap = await MajikSignatureMap.isMJKSMAP(mapBlob);
 
 Majik Signature throws a typed error hierarchy rather than generic `Error` objects, so you can catch precisely what you need:
 
-| Error Class                          | Thrown when...                                                          |
-| ------------------------------------- | ------------------------------------------------------------------------- |
-| `MajikSignatureError`                 | Base class; also thrown for general/unexpected failures (e.g. signing a sealed envelope, missing envelope on seal/anchor)|
-| `MajikSignatureKeyError`              | The key is locked, lacks signing keys, or isn't the required issuer      |
-| `MajikSignatureVerificationError`     | Verification fails unexpectedly (not the same as `valid: false`), including a failed TSA signature check |
-| `MajikSignatureSerializationError`    | JSON/base64/MJKSIG/MJKSMAP parsing or encoding fails, including malformed binary headers |
-| `MajikSignatureAllowlistError`        | A non-listed signer attempts to sign a restricted file                   |
-| `MajikSignatureValidationError`       | A structural shape check fails — malformed envelope, malformed batch manifest entry, empty/duplicate batch paths, empty allowlist, mismatched seal fields, invalid `expectedOrder` input, etc. |
+| Error Class                        | Thrown when...                                                                                                                                                                                 |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MajikSignatureError`              | Base class; also thrown for general/unexpected failures (e.g. signing a sealed envelope, missing envelope on seal/anchor)                                                                      |
+| `MajikSignatureKeyError`           | The key is locked, lacks signing keys, or isn't the required issuer                                                                                                                            |
+| `MajikSignatureVerificationError`  | Verification fails unexpectedly (not the same as `valid: false`), including a failed TSA signature check                                                                                       |
+| `MajikSignatureSerializationError` | JSON/base64/MJKSIG/MJKSMAP parsing or encoding fails, including malformed binary headers                                                                                                       |
+| `MajikSignatureAllowlistError`     | A non-listed signer attempts to sign a restricted file                                                                                                                                         |
+| `MajikSignatureValidationError`    | A structural shape check fails — malformed envelope, malformed batch manifest entry, empty/duplicate batch paths, empty allowlist, mismatched seal fields, invalid `expectedOrder` input, etc. |
 
 Note the distinction: `verify()`/`verifyFile()` return `{ valid: false, reason }` for a signature that *fails cryptographic verification* — that's an expected, handled outcome, not an exception. Exceptions are reserved for misuse (locked keys, malformed envelopes, disallowed signers, sealed files, malformed batch input, etc.).
 

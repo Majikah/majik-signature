@@ -34,7 +34,7 @@ Both algorithms sign the exact same **canonical payload** bytes. Verification re
 The canonical signing payload is constructed deterministically to ensure byte-for-byte identical inputs during both signing and verification.
 
 **Format:**
-`"majik-signature-v1:" + JSON.stringify({ v, id, ts, ct, hash[, alh] })`
+`"majik-signature-v1:" + JSON.stringify({ v, id, ts, ct, hash[, alh][, vu] })`
 
 Where:
 *   `v`: Envelope version (integer, `1`).
@@ -43,6 +43,7 @@ Where:
 *   `ct`: Content type or `null`.
 *   `hash`: SHA-256 hash of the original detached file's content, base64 encoded.
 *   `alh`: SHA-256 hash of the canonical allowlist JSON, base64 encoded. This key is completely omitted (not set to `null`) if an allowlist is not established, preserving backward compatibility.
+*   `vu`:  Optional ISO 8601 expiry. When present, verify() treats the signature as invalid once the current time is past this value. Absent = never expires (matches all pre-existing signatures — fully backward compatible). Covered by the canonical signing payload when present, so it cannot be stripped or extended post-hoc without breaking both signatures.
 
 ### 2.3 Allowlist and Sealing
 *   **Allowlist:** The first signer may optionally restrict future signers by embedding an `ExpectedSigner` array. The establisher commits to this allowlist cryptographically via the `allowlistHash` in their canonical payload.
@@ -68,13 +69,13 @@ Offset  Length  Field
 
 ### 3.1 Field Definitions
 
-| Field          | Offset | Length   | Encoding          | Description                                                                                     |
-| -------------- | ------ | -------- | ----------------- | ----------------------------------------------------------------------------------------------- |
-| Magic          | 0      | 6 bytes  | Raw bytes         | ASCII "MJKSIG" — `0x4d, 0x4a, 0x4b, 0x53, 0x49, 0x47`.                               |
-| Version        | 6      | 1 byte   | Unsigned integer  | Format version. Current: `0x01`.                                                      |
-| Reserved       | 7      | 1 byte   | Raw byte          | Reserved for future flags. Currently ignored/set to `0x00`.                           |
-| Payload length | 8      | 4 bytes  | Big-endian uint32 | Byte length of the following UTF-8 payload JSON section (`N`).                        |
-| Payload JSON   | 12     | N bytes  | UTF-8 JSON        | The `MultiSigEnvelope` structure carrying the envelope state and public keys.          |
+| Field          | Offset | Length  | Encoding          | Description                                                                   |
+| -------------- | ------ | ------- | ----------------- | ----------------------------------------------------------------------------- |
+| Magic          | 0      | 6 bytes | Raw bytes         | ASCII "MJKSIG" — `0x4d, 0x4a, 0x4b, 0x53, 0x49, 0x47`.                        |
+| Version        | 6      | 1 byte  | Unsigned integer  | Format version. Current: `0x01`.                                              |
+| Reserved       | 7      | 1 byte  | Raw byte          | Reserved for future flags. Currently ignored/set to `0x00`.                   |
+| Payload length | 8      | 4 bytes | Big-endian uint32 | Byte length of the following UTF-8 payload JSON section (`N`).                |
+| Payload JSON   | 12     | N bytes | UTF-8 JSON        | The `MultiSigEnvelope` structure carrying the envelope state and public keys. |
 
 ---
 
@@ -118,35 +119,44 @@ Every entry in the `signatures` array adheres to the following interface:
 
 ```typescript
 interface MajikSignatureJSON {
-  /** Envelope version — must equal 1 */
+  /** Envelope version — must equal MAJIK_SIGNATURE_VERSION */
   version: 1;
 
   /** MajikKey fingerprint (SHA-256 of X25519 public key, base64) */
-  signerId: string;
+  signerId: MajikKeyFingerprint;
 
-  /** Ed25519 public key, base64 (32 bytes -> ~44 chars) */
+  /** Ed25519 public key, base64 (32 bytes) */
   signerEdPublicKey: string;
 
-  /** ML-DSA-87 public key, base64 (2592 bytes -> ~3456 chars) */
+  /** ML-DSA-87 public key, base64 (2592 bytes) */
   signerMlDsaPublicKey: string;
 
-  /** SHA-256 hash of the original detached content, base64 (32 bytes → 44 chars) */
+  /** SHA-256 hash of the original content, base64 (32 bytes → 44 chars) */
   contentHash: string;
 
-  /** Advisory content type — e.g. "application/pdf" */
+  /** Advisory content type — e.g. "audio/wav", "application/pdf" */
   contentType?: string;
 
   /** ISO 8601 timestamp of when the signature was created */
-  timestamp: string;
+  timestamp: ISODateString;
 
   /** Ed25519 signature over the canonical payload, base64 (64 bytes) */
-  edSignature: string;
+  edSignature: ED25519Signature;
 
   /** ML-DSA-87 signature over the canonical payload, base64 (4595 bytes) */
-  mlDsaSignature: string;
+  mlDsaSignature: MLDSA87Signature;
 
   /** SHA-256 hash of the canonical allowlist JSON, base64 (44 chars). */
   allowlistHash?: string;
+
+   /**
+   * Optional ISO 8601 expiry. When present, verify() treats the signature
+   * as invalid once the current time is past this value. Absent = never
+   * expires (matches all pre-existing signatures — fully backward compatible).
+   * Covered by the canonical signing payload when present, so it cannot be
+   * stripped or extended post-hoc without breaking both signatures.
+   */
+   validUntil?: ISODateString;
   
   /** Trusted Timestamp Authority metadata and signature */
   tsa?: MajikTimestamp;
@@ -170,14 +180,14 @@ interface ExpectedSigner {
 
 ## 5. File Identification
 
-| Property                | Value                                                               |
-| ----------------------- | ------------------------------------------------------------------- |
-| Magic bytes             | `4D 4A 4B 53 49 47`                                      |
-| ASCII representation    | `MJKSIG`                                                 |
-| Offset                  | `0x00`                                                   |
-| Minimum valid header    | 12 bytes                                                 |
-| File Extension          | `.mjksig`                                                |
-| MIME Type               | `application/vnd.majikah.mjksig`                         |
+| Property             | Value                            |
+| -------------------- | -------------------------------- |
+| Magic bytes          | `4D 4A 4B 53 49 47`              |
+| ASCII representation | `MJKSIG`                         |
+| Offset               | `0x00`                           |
+| Minimum valid header | 12 bytes                         |
+| File Extension       | `.mjksig`                        |
+| MIME Type            | `application/vnd.majikah.mjksig` |
 
 ---
 
