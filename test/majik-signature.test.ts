@@ -24,8 +24,12 @@ interface FileFixture {
 const FILE_FIXTURES: FileFixture[] = [
   { label: "Plain Text", file: "sample.txt", contentType: "text/plain" },
   { label: "WEBP Image", file: "sample.webp", contentType: "image/webp" },
+  { label: "PNG Image", file: "sample.png", contentType: "image/png" },
+  { label: "JPEG Image", file: "sample.jpg", contentType: "image/jpg" },
   { label: "MP4 Video", file: "sample.mp4", contentType: "video/mp4" },
+  { label: "MOV Video", file: "sample.mov", contentType: "video/mov" },
   { label: "WAV Audio", file: "sample.wav", contentType: "audio/wav" },
+  { label: "MP3 Audio", file: "sample.mp3", contentType: "audio/mp3" },
   {
     label: "Word Document",
     file: "sample.docx",
@@ -1900,6 +1904,741 @@ describe("MajikSignature Class Unit Tests", () => {
           b: keyB.fingerprint,
           timestamp: t1,
         });
+      });
+    });
+  });
+
+  // ─── SIGNATURE EXPIRATION (.validUntil) ──────────────────────────────────
+
+  describe("Signature Expiration (.validUntil)", () => {
+    // Fixed reference points so tests are deterministic regardless of when
+    // the suite actually runs. FAR_PAST/FAR_FUTURE are used wherever a test
+    // can't inject a custom `now` (e.g. verifyCompact) and must rely on the
+    // real system clock relative to the validUntil value.
+    const FAR_PAST = "2020-01-01T00:00:00.000Z";
+    const FAR_FUTURE = "2099-01-01T00:00:00.000Z";
+
+    // Injectable "now" values for methods that accept one (verify, verifyFile,
+    // verifyFileDetached, verifyFilesFromMjksMap) — lets us test expiry
+    // deterministically without waiting on the real clock.
+    const SIGNED_AT = "2026-06-01T00:00:00.000Z";
+    const BEFORE_EXPIRY = "2026-06-15T00:00:00.000Z";
+    const EXPIRY = "2026-07-01T00:00:00.000Z";
+    const AFTER_EXPIRY = "2026-07-02T00:00:00.000Z";
+
+    let expiryBlob: Blob;
+
+    beforeAll(() => {
+      expiryBlob = new Blob(["Majik expiration test data"], {
+        type: "text/plain",
+      });
+    });
+
+    // ── SIGN: validUntil is carried into the envelope ────────────────────────
+
+    describe("Signing with validUntil (.sign)", () => {
+      it("should carry validUntil through onto the signed instance", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA, {
+          timestamp: SIGNED_AT,
+          validUntil: EXPIRY,
+        });
+
+        expect(signature.validUntil).toBe(EXPIRY);
+      });
+
+      it("should leave validUntil undefined when omitted (never expires)", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA, {
+          timestamp: SIGNED_AT,
+        });
+
+        expect(signature.validUntil).toBeUndefined();
+      });
+
+      it("should include validUntil in toJSON() only when it was set", async () => {
+        const withExpiry = await MajikSignature.sign(dummyContent, keyA, {
+          validUntil: EXPIRY,
+        });
+        const withoutExpiry = await MajikSignature.sign(dummyContent, keyA);
+
+        expect(withExpiry.toJSON().validUntil).toBe(EXPIRY);
+        expect(
+          Object.prototype.hasOwnProperty.call(
+            withoutExpiry.toJSON(),
+            "validUntil",
+          ),
+        ).toBe(false);
+      });
+    });
+
+    // ── VERIFY: expiry enforcement against an injected `now` ─────────────────
+
+    describe("Verifying against validUntil (.verify)", () => {
+      it("should verify as valid when now is before validUntil", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA, {
+          timestamp: SIGNED_AT,
+          validUntil: EXPIRY,
+        });
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+
+        const result = MajikSignature.verify(
+          dummyContent,
+          signature,
+          publicKeys,
+          new Date(BEFORE_EXPIRY),
+        );
+
+        expect(result.valid).toBe(true);
+        expect(result.expired).toBeUndefined();
+      });
+
+      it("should verify as invalid+expired when now is after validUntil", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA, {
+          timestamp: SIGNED_AT,
+          validUntil: EXPIRY,
+        });
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+
+        const result = MajikSignature.verify(
+          dummyContent,
+          signature,
+          publicKeys,
+          new Date(AFTER_EXPIRY),
+        );
+
+        expect(result.valid).toBe(false);
+        expect(result.expired).toBe(true);
+        expect(result.reason).toMatch(/expired/i);
+        expect(result.reason).toContain(EXPIRY);
+      });
+
+      it("should verify as valid exactly at the validUntil boundary (not yet past it)", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA, {
+          timestamp: SIGNED_AT,
+          validUntil: EXPIRY,
+        });
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+
+        // now === validUntil exactly — spec is "expired once now is PAST
+        // validUntil", so the boundary instant itself must still be valid.
+        const result = MajikSignature.verify(
+          dummyContent,
+          signature,
+          publicKeys,
+          new Date(EXPIRY),
+        );
+
+        expect(result.valid).toBe(true);
+      });
+
+      it("should verify as invalid one millisecond after validUntil", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA, {
+          timestamp: SIGNED_AT,
+          validUntil: EXPIRY,
+        });
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+
+        const oneMsLater = new Date(Date.parse(EXPIRY) + 1);
+        const result = MajikSignature.verify(
+          dummyContent,
+          signature,
+          publicKeys,
+          oneMsLater,
+        );
+
+        expect(result.valid).toBe(false);
+        expect(result.expired).toBe(true);
+      });
+
+      it("should default to the real current time when now is not provided", async () => {
+        const expiredSignature = await MajikSignature.sign(dummyContent, keyA, {
+          validUntil: FAR_PAST,
+        });
+        const futureSignature = await MajikSignature.sign(dummyContent, keyA, {
+          validUntil: FAR_FUTURE,
+        });
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+
+        const expiredResult = MajikSignature.verify(
+          dummyContent,
+          expiredSignature,
+          publicKeys,
+        );
+        const futureResult = MajikSignature.verify(
+          dummyContent,
+          futureSignature,
+          publicKeys,
+        );
+
+        expect(expiredResult.valid).toBe(false);
+        expect(expiredResult.expired).toBe(true);
+        expect(futureResult.valid).toBe(true);
+      });
+    });
+
+    // ── NON-EXPIRING SIGNATURES (backward compatibility) ──────────────────────
+
+    describe("Non-expiring signatures (validUntil omitted)", () => {
+      it("should never report expired regardless of how far in the future now is", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA);
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+
+        const result = MajikSignature.verify(
+          dummyContent,
+          signature,
+          publicKeys,
+          new Date(FAR_FUTURE),
+        );
+
+        expect(result.valid).toBe(true);
+        expect(result.expired).toBeUndefined();
+      });
+
+      it("should behave identically to pre-expiry-feature signatures — no vu key means byte-identical payload", async () => {
+        // Two signatures over the same content/timestamp, neither with
+        // validUntil, must remain independently valid and unaffected by
+        // the expiry feature's existence.
+        const sigA = await MajikSignature.sign(dummyContent, keyA, {
+          timestamp: SIGNED_AT,
+        });
+        const sigB = await MajikSignature.sign(dummyContent, keyB, {
+          timestamp: SIGNED_AT,
+        });
+
+        const resultA = MajikSignature.verify(
+          dummyContent,
+          sigA,
+          MajikSignature.publicKeysFromMajikKey(keyA),
+        );
+        const resultB = MajikSignature.verify(
+          dummyContent,
+          sigB,
+          MajikSignature.publicKeysFromMajikKey(keyB),
+        );
+
+        expect(resultA.valid).toBe(true);
+        expect(resultB.valid).toBe(true);
+      });
+    });
+
+    // ── CRYPTOGRAPHIC BINDING ──────────────────────────────────────────────────
+
+    describe("Cryptographic binding of validUntil", () => {
+      it("should fail verification if validUntil is stripped from an envelope after signing", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA, {
+          validUntil: EXPIRY,
+        });
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+
+        const tamperedJson = { ...signature.toJSON() };
+        delete (tamperedJson as any).validUntil;
+        const tamperedSignature = MajikSignature.fromJSON(tamperedJson);
+
+        const result = MajikSignature.verify(
+          dummyContent,
+          tamperedSignature,
+          publicKeys,
+        );
+
+        // Payload no longer includes vu — recomputed bytes differ from what
+        // was actually signed, so both algorithms must fail.
+        expect(result.valid).toBe(false);
+        expect(result.expired).toBeUndefined();
+      });
+
+      it("should fail verification if validUntil is extended after signing", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA, {
+          validUntil: FAR_PAST, // deliberately already expired
+        });
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+
+        const tamperedJson = {
+          ...signature.toJSON(),
+          validUntil: FAR_FUTURE, // attacker tries to "renew" it
+        };
+        const tamperedSignature = MajikSignature.fromJSON(tamperedJson);
+
+        const result = MajikSignature.verify(
+          dummyContent,
+          tamperedSignature,
+          publicKeys,
+        );
+
+        // The signature covers the ORIGINAL validUntil — any edit breaks
+        // both Ed25519 and ML-DSA-87, regardless of direction.
+        expect(result.valid).toBe(false);
+      });
+
+      it("should fail verification if validUntil is added to a signature that originally had none", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA); // no validUntil
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+
+        const tamperedJson = {
+          ...signature.toJSON(),
+          validUntil: FAR_PAST,
+        };
+        const tamperedSignature = MajikSignature.fromJSON(tamperedJson);
+
+        const result = MajikSignature.verify(
+          dummyContent,
+          tamperedSignature,
+          publicKeys,
+        );
+
+        expect(result.valid).toBe(false);
+      });
+
+      it("should check expiry only AFTER crypto passes — a tampered+expired signature reports as invalid, not expired", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA, {
+          validUntil: FAR_PAST, // already expired
+        });
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+
+        const result = MajikSignature.verify(
+          "Completely different tampered content!",
+          signature,
+          publicKeys,
+        );
+
+        expect(result.valid).toBe(false);
+        // Content-hash mismatch short-circuits before the payload/expiry
+        // logic is ever reached — so this must NOT be flagged as expired,
+        // even though it technically also is.
+        expect(result.expired).toBeUndefined();
+      });
+    });
+
+    // ── isExpired() — structural check, no crypto ──────────────────────────────
+
+    describe("isExpired() structural check", () => {
+      it("should return false when validUntil is unset", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA);
+        expect(signature.isExpired()).toBe(false);
+        expect(signature.isExpired(new Date(FAR_FUTURE))).toBe(false);
+      });
+
+      it("should return false before validUntil and true after it", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA, {
+          validUntil: EXPIRY,
+        });
+
+        expect(signature.isExpired(new Date(BEFORE_EXPIRY))).toBe(false);
+        expect(signature.isExpired(new Date(AFTER_EXPIRY))).toBe(true);
+      });
+
+      it("should not require the original content or public keys (pure structural check)", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA, {
+          validUntil: FAR_PAST,
+        });
+
+        // No content, no keys passed — isExpired() must not need either.
+        expect(signature.isExpired()).toBe(true);
+      });
+    });
+
+    // ── SERIALIZATION ROUND-TRIPS ────────────────────────────────────────────────
+
+    describe("Serialization round-trips preserve validUntil", () => {
+      it("should preserve validUntil through toJSON/fromJSON", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA, {
+          validUntil: EXPIRY,
+        });
+        const restored = MajikSignature.fromJSON(signature.toJSON());
+
+        expect(restored.validUntil).toBe(EXPIRY);
+      });
+
+      it("should preserve validUntil through serialize/deserialize", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA, {
+          validUntil: EXPIRY,
+        });
+        const restored = MajikSignature.deserialize(signature.serialize());
+
+        expect(restored.validUntil).toBe(EXPIRY);
+      });
+
+      it("should still verify correctly after a round-trip, honoring expiry", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA, {
+          validUntil: EXPIRY,
+        });
+        const restored = MajikSignature.fromJSON(signature.toJSON());
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+
+        const beforeResult = MajikSignature.verify(
+          dummyContent,
+          restored,
+          publicKeys,
+          new Date(BEFORE_EXPIRY),
+        );
+        const afterResult = MajikSignature.verify(
+          dummyContent,
+          restored,
+          publicKeys,
+          new Date(AFTER_EXPIRY),
+        );
+
+        expect(beforeResult.valid).toBe(true);
+        expect(afterResult.valid).toBe(false);
+        expect(afterResult.expired).toBe(true);
+      });
+    });
+
+    // ── COMPACT FORMAT ────────────────────────────────────────────────────────
+
+    describe("Compact format & validUntil", () => {
+      it("should carry validUntil through toCompact()", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA, {
+          validUntil: EXPIRY,
+        });
+
+        expect(signature.toCompact().validUntil).toBe(EXPIRY);
+      });
+
+      it("should carry validUntil through fromCompact() rehydration", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA, {
+          validUntil: EXPIRY,
+        });
+        const compact = signature.toCompact();
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+
+        const rehydrated = MajikSignature.fromCompact(compact, publicKeys);
+
+        expect(rehydrated.validUntil).toBe(EXPIRY);
+      });
+
+      it("should reject a not-yet-expired compact signature via verifyCompact", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA, {
+          validUntil: FAR_FUTURE,
+        });
+        const compact = signature.toCompact();
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+
+        const result = MajikSignature.verifyCompact(
+          dummyContent,
+          compact,
+          publicKeys,
+        );
+
+        expect(result.valid).toBe(true);
+      });
+
+      it("should reject an expired compact signature via verifyCompact", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA, {
+          validUntil: FAR_PAST,
+        });
+        const compact = signature.toCompact();
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+
+        const result = MajikSignature.verifyCompact(
+          dummyContent,
+          compact,
+          publicKeys,
+        );
+
+        expect(result.valid).toBe(false);
+        expect(result.expired).toBe(true);
+      });
+
+      it("should never expire a compact signature with no validUntil set", async () => {
+        const signature = await MajikSignature.sign(dummyContent, keyA);
+        const compact = signature.toCompact();
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+
+        expect(compact.validUntil).toBeUndefined();
+
+        const result = MajikSignature.verifyCompact(
+          dummyContent,
+          compact,
+          publicKeys,
+        );
+
+        expect(result.valid).toBe(true);
+      });
+    });
+
+    // ── FILE-AWARE EMBEDDED SIGNING/VERIFICATION ──────────────────────────────
+
+    describe("Embedded file signing/verification with validUntil (.signFile / .verifyFile)", () => {
+      it("should embed a validUntil-bearing signature and verify it as valid before expiry", async () => {
+        const { blob } = await MajikSignature.signFile(expiryBlob, keyA, {
+          timestamp: SIGNED_AT,
+          validUntil: EXPIRY,
+        });
+
+        const results = await MajikSignature.verifyFile(blob, keyA, {
+          now: new Date(BEFORE_EXPIRY),
+        });
+
+        expect(results[0].valid).toBe(true);
+      });
+
+      it("should embed a validUntil-bearing signature and verify it as expired past expiry", async () => {
+        const { blob } = await MajikSignature.signFile(expiryBlob, keyA, {
+          timestamp: SIGNED_AT,
+          validUntil: EXPIRY,
+        });
+
+        const results = await MajikSignature.verifyFile(blob, keyA, {
+          now: new Date(AFTER_EXPIRY),
+        });
+
+        expect(results[0].valid).toBe(false);
+        expect(results[0].expired).toBe(true);
+      });
+
+      it("should never expire an embedded file signature with no validUntil set", async () => {
+        const { blob } = await MajikSignature.signFile(expiryBlob, keyA, {
+          timestamp: SIGNED_AT,
+        });
+
+        const results = await MajikSignature.verifyFile(blob, keyA, {
+          now: new Date(FAR_FUTURE),
+        });
+
+        expect(results[0].valid).toBe(true);
+      });
+    });
+
+    // ── DETACHED SIGNING/VERIFICATION ────────────────────────────────────────
+
+    describe("Detached signing/verification with validUntil (.signFileDetached / .verifyFileDetached)", () => {
+      it("should sign detached with validUntil and verify as valid before expiry", async () => {
+        const { blob: strippedBlob, envelope } =
+          await MajikSignature.signFileDetached(expiryBlob, keyA, {
+            timestamp: SIGNED_AT,
+            validUntil: EXPIRY,
+          });
+
+        const results = await MajikSignature.verifyFileDetached(
+          strippedBlob,
+          envelope,
+          keyA,
+          { now: new Date(BEFORE_EXPIRY) },
+        );
+
+        expect(results[0].valid).toBe(true);
+      });
+
+      it("should sign detached with validUntil and verify as expired past expiry", async () => {
+        const { blob: strippedBlob, envelope } =
+          await MajikSignature.signFileDetached(expiryBlob, keyA, {
+            timestamp: SIGNED_AT,
+            validUntil: EXPIRY,
+          });
+
+        const results = await MajikSignature.verifyFileDetached(
+          strippedBlob,
+          envelope,
+          keyA,
+          { now: new Date(AFTER_EXPIRY) },
+        );
+
+        expect(results[0].valid).toBe(false);
+        expect(results[0].expired).toBe(true);
+      });
+
+      it("should honor validUntil after an MJKSIG binary round-trip", async () => {
+        const { blob: strippedBlob, envelope } =
+          await MajikSignature.signFileDetached(expiryBlob, keyA, {
+            timestamp: SIGNED_AT,
+            validUntil: EXPIRY,
+          });
+
+        const mjksigBlob = envelope.toMJKSIG();
+        const decoded = await MajikSignatureEnvelope.fromMJKSIG(mjksigBlob);
+
+        const beforeResults = await MajikSignature.verifyFileDetached(
+          strippedBlob,
+          decoded,
+          keyA,
+          { now: new Date(BEFORE_EXPIRY) },
+        );
+        const afterResults = await MajikSignature.verifyFileDetached(
+          strippedBlob,
+          decoded,
+          keyA,
+          { now: new Date(AFTER_EXPIRY) },
+        );
+
+        expect(beforeResults[0].valid).toBe(true);
+        expect(afterResults[0].valid).toBe(false);
+        expect(afterResults[0].expired).toBe(true);
+      });
+
+      it("should reject a tampered detached file even when validUntil hasn't been reached — hash check wins first", async () => {
+        const { blob: strippedBlob, envelope } =
+          await MajikSignature.signFileDetached(expiryBlob, keyA, {
+            timestamp: SIGNED_AT,
+            validUntil: FAR_FUTURE,
+          });
+
+        const tamperedBlob = await corruptBlob(strippedBlob);
+
+        const results = await MajikSignature.verifyFileDetached(
+          tamperedBlob,
+          envelope,
+          keyA,
+        );
+
+        expect(results[0].valid).toBe(false);
+        expect(results[0].expired).toBeUndefined();
+      });
+    });
+
+    // ── MULTI-SIGNER: EXPIRY IS PER-SIGNER ────────────────────────────────────
+
+    describe("Per-signer expiry in multi-sig envelopes", () => {
+      it("should expire only the signer whose validUntil has passed, leaving others valid", async () => {
+        const { blob: step1 } = await MajikSignature.signFile(
+          expiryBlob,
+          keyA,
+          { timestamp: SIGNED_AT, validUntil: EXPIRY }, // will expire
+        );
+        const { blob: finalBlob } = await MajikSignature.signFile(
+          step1,
+          keyB,
+          { timestamp: SIGNED_AT }, // never expires
+        );
+
+        const resultsAfterExpiry = await MajikSignature.verifyFile(
+          finalBlob,
+          keyA,
+          {
+            expectedSignerId: keyA.fingerprint,
+            now: new Date(AFTER_EXPIRY),
+          },
+        );
+        const resultsForB = await MajikSignature.verifyFile(finalBlob, keyB, {
+          expectedSignerId: keyB.fingerprint,
+          now: new Date(AFTER_EXPIRY),
+        });
+
+        expect(resultsAfterExpiry[0].valid).toBe(false);
+        expect(resultsAfterExpiry[0].expired).toBe(true);
+
+        expect(resultsForB[0].valid).toBe(true);
+      });
+    });
+
+    // ── BATCH SIGNING / VERIFICATION ───────────────────────────────────────────
+
+    describe("Batch signing/verification with validUntil", () => {
+      it("should apply validUntil uniformly across every file in the batch", async () => {
+        const files = [
+          {
+            path: "expiring/one.txt",
+            blob: new Blob(["batch file one"], { type: "text/plain" }),
+          },
+          {
+            path: "expiring/two.txt",
+            blob: new Blob(["batch file two"], { type: "text/plain" }),
+          },
+        ];
+
+        const result = await MajikSignature.signBatchDetached(files, keyA, {
+          timestamp: SIGNED_AT,
+          validUntil: EXPIRY,
+        });
+
+        expect(result.mode).toBe("map");
+        if (result.mode === "map") {
+          const envOne = result.map.getEnvelope("expiring/one.txt");
+          const envTwo = result.map.getEnvelope("expiring/two.txt");
+          expect(envOne?.signatures[0].validUntil).toBe(EXPIRY);
+          expect(envTwo?.signatures[0].validUntil).toBe(EXPIRY);
+        }
+      });
+
+      it("should report 'verified' for a batch before expiry and 'invalid'+expired after it", async () => {
+        const files = [
+          {
+            path: "expiring/report.txt",
+            blob: new Blob(["expiring report content"], {
+              type: "text/plain",
+            }),
+          },
+        ];
+
+        const signResult = await MajikSignature.signBatchDetached(files, keyA, {
+          timestamp: SIGNED_AT,
+          validUntil: EXPIRY,
+        });
+        if (signResult.mode !== "map") throw new Error("expected map mode");
+
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+
+        const beforeResults = await MajikSignature.verifyFilesFromMjksMap(
+          signResult.map,
+          files,
+          publicKeys,
+          { now: new Date(BEFORE_EXPIRY) },
+        );
+        const afterResults = await MajikSignature.verifyFilesFromMjksMap(
+          signResult.map,
+          files,
+          publicKeys,
+          { now: new Date(AFTER_EXPIRY) },
+        );
+
+        expect(beforeResults[0].status).toBe("verified");
+
+        expect(afterResults[0].status).toBe("invalid");
+        expect(afterResults[0].results?.[0].valid).toBe(false);
+        expect(afterResults[0].results?.[0].expired).toBe(true);
+
+        const beforeSummary =
+          MajikSignature.summarizeBatchVerification(beforeResults);
+        const afterSummary =
+          MajikSignature.summarizeBatchVerification(afterResults);
+
+        expect(beforeSummary.allValid).toBe(true);
+        expect(afterSummary.allValid).toBe(false);
+        expect(afterSummary.invalid).toBe(1);
+      });
+
+      it("should never expire batch-signed files when validUntil is omitted", async () => {
+        const files = [
+          {
+            path: "permanent/report.txt",
+            blob: new Blob(["permanent report content"], {
+              type: "text/plain",
+            }),
+          },
+        ];
+
+        const signResult = await MajikSignature.signBatchDetached(files, keyA, {
+          timestamp: SIGNED_AT,
+        });
+        if (signResult.mode !== "map") throw new Error("expected map mode");
+
+        const publicKeys = MajikSignature.publicKeysFromMajikKey(keyA);
+        const results = await MajikSignature.verifyFilesFromMjksMap(
+          signResult.map,
+          files,
+          publicKeys,
+          { now: new Date(FAR_FUTURE) },
+        );
+
+        expect(results[0].status).toBe("verified");
+      });
+    });
+
+    // ── INPUT VALIDATION ───────────────────────────────────────────────────────
+
+    describe("validUntil input validation", () => {
+      it("should reject an unparseable validUntil string at sign time", async () => {
+        await expect(
+          MajikSignature.sign(dummyContent, keyA, {
+            validUntil: "not-a-real-date",
+          }),
+        ).rejects.toThrow(/validUntil/i);
+      });
+
+      it("should accept a well-formed ISO 8601 validUntil string", async () => {
+        await expect(
+          MajikSignature.sign(dummyContent, keyA, {
+            validUntil: "2027-03-15T12:00:00.000Z",
+          }),
+        ).resolves.toBeInstanceOf(MajikSignature);
       });
     });
   });
