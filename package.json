@@ -52,14 +52,15 @@
   },
   "dependencies": {
     "@majikah/majik-key": "^0.4.0",
-    "@noble/post-quantum": "^0.7.0",
+    "@noble/hashes": "^2.4.0",
+    "@noble/post-quantum": "^0.7.1",
     "@stablelib/ed25519": "^2.1.0",
     "@stablelib/sha256": "^2.0.1",
     "fflate": "^0.8.3"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.4.1",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.11"
   }
 }

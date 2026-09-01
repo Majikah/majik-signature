@@ -58,7 +58,7 @@ export const CONTENT_HASH_B64_LEN = 44; // SHA-256 → always 44 chars base64
  * Allowlist hash is also a SHA-256 output — identical length to CONTENT_HASH_B64_LEN.
  * Defined separately for clarity at validation call sites.
  */
-export const ALLOWLIST_HASH_B64_LEN = CONTENT_HASH_B64_LEN; // 44 chars
+export const ALLOWLIST_HASH_B64_LEN = 44; // 44 chars
 
 /**
  * Seal hash is SHA3-512 → 64 bytes → 128 hex chars.
