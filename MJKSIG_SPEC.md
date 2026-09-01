@@ -34,7 +34,7 @@ Both algorithms sign the exact same **canonical payload** bytes. Verification re
 The canonical signing payload is constructed deterministically to ensure byte-for-byte identical inputs during both signing and verification.
 
 **Format:**
-`"majik-signature-v1:" + JSON.stringify({ v, id, ts, ct, hash[, alh][, vu] })`
+`"majik-signature-v1:" + JSON.stringify({ v, id, ts, ct, hash[, alh][, vu][, vch] })`
 
 Where:
 *   `v`: Envelope version (integer, `1`).
@@ -44,10 +44,45 @@ Where:
 *   `hash`: SHA-256 hash of the original detached file's content, base64 encoded.
 *   `alh`: SHA-256 hash of the canonical allowlist JSON, base64 encoded. This key is completely omitted (not set to `null`) if an allowlist is not established, preserving backward compatibility.
 *   `vu`:  Optional ISO 8601 expiry. When present, verify() treats the signature as invalid once the current time is past this value. Absent = never expires (matches all pre-existing signatures — fully backward compatible). Covered by the canonical signing payload when present, so it cannot be stripped or extended post-hoc without breaking both signatures.
+*   `vch`: Optional SHA-256 hash of the `fileVersions` revision chain, base64 encoded, as it stood when this signer signed (including their own new entry). Present only on files using file versioning (see §2.4). Omitted entirely, never `null`, on any signature that predates or doesn't use this feature — preserves the same backward-compatibility guarantee as `alh`/`vu`.
 
 ### 2.3 Allowlist and Sealing
 *   **Allowlist:** The first signer may optionally restrict future signers by embedding an `ExpectedSigner` array. The establisher commits to this allowlist cryptographically via the `allowlistHash` in their canonical payload.
 *   **Seal:** The issuer (allowlist establisher) can permanently lock the envelope against further signatures. Sealing computes a SHA3-512 hash over the current signatories and a seal timestamp. The seal hash domain prefix is `majik-seal-v1:`. 
+  
+### 2.4 File Versioning & Revision Chains
+
+MJKSIG supports an append-only revision chain (`fileVersions`) for workflows where a signer visually mutates the document itself (e.g. a drawn signature stamp) before signing — which changes the file's byte content on every hand-off, not just its metadata.
+
+Each entry in `fileVersions` is a `FileVersion`:
+
+```typescript
+interface FileVersion {
+  /** Sequential, 1-indexed */
+  version: number;
+  timestamp: string; // ISO 8601
+  /** SHA-256 of this revision's stripped bytes, base64 */
+  contentHash: string;
+  /** SHA-256 of the entire prior FileVersion entry — absent only on version 1 */
+  previousVersionHash?: string;
+  createdBy?: string; // signer fingerprint
+  message?: string;
+}
+```
+
+Two independent integrity mechanisms apply:
+
+1. **Structural chaining** — each entry's `previousVersionHash` is the hash of the complete prior `FileVersion` object (not just its `contentHash`), so tampering with any field of an earlier entry — including `timestamp` or `message` — breaks the chain at that point. Checked via a walk of the array; requires no cryptographic key.
+2. **Cryptographic binding** — each signer's `versionChainHash` (§2.2) commits to `SHA256(JSON.stringify(fileVersions[0..their own new entry]))`. This is what prevents a wholesale, internally-consistent forged chain: without it, an attacker with file-edit access could rewrite `fileVersions` end-to-end in a way that still passes the structural check in (1), since that check alone never touches a signature. `versionChainHash` anchors the chain's *state at that signer's turn* to a value only they could have produced.
+
+Verifiers should treat a file as chain-valid only when **both** checks pass for every signature — structural chaining alone is a self-consistency check, not a security property.
+
+**Self-contained vs. archive-assisted verification.** Because a raw content hash alone can't be recomputed for an *earlier* revision without the earlier bytes, two levels of verification exist:
+
+- **Commitment verification** (self-contained, no earlier bytes needed): recompute the canonical payload from the stored `MajikSignatureJSON` fields, verify Ed25519 + ML-DSA-87 against it, and confirm `versionChainHash` matches the recomputed prefix of `fileVersions`. This proves the signer's commitment is genuine and the chain hasn't been rewritten, but does not independently prove the `contentHash` at that revision ever corresponded to real bytes.
+- **Full revision verification** (archive-assisted): given the actual byte content of each historical revision, confirm each one's hash matches its `fileVersions` entry and that the full signature verifies against those bytes directly. This is the only way to fully close the gap left by commitment verification, and requires the verifier to have retained each intermediate revision.
+
+`fileVersions` is intentionally metadata-only — it never stores revision content directly, to avoid the container growing linearly with each signer for large files. Storage of the actual per-revision bytes, if needed for full revision verification, is left to the application layer.
 
 ---
 
@@ -110,6 +145,9 @@ interface MultiSigEnvelope {
   
   /** Multi-chain-ready anchor receipts. */
   chainAnchors?: MajikChainAnchor[];
+
+   /** Append-only revision chain. Absent on files predating this feature. */
+  fileVersions?: FileVersion[];
 }
 ```
 
@@ -157,6 +195,13 @@ interface MajikSignatureJSON {
    * stripped or extended post-hoc without breaking both signatures.
    */
    validUntil?: ISODateString;
+
+    /**
+   * SHA-256 of the fileVersions chain as it stood when this signer signed
+   * (i.e. including their own new entry). Covered by the canonical payload,
+   * same treatment as allowlistHash/validUntil — absent, never null.
+   */
+  versionChainHash?: string;
   
   /** Trusted Timestamp Authority metadata and signature */
   tsa?: MajikTimestamp;
@@ -202,6 +247,7 @@ interface ExpectedSigner {
     *   Reconstruct the deterministic canonical byte payload.
     *   Verify the classical `edSignature` against `signerEdPublicKey`.
     *   Verify the post-quantum `mlDsaSignature` against `signerMlDsaPublicKey`.
+6.  **Version Chain Verification (if `fileVersions` is present):** Walk the chain confirming each entry's `previousVersionHash` matches the hash of the prior entry (§2.4.1), then for each signature carrying a `versionChainHash`, recompute the hash of the chain prefix up to and including its corresponding entry and confirm it matches.
 
 If all checks pass, the detached signature securely correlates to the file.
 

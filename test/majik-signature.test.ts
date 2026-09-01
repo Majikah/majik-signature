@@ -11,6 +11,7 @@ import { getTestKey } from "./helpers/crypto";
 import { MajikSignatureEnvelope } from "../src/core/envelope";
 import { MajikSignatureMap } from "../src/core/mjksmap";
 import type { MajikTimestamp } from "../src/core/types";
+import { MajikSignatureEmbed } from "../src/core/embed/majik-embed";
 
 const __currentDir = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(__currentDir, "fixtures");
@@ -2640,6 +2641,228 @@ describe("MajikSignature Class Unit Tests", () => {
           }),
         ).resolves.toBeInstanceOf(MajikSignature);
       });
+    });
+  });
+
+  // ── FILE VERSIONING & MULTI-SIG REVISIONS ───────────────────────────────
+
+  describe("File Versioning & Multi-Sig Revisions (.verifyFileRevisions)", () => {
+    let originalPdf: Blob;
+
+    beforeAll(() => {
+      const fileContent = loadFixture("sample.pdf");
+      originalPdf = new Blob([fileContent as BlobPart], {
+        type: "application/pdf",
+      });
+    });
+
+    /**
+     * Simulates a user visually modifying a signed PDF (e.g., drawing a signature)
+     * by safely flipping a byte in the middle of the file.
+     */
+    async function simulatePdfDrawing(
+      signedBlob: Blob,
+      versionIndex: number,
+    ): Promise<Blob> {
+      const buffer = await signedBlob.arrayBuffer();
+      const view = new Uint8Array(buffer);
+
+      const targetIndex = Math.floor(view.length / 2) + versionIndex;
+      if (view.length > targetIndex) {
+        view[targetIndex] = view[targetIndex] ^ 0xff;
+      }
+
+      return new Blob([view], { type: signedBlob.type });
+    }
+
+    it("should successfully process a 3-signer multi-sig flow with file versioning", async () => {
+      const expectedSigners = [
+        MajikSignature.expectedSignerFromKey(keyA),
+        MajikSignature.expectedSignerFromKey(keyB),
+        MajikSignature.expectedSignerFromKey(keyC),
+      ];
+
+      const { blob: signedPdfV1 } = await MajikSignature.signFile(
+        originalPdf,
+        keyA,
+        {
+          contentType: "application/pdf",
+          expectedSigners,
+        },
+      );
+
+      const cleanV1 = await MajikSignature.stripFrom(signedPdfV1, {
+        mimeType: "application/pdf",
+      });
+      const stampedV2 = await simulatePdfDrawing(cleanV1, 1);
+      const { blob: signedPdfV2 } = await MajikSignature.signFile(
+        stampedV2,
+        keyB,
+        {
+          contentType: "application/pdf",
+          priorSignedFile: signedPdfV1, // KEY FIX
+        },
+      );
+
+      const cleanV2 = await MajikSignature.stripFrom(signedPdfV2, {
+        mimeType: "application/pdf",
+      });
+      const stampedV3 = await simulatePdfDrawing(cleanV2, 2);
+      const { blob: signedPdfV3, envelope } = await MajikSignature.signFile(
+        stampedV3,
+        keyC,
+        {
+          contentType: "application/pdf",
+          priorSignedFile: signedPdfV2, // KEY FIX
+        },
+      );
+
+      // Confirm the chain actually built up before checking downstream behavior.
+      expect(envelope.signatures).toHaveLength(3);
+      expect(envelope.fileVersions).toHaveLength(3);
+
+      const revisionResult = await MajikSignature.verifyFileRevisions(
+        signedPdfV3,
+        [signedPdfV1, signedPdfV2], // finalFile is auto-included
+        { mimeType: "application/pdf" },
+      );
+      expect(revisionResult.allValid).toBe(true);
+      expect(revisionResult.isCompleteSet).toBe(true);
+
+      // Tier 1: self-contained, no archive needed at all.
+      const chainResult = await MajikSignature.verifyFileChain(signedPdfV3, {
+        mimeType: "application/pdf",
+      });
+      expect(chainResult.chainValid).toBe(true);
+      expect(chainResult.latest.valid).toBe(true);
+      expect(chainResult.history).toHaveLength(2);
+      expect(chainResult.history.every((h) => h.valid)).toBe(true);
+    });
+
+    it("should reject building a revision on a priorSignedFile whose signature is invalid", async () => {
+      const { blob: signedPdfV1 } = await MajikSignature.signFile(
+        originalPdf,
+        keyA,
+        {
+          contentType: "application/pdf",
+        },
+      );
+      const tamperedV1 = await corruptBlob(signedPdfV1);
+
+      await expect(
+        MajikSignature.signFile(originalPdf, keyC, {
+          contentType: "application/pdf",
+          priorSignedFile: tamperedV1,
+        }),
+      ).rejects.toThrow(/Refusing to build on priorSignedFile/);
+    });
+
+    it("should detect a fileVersions entry tampered with after signing (versionChainHash catches it even though bytes are untouched)", async () => {
+      // 1. Issuer signs V1 — no allowlist needed for this test.
+      const { blob: signedPdfV1 } = await MajikSignature.signFile(
+        originalPdf,
+        keyA,
+        { contentType: "application/pdf" },
+      );
+
+      // 2. Second signer stamps + signs V2, correctly chaining onto V1.
+      const cleanV1 = await MajikSignature.stripFrom(signedPdfV1, {
+        mimeType: "application/pdf",
+      });
+      const stampedV2 = await simulatePdfDrawing(cleanV1, 1);
+      const { blob: signedPdfV2 } = await MajikSignature.signFile(
+        stampedV2,
+        keyB,
+        {
+          contentType: "application/pdf",
+          priorSignedFile: signedPdfV1,
+        },
+      );
+
+      // 3. Extract the genuine envelope — untouched, both signatures valid,
+      //    fileVersions has exactly 2 entries at this point.
+      const extracted = await MajikSignatureEmbed.extract(signedPdfV2, {
+        mimeType: "application/pdf",
+      });
+      expect(extracted).not.toBeNull();
+      const genuineEnvelope = extracted!.envelope;
+      expect(genuineEnvelope.fileVersions).toHaveLength(2);
+
+      // Sanity check: the untampered file must verify clean before we break it.
+      const sanityCheck = await MajikSignature.verifyFileChain(signedPdfV2, {
+        mimeType: "application/pdf",
+      });
+      expect(sanityCheck.chainValid).toBe(true);
+
+      // 4. Tamper ONLY the metadata — fileVersions[0].message — leaving every
+      //    signature and every content byte completely untouched. This is the
+      //    exact attack versionChainHash exists to catch: a self-consistent-
+      //    looking edit to the audit trail that a plain byte-hash check would
+      //    never notice, since the actual signed content never changed.
+      const tamperedFileVersions = [
+        { ...genuineEnvelope.fileVersions[0], message: "forged audit note" },
+        genuineEnvelope.fileVersions[1],
+      ];
+      const tamperedEnvelope = MajikSignatureEnvelope.fromJSON({
+        ...genuineEnvelope.toJSON(),
+        fileVersions: tamperedFileVersions,
+      });
+
+      // 5. Re-embed the tampered envelope over the SAME content bytes, so the
+      //    only difference between signedPdfV2 and this file is the metadata.
+      const strippedBytes = new Uint8Array(
+        await (
+          await MajikSignature.stripFrom(signedPdfV2, {
+            mimeType: "application/pdf",
+          })
+        ).arrayBuffer(),
+      );
+      const handler = MajikSignatureEmbed.registry.resolve(
+        strippedBytes,
+        "application/pdf",
+      );
+      const tamperedBytes = await handler.embed(
+        strippedBytes,
+        JSON.stringify(tamperedEnvelope.toJSON()),
+      );
+      const tamperedBlob = new Blob([tamperedBytes as BlobPart], {
+        type: "application/pdf",
+      });
+
+      // 6. Confirm the tamper is real but content-invisible: bytes differ
+      //    from the genuine file, yet the actual document content is identical.
+      const tamperedStripped = new Uint8Array(
+        await (
+          await MajikSignature.stripFrom(tamperedBlob, {
+            mimeType: "application/pdf",
+          })
+        ).arrayBuffer(),
+      );
+      expect(tamperedStripped).toEqual(strippedBytes); // content unchanged
+
+      // 7. Tier 1 (self-contained, no archive) must catch this.
+      const chainResult = await MajikSignature.verifyFileChain(tamperedBlob, {
+        mimeType: "application/pdf",
+      });
+      expect(chainResult.chainValid).toBe(false);
+
+      // Both signers' commitments are affected — B's (latest) because its
+      // versionChainHash was computed over the pre-tamper chain[0..1], and
+      // A's (history) because its versionChainHash covered chain[0..0] which
+      // itself changed.
+      expect(chainResult.latest.valid).toBe(false);
+      expect(chainResult.history.some((h) => !h.valid)).toBe(true);
+
+      // 8. Tier 2 (archive-assisted) must also catch it independently.
+      const revisionResult = await MajikSignature.verifyFileRevisions(
+        tamperedBlob,
+        [signedPdfV1],
+        { mimeType: "application/pdf" },
+      );
+      expect(revisionResult.allValid).toBe(false);
+      expect(
+        revisionResult.results.some((r) => r.status === "chain_broken"),
+      ).toBe(true);
     });
   });
 });

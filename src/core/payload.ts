@@ -5,31 +5,11 @@
  *
  * Both Ed25519 and ML-DSA-87 sign the SAME payload bytes.
  * The payload encodes: version, signerId, timestamp, contentType, contentHash,
- * and — when an allowlist is being established — allowlistHash.
+ * and — when an allowlist is being established — allowlistHash, and validUntil
  *
- * Format:
- *   "majik-signature-v1:" + JSON.stringify({ v, id, ts, ct, hash[, alh] })
- *
- * where:
- *   v    — envelope version (integer)
- *   id   — signer fingerprint (string)
- *   ts   — ISO 8601 timestamp (string)
- *   ct   — content type or null
- *   hash — SHA-256 of original content, base64 (string)
- *   alh  — SHA-256 of canonical allowlist JSON, base64 (string) — OMITTED when
- *           not set. Omitting preserves byte-identical payloads for all signatures
- *           made before allowlist support was introduced (backward compat).
- *
- * The domain prefix prevents cross-protocol misuse.
- * JSON key order is fixed — same input always produces same bytes.
- *
- * Backward compatibility rule:
- *   `alh` is only included in the JSON when allowlistHash is explicitly provided.
- *   When absent it is NOT defaulted to null — omitting it entirely keeps the
- *   payload bytes identical to what pre-multi-sig signers produced, so all
- *   existing signatures continue to verify correctly.
  */
 
+import { ISODateString, MajikKeyFingerprint } from "@majikah/majik-key";
 import {
   MAJIK_SIGNATURE_DOMAIN,
   MAJIK_SIGNATURE_VERSION,
@@ -38,8 +18,8 @@ import {
 import { MajikTSAPayload } from "./types";
 
 export interface PayloadFields {
-  signerId: string;
-  timestamp: string;
+  signerId: MajikKeyFingerprint;
+  timestamp: ISODateString;
   contentHash: string;
   contentType?: string;
   /**
@@ -49,7 +29,9 @@ export interface PayloadFields {
    */
   allowlistHash?: string;
 
-  validUntil?: string;
+  validUntil?: ISODateString;
+
+  versionChainHash?: string;
 }
 
 /**
@@ -68,14 +50,13 @@ export function buildSigningPayload(fields: PayloadFields): Uint8Array {
     ts: fields.timestamp,
     ct: fields.contentType ?? null,
     hash: fields.contentHash,
-    // Conditionally include alh — omitting it entirely preserves byte-identical
-    // payloads for all pre-allowlist signatures (backward compat).
     ...(fields.allowlistHash !== undefined
       ? { alh: fields.allowlistHash }
       : {}),
-    // Conditionally include vu — same reasoning: omit entirely so all
-    // pre-expiry signatures reproduce byte-identical payloads (backward compat).
     ...(fields.validUntil !== undefined ? { vu: fields.validUntil } : {}),
+    ...(fields.versionChainHash !== undefined
+      ? { vch: fields.versionChainHash }
+      : {}),
   });
   const prefix = new TextEncoder().encode(MAJIK_SIGNATURE_DOMAIN);
   const body = new TextEncoder().encode(meta);

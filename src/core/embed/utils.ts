@@ -2,11 +2,38 @@
  * utils.ts — Byte manipulation, MIME sniffing, and encoding helpers
  */
 
+import { MajikSignatureValidationError } from "../errors";
+import { FileLike } from "../types";
 import {
   CANONICAL_MTIME,
   TRAILER_MAGIC,
   TRAILER_SUFFIX_LENGTH,
 } from "./constants";
+
+/** Normalize any supported input into raw bytes, defensively copied. */
+export async function normalizeToBytes(input: FileLike): Promise<Uint8Array> {
+  if (input instanceof Uint8Array) return input.slice();
+  if (input instanceof ArrayBuffer) return new Uint8Array(input.slice(0));
+  if (input instanceof Blob) return blobToBytes(input); // File extends Blob
+  throw new MajikSignatureValidationError(
+    "Unsupported file input — expected Blob, File, Uint8Array, or ArrayBuffer.",
+    "input",
+  );
+}
+
+export function normalizeToBlob(
+  input: FileLike,
+  mimeType: string = "application/octet-stream",
+): Blob {
+  if (input instanceof Blob) return input;
+  if (input instanceof Uint8Array) return bytesToBlob(input, mimeType);
+  if (input instanceof ArrayBuffer)
+    return bytesToBlob(new Uint8Array(input), mimeType);
+  throw new MajikSignatureValidationError(
+    "Unsupported file input — expected Blob, File, Uint8Array, or ArrayBuffer.",
+    "input",
+  );
+}
 
 // ─── Encoding ─────────────────────────────────────────────────────────────────
 

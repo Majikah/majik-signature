@@ -37,12 +37,18 @@ import type {
   ExpectedSigner,
   ExtractOptions,
   ExtractResult,
+  FileChainVerification,
+  FileLike,
   FileVerifyResult,
+  FileVersion,
   FormatHandler,
   MajikSignatureEnvelopeJSON,
   MajikSignatureJSON,
   MajikSignerPublicKeys,
   MajikTimestamp,
+  RevisionCheckResult,
+  RevisionCommitmentResult,
+  RevisionSetVerification,
   SealInfo,
   SealVerificationResult,
   SignatoriesFilter,
@@ -52,7 +58,13 @@ import type {
 } from "../../core/types";
 import { MajikSignatureEnvelope } from "../../core/envelope";
 import { FormatHandlerRegistry } from "./registry";
-import { blobToBytes, bytesToBlob, detectMimeType } from "./utils";
+import {
+  blobToBytes,
+  bytesToBlob,
+  detectMimeType,
+  normalizeToBlob,
+  normalizeToBytes,
+} from "./utils";
 
 import { PdfHandler } from "./handlers/pdf";
 import { PngHandler } from "./handlers/png";
@@ -65,7 +77,7 @@ import { MkvHandler } from "./handlers/mkv";
 import { OfficeHandler } from "./handlers/office";
 import { TextHandler } from "./handlers/text";
 import { FallbackHandler } from "./fallback";
-import { bytesToBase64, hashContent } from "../hash";
+import { base64ToBytes, bytesToBase64, hashContent } from "../hash";
 import { MajikSignatureError, MajikSignatureValidationError } from "../errors";
 import { MajikChainAnchor } from "../../anchor/types";
 import { MajikSignatureMap } from "../mjksmap";
@@ -93,11 +105,21 @@ export interface MajikSignatureStaticAdapter {
   sign(
     content: Uint8Array | string,
     key: MajikKey,
-    options?: SignOptions & { allowlistHash?: string },
+    options?: SignOptions & {
+      allowlistHash?: string;
+      versionChainHash?: string;
+    },
   ): Promise<MajikSignatureAdapter>;
 
   verify(
     content: Uint8Array | string,
+    signature: MajikSignatureAdapter | MajikSignatureJSON,
+    publicKeys: MajikSignerPublicKeys,
+    now?: Date,
+  ): VerificationResult;
+
+  /** Commitment-only check — no content bytes required. See MajikSignature.verifyCommitment. */
+  verifyCommitment(
     signature: MajikSignatureAdapter | MajikSignatureJSON,
     publicKeys: MajikSignerPublicKeys,
     now?: Date,
@@ -187,8 +209,12 @@ export class MajikSignatureEmbed {
       contentType?: string;
       timestamp?: ISODateString;
       expectedSigners?: ExpectedSigner[];
-      /** ISO 8601 expiry for this signature. Omit for one that never expires. */
       validUntil?: ISODateString;
+      message?: string;
+      /** The file as received, BEFORE this signer's own stamp. Presence of
+       *  this option is what makes this call a revision (2nd signer+) rather
+       *  than a fresh signature. */
+      priorSignedFile?: Blob;
     },
     debug: boolean = false,
   ): Promise<EmbedResult & { signature: T; envelope: MajikSignatureEnvelope }> {
@@ -197,53 +223,67 @@ export class MajikSignatureEmbed {
       options,
     );
 
-    const envelope = await MajikSignatureEmbed._readEnvelope(handler, bytes);
+    const envelope = options?.priorSignedFile
+      ? await MajikSignatureEmbed._readAndVerifyPriorEnvelope(
+          options.priorSignedFile,
+          MajikSig,
+          debug,
+        )
+      : await MajikSignatureEmbed._readEnvelope(handler, bytes);
 
-    // ── Sealed + allowlist gate (throws before any crypto) ──────────────────
     envelope.assertCanSign(key);
 
-    // ── Clean original bytes ─────────────────────────────────────────────────
     const originalBytes = await handler.strip(bytes);
-
-    if (debug) {
+    if (debug)
       console.log(
-        "signAndEmbed — original bytes hash:",
+        "signAndEmbed — bytes hash:",
         bytesToBase64(hashContent(originalBytes)),
       );
-    }
 
-    // ── Resolve allowlistHash for this signer's payload ──────────────────────
     const allowlistHashValue = envelope.resolveAllowlistHashFor(
       key,
       options?.expectedSigners,
     );
 
-    // ── Sign ──────────────────────────────────────────────────────────────────
+    const lastVersion = envelope.lastFileVersion;
+    const newVersionEntry: FileVersion = {
+      version: lastVersion ? lastVersion.version + 1 : 1,
+      timestamp: options?.timestamp ?? new Date().toISOString(),
+      contentHash: bytesToBase64(hashContent(originalBytes)),
+      ...(lastVersion
+        ? {
+            previousVersionHash:
+              MajikSignatureEnvelope.hashFileVersionEntry(lastVersion),
+          }
+        : {}),
+      createdBy: key.fingerprint,
+      ...(options?.message ? { message: options.message } : {}),
+    };
+    const versionChainHash = MajikSignatureEnvelope.hashFileVersionChain([
+      ...envelope.fileVersions,
+      newVersionEntry,
+    ]);
+
     const signature = await MajikSig.sign(originalBytes, key, {
       contentType: options?.contentType,
-      timestamp: options?.timestamp,
+      timestamp: newVersionEntry.timestamp,
       validUntil: options?.validUntil,
+      versionChainHash,
       ...(allowlistHashValue !== undefined
         ? { allowlistHash: allowlistHashValue }
         : {}),
     });
 
-    // ── Attach allowlist FIRST (requires zero signatures), then upsert ───────
-    // NOTE: withAllowlist() enforces "first signer only" by checking the
-    // envelope's current signature count. It must run before withSignature()
-    // adds this signer's entry, or the guard trips on the count it just added.
     const establishingAllowlist =
       envelope.isFirstSigner() && !!options?.expectedSigners?.length;
-
     const envelopeWithAllowlist = establishingAllowlist
       ? envelope.withAllowlist(options!.expectedSigners!, key.fingerprint)
       : envelope;
 
-    const nextEnvelope = envelopeWithAllowlist.withSignature(
-      signature.toJSON(),
-    );
+    const nextEnvelope = envelopeWithAllowlist
+      .withFileVersion(newVersionEntry)
+      .withSignature(signature.toJSON());
 
-    // ── Embed ─────────────────────────────────────────────────────────────────
     const resultBytes = await handler.embed(
       originalBytes,
       JSON.stringify(nextEnvelope.toJSON()),
@@ -256,6 +296,185 @@ export class MajikSignatureEmbed {
       mimeType,
       signature: signature as T,
       envelope: nextEnvelope,
+    };
+  }
+
+  // ── Private: read prior file's envelope, verify it fully, bootstrap chain ──
+
+  private static async _readAndVerifyPriorEnvelope(
+    priorFile: Blob,
+    MajikSig: MajikSignatureStaticAdapter,
+    debug: boolean,
+  ): Promise<MajikSignatureEnvelope> {
+    const { bytes: priorBytes, handler: priorHandler } =
+      await MajikSignatureEmbed._prepare(priorFile);
+    const raw = await priorHandler.extract(priorBytes);
+    if (!raw) {
+      throw new MajikSignatureError(
+        "priorSignedFile has no embedded signature envelope.",
+      );
+    }
+
+    let envelope = MajikSignatureEnvelope.fromJSON(raw);
+
+    const allowlistIntegrity = envelope.verifyAllowlistIntegrity();
+    if (!allowlistIntegrity.valid) {
+      throw new MajikSignatureError(
+        `priorSignedFile allowlist integrity failed: ${allowlistIntegrity.reason}`,
+      );
+    }
+    const chainIntegrity = envelope.verifyVersionChainIntegrity();
+    if (!chainIntegrity.valid) {
+      throw new MajikSignatureError(
+        `priorSignedFile version chain integrity failed: ${chainIntegrity.reason}`,
+      );
+    }
+
+    const priorStrippedBytes = await priorHandler.strip(priorBytes);
+    const { ok, latest, history } =
+      MajikSignatureEmbed._verifyEnvelopeSelfContained(
+        envelope,
+        priorStrippedBytes,
+        MajikSig,
+      );
+    if (!ok) {
+      const failed = [latest, ...history].find((r) => !r.valid);
+      throw new MajikSignatureError(
+        `Refusing to build on priorSignedFile — signature by "${failed?.signerId}" is invalid: ${failed?.reason}`,
+      );
+    }
+
+    // Bootstrap fileVersions[0] for files signed before this feature existed.
+    if (envelope.fileVersions.length === 0 && envelope.signatures.length > 0) {
+      const firstSig = envelope.signatures[0];
+      envelope = envelope.withFileVersion({
+        version: 1,
+        timestamp: firstSig.timestamp,
+        contentHash: bytesToBase64(hashContent(priorStrippedBytes)),
+        createdBy: firstSig.signerId,
+      });
+    }
+
+    if (debug)
+      console.log(
+        "priorSignedFile bytes hash:",
+        bytesToBase64(hashContent(priorStrippedBytes)),
+      );
+    return envelope;
+  }
+
+  private static _verifyEnvelopeSelfContained(
+    envelope: MajikSignatureEnvelope,
+    currentStrippedBytes: Uint8Array,
+    MajikSig: MajikSignatureStaticAdapter,
+    now?: Date,
+  ): {
+    latest: VerificationResult;
+    history: RevisionCommitmentResult[];
+    ok: boolean;
+  } {
+    const chain = envelope.fileVersions;
+    const currentHash = bytesToBase64(hashContent(currentStrippedBytes));
+    const fullChainHash = MajikSignatureEnvelope.hashFileVersionChain(chain);
+
+    let latestSig = envelope.signatures.find(
+      (s) =>
+        s.contentHash === currentHash && s.versionChainHash === fullChainHash,
+    );
+
+    if (!latestSig) {
+      // Fallback for pre-feature files
+      latestSig = envelope.signatures.find(
+        (s) => s.contentHash === currentHash,
+      );
+    }
+
+    const checkChainHash = (
+      sig: MajikSignatureJSON,
+    ): { ok: boolean; reason?: string } => {
+      if (sig.versionChainHash === undefined && chain.length === 0)
+        return { ok: true }; // pre-feature file
+
+      const idx = chain.findIndex(
+        (v, i) =>
+          v.contentHash === sig.contentHash &&
+          (sig.versionChainHash
+            ? MajikSignatureEnvelope.hashFileVersionChain(
+                chain.slice(0, i + 1),
+              ) === sig.versionChainHash
+            : true),
+      );
+
+      if (idx === -1)
+        return {
+          ok: false,
+          reason: "No fileVersions entry matches this signature's state.",
+        };
+
+      const expected = MajikSignatureEnvelope.hashFileVersionChain(
+        chain.slice(0, idx + 1),
+      );
+      return sig.versionChainHash === undefined ||
+        sig.versionChainHash === expected
+        ? { ok: true }
+        : {
+            ok: false,
+            reason:
+              "versionChainHash does not match the recomputed chain prefix — chain may be tampered.",
+          };
+    };
+
+    const publicKeysOf = (sig: MajikSignatureJSON): MajikSignerPublicKeys => ({
+      signerId: sig.signerId,
+      edPublicKey: base64ToBytes(sig.signerEdPublicKey),
+      mlDsaPublicKey: base64ToBytes(sig.signerMlDsaPublicKey),
+    });
+
+    let latest: VerificationResult;
+    if (!latestSig) {
+      latest = {
+        valid: false,
+        reason: "No signature's contentHash matches the current bytes.",
+        timestamp: new Date().toISOString(),
+      };
+    } else {
+      const chainCheck = checkChainHash(latestSig);
+      latest = chainCheck.ok
+        ? MajikSig.verify(
+            currentStrippedBytes,
+            latestSig,
+            publicKeysOf(latestSig),
+            now,
+          )
+        : {
+            valid: false,
+            signerId: latestSig.signerId,
+            contentHash: latestSig.contentHash,
+            timestamp: latestSig.timestamp,
+            reason: chainCheck.reason,
+          };
+    }
+
+    const history: RevisionCommitmentResult[] = envelope.signatures
+      .filter((s) => s !== latestSig)
+      .map((sig) => {
+        const chainCheck = checkChainHash(sig);
+        const result = chainCheck.ok
+          ? MajikSig.verifyCommitment(sig, publicKeysOf(sig), now)
+          : {
+              valid: false,
+              signerId: sig.signerId,
+              contentHash: sig.contentHash,
+              timestamp: sig.timestamp,
+              reason: chainCheck.reason,
+            };
+        return { ...result, commitmentOnly: true as const };
+      });
+
+    return {
+      latest,
+      history,
+      ok: latest.valid && history.every((h) => h.valid),
     };
   }
 
@@ -945,6 +1164,169 @@ export class MajikSignatureEmbed {
       (content, sig, pk) => MajikSig.verify(content, sig, pk),
       { strict: options?.strict },
     );
+  }
+
+  static async verifyFileChain(
+    file: Blob,
+    MajikSig: MajikSignatureStaticAdapter,
+    options?: ExtractOptions & { now?: Date },
+  ): Promise<FileChainVerification> {
+    const { bytes, handler } = await MajikSignatureEmbed._prepare(
+      file,
+      options,
+    );
+    const raw = await handler.extract(bytes);
+    if (!raw)
+      throw new MajikSignatureError(
+        "Cannot verify chain — no embedded envelope found.",
+      );
+
+    const envelope = MajikSignatureEnvelope.fromJSON(raw);
+    const originalBytes = await handler.strip(bytes);
+
+    const allowlistIntegrity = envelope.verifyAllowlistIntegrity();
+    const chainIntegrity = envelope.verifyVersionChainIntegrity();
+
+    const { latest, history, ok } =
+      MajikSignatureEmbed._verifyEnvelopeSelfContained(
+        envelope,
+        originalBytes,
+        MajikSig,
+        options?.now,
+      );
+    const chainValid = allowlistIntegrity.valid && chainIntegrity.valid && ok;
+    return { latest, history, chainValid };
+  }
+
+  static async verifyFileRevisions(
+    finalFile: Blob,
+    revisions: FileLike[],
+    MajikSig: MajikSignatureStaticAdapter,
+    options?: ExtractOptions & {
+      now?: Date;
+      resolvePublicKeys?: (
+        signerId: string,
+      ) => MajikSignerPublicKeys | Promise<MajikSignerPublicKeys>;
+    },
+  ): Promise<RevisionSetVerification> {
+    const { bytes, handler } = await MajikSignatureEmbed._prepare(
+      finalFile,
+      options,
+    );
+    const raw = await handler.extract(bytes);
+    if (!raw)
+      throw new MajikSignatureError(
+        "Cannot verify revisions — no embedded envelope found.",
+      );
+
+    const envelope = MajikSignatureEnvelope.fromJSON(raw);
+    const chain = envelope.fileVersions;
+    if (chain.length === 0) {
+      throw new MajikSignatureError(
+        "This file has no fileVersions chain to verify against.",
+      );
+    }
+
+    // Normalize + strip every supplied revision up front. Include finalFile
+    // to ensure the final state is naturally matchable without forcing
+    // the caller to pass it twice.
+    const normalized = await Promise.all(
+      [...revisions, finalFile].map(async (input) => {
+        const revBlob = normalizeToBlob(await normalizeToBytes(input));
+        const { bytes: rBytes, handler: rHandler } =
+          await MajikSignatureEmbed._prepare(revBlob);
+        const stripped = await rHandler.strip(rBytes);
+        return { stripped, contentHash: bytesToBase64(hashContent(stripped)) };
+      }),
+    );
+    const results: RevisionCheckResult[] = [];
+
+    for (let i = 0; i < chain.length; i++) {
+      const entry = chain[i];
+      const match = normalized.find((r) => r.contentHash === entry.contentHash);
+      if (!match) {
+        results.push({
+          version: entry.version,
+          status: "unmatched",
+          reason: `No supplied file matches fileVersions[${i}].`,
+        });
+        continue;
+      }
+
+      const expectedPrev =
+        i === 0
+          ? undefined
+          : MajikSignatureEnvelope.hashFileVersionEntry(chain[i - 1]);
+      if (entry.previousVersionHash !== expectedPrev) {
+        results.push({
+          version: entry.version,
+          status: "chain_broken",
+          reason: `fileVersions[${i}] does not chain onto the prior entry.`,
+        });
+        continue;
+      }
+      const expectedChainHash = MajikSignatureEnvelope.hashFileVersionChain(
+        chain.slice(0, i + 1),
+      );
+
+      const sig = envelope.signatures.find(
+        (s) =>
+          s.contentHash === entry.contentHash &&
+          (entry.createdBy ? s.signerId === entry.createdBy : true) &&
+          (s.versionChainHash
+            ? s.versionChainHash === expectedChainHash
+            : true),
+      );
+
+      if (!sig) {
+        results.push({
+          version: entry.version,
+          status: "unmatched",
+          reason: `No signature matches fileVersions[${i}].`,
+        });
+        continue;
+      }
+
+      if (sig.versionChainHash && sig.versionChainHash !== expectedChainHash) {
+        results.push({
+          version: entry.version,
+          status: "chain_broken",
+          signerId: sig.signerId,
+          reason:
+            "versionChainHash does not match this revision's chain state.",
+        });
+        continue;
+      }
+
+      const publicKeys = options?.resolvePublicKeys
+        ? await options.resolvePublicKeys(sig.signerId)
+        : {
+            signerId: sig.signerId,
+            edPublicKey: base64ToBytes(sig.signerEdPublicKey),
+            mlDsaPublicKey: base64ToBytes(sig.signerMlDsaPublicKey),
+          };
+
+      const verifyResult = MajikSig.verify(
+        match.stripped,
+        sig,
+        publicKeys,
+        options?.now,
+      );
+      results.push({
+        version: entry.version,
+        status: verifyResult.valid ? "verified" : "signature_invalid",
+        signerId: sig.signerId,
+        reason: verifyResult.reason,
+      });
+    }
+
+    return {
+      allValid:
+        results.length === chain.length &&
+        results.every((r) => r.status === "verified"),
+      isCompleteSet: results.every((r) => r.status !== "unmatched"),
+      results,
+    };
   }
 
   // ── seal ───────────────────────────────────────────────────────────────────

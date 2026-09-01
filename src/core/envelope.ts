@@ -43,6 +43,7 @@ import { hashContent, bytesToBase64 } from "./hash";
 import type {
   EnvelopeInfo,
   ExpectedSigner,
+  FileVersion,
   MajikSignatureEnvelopeJSON,
   MajikSignatureJSON,
   SealInfo,
@@ -80,6 +81,7 @@ export class MajikSignatureEnvelope {
   private readonly _sealTimestamp?: string;
   private readonly _sealedBy?: string;
   private readonly _chainAnchors?: readonly MajikChainAnchor[];
+  private readonly _fileVersions?: readonly FileVersion[];
 
   private constructor(data: MajikSignatureEnvelopeJSON) {
     this._version = data.version;
@@ -90,6 +92,7 @@ export class MajikSignatureEnvelope {
     this._sealTimestamp = data.sealTimestamp;
     this._sealedBy = data.sealedBy;
     this._chainAnchors = data.chainAnchors;
+    this._fileVersions = data.fileVersions;
   }
 
   // ── Getters ─────────────────────────────────────────────────────────────────
@@ -117,6 +120,98 @@ export class MajikSignatureEnvelope {
   }
   get chainAnchors(): readonly MajikChainAnchor[] {
     return this._chainAnchors ?? [];
+  }
+
+  get fileVersions(): readonly FileVersion[] {
+    return this._fileVersions ?? [];
+  }
+  get lastFileVersion(): FileVersion | undefined {
+    return this._fileVersions?.[this._fileVersions.length - 1];
+  }
+
+  // ── Version chain hashing ────────────────────────────────────────────────
+
+  static hashFileVersionEntry(entry: FileVersion): string {
+    return bytesToBase64(hashContent(JSON.stringify(entry)));
+  }
+
+  static hashFileVersionChain(chain: readonly FileVersion[]): string {
+    return bytesToBase64(hashContent(JSON.stringify(chain)));
+  }
+
+  /**
+   * Append a new revision entry. Immutable. Validates the entry chains
+   * correctly onto the current last entry (sequential version number,
+   * previousVersionHash matching the prior entry's hash) before accepting
+   * it — a broken chain fails loudly here, not silently later.
+   */
+  withFileVersion(entry: FileVersion): MajikSignatureEnvelope {
+    if (this.isSealed()) {
+      throw new MajikSignatureError(
+        "Cannot add a file version to a sealed envelope.",
+      );
+    }
+
+    const chain = this._fileVersions ?? [];
+    const last = chain[chain.length - 1];
+    const expectedVersion = last ? last.version + 1 : 1;
+
+    if (entry.version !== expectedVersion) {
+      throw new MajikSignatureValidationError(
+        `FileVersion.version must be ${expectedVersion}, got ${entry.version}`,
+        "version",
+      );
+    }
+
+    const expectedPrevHash = last
+      ? MajikSignatureEnvelope.hashFileVersionEntry(last)
+      : undefined;
+    if (entry.previousVersionHash !== expectedPrevHash) {
+      throw new MajikSignatureValidationError(
+        "FileVersion.previousVersionHash does not chain onto the current last entry.",
+        "previousVersionHash",
+      );
+    }
+
+    return new MajikSignatureEnvelope({
+      ...this.toJSON(),
+      fileVersions: [...chain, entry],
+    });
+  }
+
+  /** Structural chain-linkage check — does not touch any signature. */
+  verifyVersionChainIntegrity(): { valid: boolean; reason?: string } {
+    const chain = this._fileVersions;
+    if (!chain || chain.length === 0) return { valid: true };
+
+    for (let i = 0; i < chain.length; i++) {
+      const entry = chain[i];
+      if (entry.version !== i + 1) {
+        return {
+          valid: false,
+          reason: `fileVersions[${i}].version is ${entry.version}, expected ${i + 1}`,
+        };
+      }
+      if (i === 0) {
+        if (entry.previousVersionHash !== undefined) {
+          return {
+            valid: false,
+            reason: "fileVersions[0] must not have a previousVersionHash",
+          };
+        }
+        continue;
+      }
+      const expectedPrev = MajikSignatureEnvelope.hashFileVersionEntry(
+        chain[i - 1],
+      );
+      if (entry.previousVersionHash !== expectedPrev) {
+        return {
+          valid: false,
+          reason: `fileVersions[${i}].previousVersionHash mismatch`,
+        };
+      }
+    }
+    return { valid: true };
   }
 
   // ── State predicates ─────────────────────────────────────────────────────────
@@ -612,6 +707,7 @@ export class MajikSignatureEnvelope {
       ...(this._sealTimestamp ? { sealTimestamp: this._sealTimestamp } : {}),
       ...(this._sealedBy ? { sealedBy: this._sealedBy } : {}),
       ...(this._chainAnchors ? { chainAnchors: [...this._chainAnchors] } : {}),
+      ...(this._fileVersions ? { fileVersions: [...this._fileVersions] } : {}),
     };
   }
 
@@ -980,6 +1076,18 @@ export class MajikSignatureEnvelope {
         "chainAnchors must be an array when present",
         "chainAnchors",
       );
+    }
+
+    const hasFileVersions = obj.fileVersions !== undefined;
+
+    if (hasFileVersions) {
+      const typedFileVersion = obj.fileVersions as FileVersion[];
+      if (!Array.isArray(typedFileVersion)) {
+        throw new MajikSignatureValidationError(
+          "fileVersions must be an array when present",
+          "fileVersions",
+        );
+      }
     }
   }
 

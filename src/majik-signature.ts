@@ -34,6 +34,8 @@ import type {
   ED25519Signature,
   EnvelopeInfo,
   ExpectedSigner,
+  FileChainVerification,
+  FileLike,
   FileVerifyResult,
   MajikSignatureCompactJSON,
   MajikSignatureEnvelopeJSON,
@@ -43,6 +45,8 @@ import type {
   MajikTSAPayload,
   MajikTSARequest,
   MLDSA87Signature,
+  RevisionCommitmentResult,
+  RevisionSetVerification,
   SealInfo,
   SealVerificationResult,
   SignatoriesFilter,
@@ -129,6 +133,7 @@ export class MajikSignature {
   private readonly _mlDsaSignature: MLDSA87Signature;
   private readonly _allowlistHash?: string;
   private readonly _validUntil?: ISODateString;
+  private readonly _versionChainHash?: string;
   private _tsa?: MajikTimestamp;
 
   private constructor(data: MajikSignatureJSON) {
@@ -143,6 +148,7 @@ export class MajikSignature {
     this._mlDsaSignature = data.mlDsaSignature;
     this._allowlistHash = data.allowlistHash;
     this._validUntil = data.validUntil;
+    this._versionChainHash = data.versionChainHash;
     this._tsa = data.tsa;
   }
 
@@ -194,6 +200,10 @@ export class MajikSignature {
     return this._validUntil;
   }
 
+  get versionChainHash(): string | undefined {
+    return this._versionChainHash;
+  }
+
   get tsa(): MajikTimestamp | undefined {
     return this._tsa;
   }
@@ -229,7 +239,10 @@ export class MajikSignature {
   static async sign(
     content: Uint8Array | string,
     key: MajikKey,
-    options?: SignOptions & { allowlistHash?: string },
+    options?: SignOptions & {
+      allowlistHash?: string;
+      versionChainHash?: string;
+    },
     debug: boolean = false,
   ): Promise<MajikSignature> {
     MajikSignatureValidator.validateContent(content);
@@ -268,6 +281,7 @@ export class MajikSignature {
       const allowlistHash = options?.allowlistHash;
       const validUntil = options?.validUntil; // NEW
 
+      const versionChainHash = options?.versionChainHash;
       const payload = buildSigningPayload({
         signerId,
         timestamp,
@@ -275,6 +289,7 @@ export class MajikSignature {
         contentType,
         allowlistHash,
         validUntil,
+        versionChainHash,
       });
 
       if (debug) console.log("Signing Payload:", payload);
@@ -306,7 +321,8 @@ export class MajikSignature {
         edSignature: bytesToBase64(edSigBytes),
         mlDsaSignature: bytesToBase64(mlDsaSigBytes),
         ...(allowlistHash !== undefined ? { allowlistHash } : {}),
-        ...(validUntil !== undefined ? { validUntil } : {}), // NEW
+        ...(validUntil !== undefined ? { validUntil } : {}),
+        ...(versionChainHash !== undefined ? { versionChainHash } : {}),
       };
 
       return new MajikSignature(envelope);
@@ -381,6 +397,7 @@ export class MajikSignature {
         contentType: env.contentType,
         allowlistHash: env.allowlistHash,
         validUntil: env.validUntil,
+        versionChainHash: env.versionChainHash,
       });
 
       let edOk: boolean;
@@ -433,6 +450,88 @@ export class MajikSignature {
       if (err instanceof MajikSignatureError) throw err;
       throw new MajikSignatureVerificationError(
         "Verification failed unexpectedly",
+        err,
+      );
+    }
+  }
+
+  static verifyCommitment(
+    signature: MajikSignature | MajikSignatureJSON,
+    publicKeys: MajikSignerPublicKeys,
+    now: Date = new Date(),
+  ): RevisionCommitmentResult {
+    try {
+      MajikSignatureValidator.validateSignerPublicKeys(publicKeys);
+      const env: MajikSignatureJSON =
+        signature instanceof MajikSignature ? signature.toJSON() : signature;
+      MajikSignatureValidator.validateJSON(env);
+
+      const invalid = (reason?: string): RevisionCommitmentResult => ({
+        valid: false,
+        signerId: env.signerId,
+        contentHash: env.contentHash,
+        timestamp: env.timestamp,
+        contentType: env.contentType,
+        commitmentOnly: true,
+        ...(reason ? { reason } : {}),
+      });
+
+      const payload = buildSigningPayload({
+        signerId: env.signerId,
+        timestamp: env.timestamp,
+        contentHash: env.contentHash,
+        contentType: env.contentType,
+        allowlistHash: env.allowlistHash,
+        validUntil: env.validUntil,
+        versionChainHash: env.versionChainHash,
+      });
+
+      let edOk: boolean;
+      try {
+        edOk = ed25519.verify(
+          publicKeys.edPublicKey,
+          payload,
+          base64ToBytes(env.edSignature),
+        );
+      } catch {
+        return invalid("Failed to verify Ed25519 signature");
+      }
+      if (!edOk) return invalid("Invalid Ed25519 signature");
+
+      let mlDsaOk: boolean;
+      try {
+        mlDsaOk = ml_dsa87.verify(
+          base64ToBytes(env.mlDsaSignature),
+          payload,
+          publicKeys.mlDsaPublicKey,
+        );
+      } catch {
+        return invalid("Failed to verify ML-DSA-87 signature");
+      }
+      if (!mlDsaOk) return invalid("Invalid ML-DSA-87 signature");
+
+      if (
+        env.validUntil !== undefined &&
+        now.getTime() > Date.parse(env.validUntil)
+      ) {
+        return {
+          ...invalid(`Signature expired at ${env.validUntil}`),
+          expired: true,
+        };
+      }
+
+      return {
+        valid: true,
+        signerId: env.signerId,
+        contentHash: env.contentHash,
+        timestamp: env.timestamp,
+        contentType: env.contentType,
+        commitmentOnly: true,
+      };
+    } catch (err) {
+      if (err instanceof MajikSignatureError) throw err;
+      throw new MajikSignatureVerificationError(
+        "Commitment verification failed unexpectedly",
         err,
       );
     }
@@ -501,6 +600,9 @@ export class MajikSignature {
         ? { validUntil: this._validUntil }
         : {}),
       ...(this._tsa !== undefined ? { tsa: this._tsa } : {}),
+      ...(this._versionChainHash !== undefined
+        ? { versionChainHash: this._versionChainHash }
+        : {}),
     };
   }
 
@@ -645,9 +747,11 @@ export class MajikSignature {
       mimeType?: string;
       expectedSigners?: ExpectedSigner[];
       validUntil?: string;
+      message?: string;
+      priorSignedFile?: Blob;
     },
   ): ReturnType<typeof MajikSignatureEmbed.signAndEmbed<MajikSignature>> {
-    return await MajikSignatureEmbed.signAndEmbed<MajikSignature>(
+    return MajikSignatureEmbed.signAndEmbed<MajikSignature>(
       file,
       key,
       MajikSignature,
@@ -910,6 +1014,32 @@ export class MajikSignature {
       file,
       envelope,
       expectedOrder,
+      MajikSignature,
+      options,
+    );
+  }
+
+  static async verifyFileChain(
+    file: Blob,
+    options?: { mimeType?: string; now?: Date },
+  ): Promise<FileChainVerification> {
+    return MajikSignatureEmbed.verifyFileChain(file, MajikSignature, options);
+  }
+
+  static async verifyFileRevisions(
+    finalFile: Blob,
+    revisions: FileLike[],
+    options?: {
+      mimeType?: string;
+      now?: Date;
+      resolvePublicKeys?: (
+        signerId: string,
+      ) => MajikSignerPublicKeys | Promise<MajikSignerPublicKeys>;
+    },
+  ): Promise<RevisionSetVerification> {
+    return MajikSignatureEmbed.verifyFileRevisions(
+      finalFile,
+      revisions,
       MajikSignature,
       options,
     );
@@ -1383,6 +1513,7 @@ export class MajikSignature {
       mlDsaSignature: this._mlDsaSignature,
       allowlistHash: this._allowlistHash,
       validUntil: this._validUntil,
+      versionChainHash: this._versionChainHash,
     };
   }
 
@@ -1418,6 +1549,7 @@ export class MajikSignature {
       mlDsaSignature: compact.mlDsaSignature,
       allowlistHash: compact.allowlistHash,
       validUntil: compact.validUntil,
+      versionChainHash: compact.versionChainHash,
     };
 
     return MajikSignature.fromJSON(full);

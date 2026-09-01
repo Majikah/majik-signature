@@ -3,11 +3,7 @@
  * Public types for the MajikSignature library.
  */
 
-import type {
-  ISODateString,
-  MajikKeyFingerprint,
-  MajikKeyAddress,
-} from "@majikah/majik-key";
+import type { ISODateString, MajikKeyFingerprint } from "@majikah/majik-key";
 import type { MajikChainAnchor } from "../anchor/types";
 import type { ContentType } from "./constants";
 import type { MajikSignatureEnvelope } from "./envelope";
@@ -69,6 +65,13 @@ export interface MajikSignatureJSON {
    */
   validUntil?: ISODateString;
 
+  /**
+   * SHA-256 of the fileVersions chain as it stood when this signer signed
+   * (i.e. including their own new entry). Covered by the canonical payload,
+   * same treatment as allowlistHash/validUntil — absent, never null.
+   */
+  versionChainHash?: string;
+
   tsa?: MajikTimestamp;
 }
 
@@ -105,6 +108,7 @@ export interface MajikSignatureCompactJSON {
   mlDsaSignature: MLDSA87Signature;
   allowlistHash?: string;
   validUntil?: ISODateString;
+  versionChainHash?: string;
 }
 
 export interface MajikTSARequest {
@@ -188,6 +192,9 @@ export interface MultiSigEnvelope {
   sealedBy?: string;
 
   chainAnchors?: MajikChainAnchor[]; // NEW — array from day one, multi-chain-ready
+
+  /** Append-only revision chain. Absent on files predating this feature. */
+  fileVersions?: FileVersion[];
 }
 
 /**
@@ -542,4 +549,48 @@ export interface MjksMapResolveResult {
   /** Only set when status === "relocated" — where the file now lives
    *  vs. where the map says it was originally signed. */
   originalPath?: string;
+}
+
+export interface FileVersion {
+  version: number; // sequential, 1-indexed
+  timestamp: ISODateString;
+  /** SHA-256 of this revision's stripped bytes, base64 */
+  contentHash: string;
+  /** hash of the ENTIRE prior FileVersion entry — absent only on version 1 */
+  previousVersionHash?: string;
+  createdBy?: MajikKeyFingerprint;
+  message?: string;
+}
+
+// New result shapes:
+export interface RevisionCommitmentResult extends VerificationResult {
+  commitmentOnly: true;
+}
+
+export interface FileChainVerification {
+  latest: VerificationResult;
+  history: RevisionCommitmentResult[];
+  chainValid: boolean;
+}
+
+export type FileLike = Blob | File | Uint8Array | ArrayBuffer;
+export type RevisionCheckStatus =
+  | "verified"
+  | "unmatched" // no supplied file's hash matches this fileVersions entry
+  | "chain_broken" // previousVersionHash or versionChainHash mismatch
+  | "signature_invalid"; // hash matched, but crypto failed
+
+export interface RevisionCheckResult {
+  version: number;
+  status: RevisionCheckStatus;
+  signerId?: MajikKeyFingerprint;
+  reason?: string;
+}
+
+export interface RevisionSetVerification {
+  /** Every fileVersions entry matched a supplied file AND verified. */
+  allValid: boolean;
+  /** The supplied set exactly covers the current fileVersions chain — no gaps. */
+  isCompleteSet: boolean;
+  results: RevisionCheckResult[];
 }
