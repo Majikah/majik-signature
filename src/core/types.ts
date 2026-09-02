@@ -572,7 +572,10 @@ export interface FileChainVerification {
   history: RevisionCommitmentResult[];
   chainValid: boolean;
 }
-
+export type EnvelopeInput = 
+  | MajikSignatureEnvelope 
+  | MajikSignatureEnvelopeJSON 
+  | FileLike;
 export type FileLike = Blob | File | Uint8Array | ArrayBuffer;
 export type RevisionCheckStatus =
   | "verified"

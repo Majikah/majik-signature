@@ -34,6 +34,7 @@ import type {
   EmbedOptions,
   EmbedResult,
   EnvelopeInfo,
+  EnvelopeInput,
   ExpectedSigner,
   ExtractOptions,
   ExtractResult,
@@ -156,7 +157,7 @@ export class MajikSignatureEmbed {
    * Does NOT sign — call signAndEmbed() for sign + embed together.
    */
   static async embed(
-    file: Blob,
+    file: FileLike, // Changed
     signature: MajikSignatureAdapter | MajikSignatureJSON,
     options?: EmbedOptions,
   ): Promise<EmbedResult> {
@@ -202,7 +203,7 @@ export class MajikSignatureEmbed {
    *   8. Embed updated envelope back into the file
    */
   static async signAndEmbed<T extends MajikSignatureAdapter>(
-    file: Blob,
+    file: FileLike,
     key: MajikKey,
     MajikSig: MajikSignatureStaticAdapter,
     options?: EmbedOptions & {
@@ -214,7 +215,7 @@ export class MajikSignatureEmbed {
       /** The file as received, BEFORE this signer's own stamp. Presence of
        *  this option is what makes this call a revision (2nd signer+) rather
        *  than a fresh signature. */
-      priorSignedFile?: Blob;
+      priorSignedFile?: FileLike;
     },
     debug: boolean = false,
   ): Promise<EmbedResult & { signature: T; envelope: MajikSignatureEnvelope }> {
@@ -302,7 +303,7 @@ export class MajikSignatureEmbed {
   // ── Private: read prior file's envelope, verify it fully, bootstrap chain ──
 
   private static async _readAndVerifyPriorEnvelope(
-    priorFile: Blob,
+    priorFile: FileLike,
     MajikSig: MajikSignatureStaticAdapter,
     debug: boolean,
   ): Promise<MajikSignatureEnvelope> {
@@ -501,7 +502,7 @@ export class MajikSignatureEmbed {
   static async signDetached<
     T extends MajikSignatureAdapter = MajikSignatureAdapter,
   >(
-    file: Blob,
+    file: FileLike,
     key: MajikKey,
     MajikSig: MajikSignatureStaticAdapter,
     options?: EmbedOptions & {
@@ -510,11 +511,7 @@ export class MajikSignatureEmbed {
       /** ISO 8601 expiry for this signature. Omit for one that never expires. */
       validUntil?: ISODateString;
       expectedSigners?: ExpectedSigner[];
-      existingEnvelope?:
-        | MajikSignatureEnvelope
-        | MajikSignatureEnvelopeJSON
-        | Uint8Array
-        | Blob;
+      existingEnvelope?: EnvelopeInput;
       tsa?: MajikTimestamp;
     },
     debug: boolean = false,
@@ -647,12 +644,10 @@ export class MajikSignatureEmbed {
         const message = err instanceof Error ? err.message : String(err);
 
         if (!continueOnError) {
-          throw err instanceof MajikSignatureError
-            ? err
-            : new MajikSignatureError(
-                `Batch signing failed on "${file.path}": ${message}`,
-                err,
-              );
+          throw new MajikSignatureError(
+            `Batch signing failed on "${file.path}": ${message}`,
+            err,
+          );
         }
 
         failures.push({ path: file.path, error: message });
@@ -744,7 +739,7 @@ export class MajikSignatureEmbed {
    * Returns null if no signature is found.
    */
   static async extract(
-    file: Blob,
+    file: FileLike,
     options?: ExtractOptions,
   ): Promise<ExtractResult | null> {
     const { bytes, handler } = await MajikSignatureEmbed._prepare(
@@ -766,7 +761,7 @@ export class MajikSignatureEmbed {
    * Returns one VerificationResult per signature in the envelope.
    */
   static async verify(
-    file: Blob,
+    file: FileLike,
     publicKeys: MajikSignerPublicKeys,
     MajikSig: MajikSignatureStaticAdapter,
     options?: ExtractOptions & { expectedSignerId?: string; now?: Date },
@@ -827,7 +822,7 @@ export class MajikSignatureEmbed {
   // ── verifyWithKey ──────────────────────────────────────────────────────────
 
   static async verifyWithKey(
-    file: Blob,
+    file: FileLike,
     key: MajikKey,
     MajikSig: MajikSignatureStaticAdapter,
     options?: ExtractOptions & { expectedSignerId?: string; now?: Date },
@@ -851,12 +846,8 @@ export class MajikSignatureEmbed {
    * ensuring verification runs against the clean original bytes.
    */
   static async verifyDetached(
-    file: Blob,
-    envelopeInput:
-      | MajikSignatureEnvelope
-      | MajikSignatureEnvelopeJSON
-      | Uint8Array
-      | Blob,
+    file: FileLike,
+    envelopeInput: EnvelopeInput,
     publicKeys: MajikSignerPublicKeys,
     MajikSig: MajikSignatureStaticAdapter,
     options?: ExtractOptions & { expectedSignerId?: string; now?: Date }, // FIX
@@ -902,12 +893,8 @@ export class MajikSignatureEmbed {
   // ── verifyDetachedWithKey ──────────────────────────────────────────────────
 
   static async verifyDetachedWithKey(
-    file: Blob,
-    envelopeInput:
-      | MajikSignatureEnvelope
-      | MajikSignatureEnvelopeJSON
-      | Uint8Array
-      | Blob,
+    file: FileLike,
+    envelopeInput: EnvelopeInput,
     key: MajikKey,
     MajikSig: MajikSignatureStaticAdapter,
     options?: ExtractOptions & { expectedSignerId?: string; now?: Date },
@@ -1092,7 +1079,7 @@ export class MajikSignatureEmbed {
    * mixed freely — normalized internally.
    */
   static async verifyFileOrder(
-    file: Blob,
+    file: FileLike,
     expectedOrder: readonly (MajikKey | ExpectedSigner)[],
     MajikSig: MajikSignatureStaticAdapter,
     options?: ExtractOptions & VerifySignatureOrderOptions,
@@ -1132,12 +1119,8 @@ export class MajikSignatureEmbed {
    * (instance, JSON, MJKSIG bytes, or Blob).
    */
   static async verifyDetachedOrder(
-    file: Blob,
-    envelopeInput:
-      | MajikSignatureEnvelope
-      | MajikSignatureEnvelopeJSON
-      | Uint8Array
-      | Blob,
+    file: FileLike,
+    envelopeInput: EnvelopeInput,
     expectedOrder: readonly (MajikKey | ExpectedSigner)[],
     MajikSig: MajikSignatureStaticAdapter,
     options?: ExtractOptions & VerifySignatureOrderOptions,
@@ -1167,7 +1150,7 @@ export class MajikSignatureEmbed {
   }
 
   static async verifyFileChain(
-    file: Blob,
+    file: FileLike,
     MajikSig: MajikSignatureStaticAdapter,
     options?: ExtractOptions & { now?: Date },
   ): Promise<FileChainVerification> {
@@ -1199,7 +1182,7 @@ export class MajikSignatureEmbed {
   }
 
   static async verifyFileRevisions(
-    finalFile: Blob,
+    finalFile: FileLike,
     revisions: FileLike[],
     MajikSig: MajikSignatureStaticAdapter,
     options?: ExtractOptions & {
@@ -1336,7 +1319,7 @@ export class MajikSignatureEmbed {
    * Issuer-only / already-sealed checks are enforced by envelope.withSeal().
    */
   static async seal(
-    file: Blob,
+    file: FileLike,
     key: MajikKey,
     options?: ExtractOptions & { timestamp?: string },
   ): Promise<{
@@ -1383,7 +1366,7 @@ export class MajikSignatureEmbed {
   // ── verifySeal ─────────────────────────────────────────────────────────────
 
   static async verifySeal(
-    file: Blob,
+    file: FileLike,
     options?: ExtractOptions,
   ): Promise<SealVerificationResult> {
     const result = await MajikSignatureEmbed.extract(file, options);
@@ -1394,7 +1377,7 @@ export class MajikSignatureEmbed {
   // ── getSealInfo ────────────────────────────────────────────────────────────
 
   static async getSealInfo(
-    file: Blob,
+    file: FileLike,
     options?: ExtractOptions,
   ): Promise<SealInfo | null> {
     const result = await MajikSignatureEmbed.extract(file, options);
@@ -1404,7 +1387,7 @@ export class MajikSignatureEmbed {
   // ── isSealed ───────────────────────────────────────────────────────────────
 
   static async isSealed(
-    file: Blob,
+    file: FileLike,
     options?: ExtractOptions,
   ): Promise<boolean> {
     const result = await MajikSignatureEmbed.extract(file, options);
@@ -1414,7 +1397,7 @@ export class MajikSignatureEmbed {
   // ── isMultiSig ─────────────────────────────────────────────────────────────
 
   static async isMultiSig(
-    file: Blob,
+    file: FileLike,
     options?: ExtractOptions,
   ): Promise<boolean> {
     const result = await MajikSignatureEmbed.extract(file, options);
@@ -1424,7 +1407,7 @@ export class MajikSignatureEmbed {
   // ── canSign ────────────────────────────────────────────────────────────────
 
   static async canSign(
-    file: Blob,
+    file: FileLike,
     key: MajikKey,
     options?: ExtractOptions,
   ): Promise<{ permitted: boolean; reason?: string }> {
@@ -1437,7 +1420,7 @@ export class MajikSignatureEmbed {
   // ── getSignatories ─────────────────────────────────────────────────────────
 
   static async getSignatories(
-    file: Blob,
+    file: FileLike,
     options?: ExtractOptions,
     filter?: SignatoriesFilter,
   ): Promise<SignatoriesResult | null> {
@@ -1448,7 +1431,7 @@ export class MajikSignatureEmbed {
   // ── getIssuer ──────────────────────────────────────────────────────────────
 
   static async getIssuer(
-    file: Blob,
+    file: FileLike,
     options?: ExtractOptions,
   ): Promise<import("../../core/types").SignatoryInfo | null> {
     const result = await MajikSignatureEmbed.extract(file, options);
@@ -1458,7 +1441,7 @@ export class MajikSignatureEmbed {
   // ── getEnvelopeInfo ────────────────────────────────────────────────────────
 
   static async getEnvelopeInfo(
-    file: Blob,
+    file: FileLike,
     options?: ExtractOptions,
   ): Promise<EnvelopeInfo | null> {
     const result = await MajikSignatureEmbed.extract(file, options);
@@ -1467,7 +1450,7 @@ export class MajikSignatureEmbed {
 
   // ── strip ──────────────────────────────────────────────────────────────────
 
-  static async strip(file: Blob, options?: ExtractOptions): Promise<Blob> {
+  static async strip(file: FileLike, options?: ExtractOptions): Promise<Blob> {
     const { bytes, mimeType, handler } = await MajikSignatureEmbed._prepare(
       file,
       options,
@@ -1479,7 +1462,7 @@ export class MajikSignatureEmbed {
   // ── hasSignature ───────────────────────────────────────────────────────────
 
   static async hasSignature(
-    file: Blob,
+    file: FileLike,
     options?: ExtractOptions,
   ): Promise<boolean> {
     const result = await MajikSignatureEmbed.extract(file, options);
@@ -1489,7 +1472,7 @@ export class MajikSignatureEmbed {
   // ── getAllowlist ───────────────────────────────────────────────────────────
 
   static async getAllowlist(
-    file: Blob,
+    file: FileLike,
     options?: ExtractOptions,
   ): Promise<ExpectedSigner[] | null> {
     const result = await MajikSignatureEmbed.extract(file, options);
@@ -1506,7 +1489,7 @@ export class MajikSignatureEmbed {
   // ── canAnchor ──────────────────────────────────────────────────────────────
 
   static async canAnchor(
-    file: Blob,
+    file: FileLike,
     options?: ExtractOptions,
   ): Promise<{ permitted: boolean; reason?: string }> {
     const result = await MajikSignatureEmbed.extract(file, options);
@@ -1527,7 +1510,7 @@ export class MajikSignatureEmbed {
    * envelope.withChainAnchor().
    */
   static async registerChainAnchor(
-    file: Blob,
+    file: FileLike,
     anchor: MajikChainAnchor,
     options?: ExtractOptions,
   ): Promise<EmbedResult> {
@@ -1559,7 +1542,7 @@ export class MajikSignatureEmbed {
   // ── getChainAnchors ────────────────────────────────────────────────────────
 
   static async getChainAnchors(
-    file: Blob,
+    file: FileLike,
     options?: ExtractOptions,
   ): Promise<MajikChainAnchor[]> {
     const result = await MajikSignatureEmbed.extract(file, options);
@@ -1572,14 +1555,20 @@ export class MajikSignatureEmbed {
   // nearly every public method.
 
   private static async _prepare(
-    file: Blob,
+    file: FileLike,
     options?: { mimeType?: string; forceFallback?: boolean },
   ): Promise<{ bytes: Uint8Array; mimeType: string; handler: FormatHandler }> {
-    const bytes = await blobToBytes(file);
-    const mimeType = options?.mimeType ?? detectMimeType(bytes, file.type);
+    // Leverage your existing util instead of blobToBytes
+    const bytes = await normalizeToBytes(file);
+
+    // Safely extract type only if it's a Blob/File
+    const declaredType = file instanceof Blob ? file.type : undefined;
+    const mimeType = options?.mimeType ?? detectMimeType(bytes, declaredType);
+
     const handler = options?.forceFallback
       ? new FallbackHandler()
       : DEFAULT_REGISTRY.resolve(bytes, mimeType);
+
     return { bytes, mimeType, handler };
   }
 

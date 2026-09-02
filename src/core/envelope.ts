@@ -42,7 +42,9 @@ import {
 import { hashContent, bytesToBase64 } from "./hash";
 import type {
   EnvelopeInfo,
+  EnvelopeInput,
   ExpectedSigner,
+  FileLike,
   FileVersion,
   MajikSignatureEnvelopeJSON,
   MajikSignatureJSON,
@@ -53,6 +55,7 @@ import type {
   SignatoryInfo,
 } from "./types";
 import type { MajikChainAnchor } from "../anchor/types";
+import { normalizeToBytes } from "./embed/utils";
 
 // ─── Allowlist check result ───────────────────────────────────────────────────
 
@@ -806,10 +809,10 @@ export class MajikSignatureEnvelope {
    * requires awaiting its bytes, which is why this method is async.
    */
   static async fromMJKSIG(
-    input: Blob | Uint8Array,
+    input: FileLike, // Changed from Blob | Uint8Array
   ): Promise<MajikSignatureEnvelope> {
-    const raw =
-      input instanceof Blob ? new Uint8Array(await input.arrayBuffer()) : input;
+    // Replaces the manual `input instanceof Blob` check
+    const raw = await normalizeToBytes(input);
 
     return MajikSignatureEnvelope.#parseMJKSIGBytes(raw);
   }
@@ -870,11 +873,12 @@ export class MajikSignatureEnvelope {
    * validate the payload. For a Blob, slices only the header bytes rather
    * than reading the whole file, so this stays cheap even on large inputs.
    */
-  static async isMJKSIG(input: Blob | Uint8Array): Promise<boolean> {
+  static async isMJKSIG(input: FileLike): Promise<boolean> {
+    // If it's a Blob/File, slice safely to avoid loading massive files into memory
     const header =
       input instanceof Blob
         ? new Uint8Array(await input.slice(0, MJKSIG_MAGIC_LEN).arrayBuffer())
-        : input;
+        : (await normalizeToBytes(input)).slice(0, MJKSIG_MAGIC_LEN); // Handles Uint8Array/ArrayBuffer
 
     if (header.length < MJKSIG_MAGIC_LEN) return false;
     for (let i = 0; i < MJKSIG_MAGIC_LEN; i++) {
@@ -888,14 +892,14 @@ export class MajikSignatureEnvelope {
    * Returns null if the input isn't MJKSIG-shaped at all.
    */
   static async getMJKSIGVersion(
-    input: Blob | Uint8Array,
+    input: FileLike, // Changed from Blob | Uint8Array
   ): Promise<number | null> {
     const header =
       input instanceof Blob
         ? new Uint8Array(
             await input.slice(0, MJKSIG_MAGIC_LEN + 1).arrayBuffer(),
           )
-        : input;
+        : (await normalizeToBytes(input)).slice(0, MJKSIG_MAGIC_LEN + 1);
 
     if (!(await MajikSignatureEnvelope.isMJKSIG(header))) return null;
     if (header.length < MJKSIG_MAGIC_LEN + 1) return null;
@@ -975,18 +979,27 @@ export class MajikSignatureEnvelope {
    * existing call site is already inside an async method, so this only
    * costs an added `await` at each call site — no structural changes.
    */
-  static async from(
-    input:
-      | MajikSignatureEnvelope
-      | MajikSignatureEnvelopeJSON
-      | Uint8Array
-      | Blob,
-  ): Promise<MajikSignatureEnvelope> {
+  static async from(input: EnvelopeInput): Promise<MajikSignatureEnvelope> {
     if (input instanceof MajikSignatureEnvelope) return input;
-    if (input instanceof Uint8Array || input instanceof Blob) {
-      return MajikSignatureEnvelope.fromMJKSIG(input);
+
+    // Distinguish FileLike (binary/Blob) from MajikSignatureEnvelopeJSON (plain object)
+    // A simple check: if it has the required JSON shape, parse it as JSON.
+    const isPlainJson =
+      typeof input === "object" &&
+      input !== null &&
+      "signatures" in input &&
+      !("arrayBuffer" in input) && // Exclude Blob/File
+      !(input instanceof Uint8Array) &&
+      !(input instanceof ArrayBuffer);
+
+    if (isPlainJson) {
+      return MajikSignatureEnvelope.fromJSON(
+        input as MajikSignatureEnvelopeJSON,
+      );
     }
-    return MajikSignatureEnvelope.fromJSON(input);
+
+    // Otherwise, treat as FileLike MJKSIG binary
+    return MajikSignatureEnvelope.fromMJKSIG(input as FileLike);
   }
 
   validate(): void {
