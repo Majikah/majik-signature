@@ -53,7 +53,7 @@
     "test:legacy:text": "npx vitest test/fix/text-handler.test.ts"
   },
   "dependencies": {
-    "@majikah/majik-key": "^0.4.0",
+    "@majikah/majik-key": "^0.5.2",
     "@noble/hashes": "^2.4.0",
     "@noble/post-quantum": "^0.7.1",
     "@stablelib/ed25519": "^2.1.0",
