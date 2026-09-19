@@ -111,11 +111,13 @@ export interface MajikSignatureCompactJSON {
   versionChainHash?: string;
 }
 
+export interface TSADigest {
+  algorithm: "SHA-256";
+  value: string;
+}
+
 export interface MajikTSARequest {
-  digest: {
-    algorithm: "SHA-256";
-    value: string;
-  };
+  digest: TSADigest;
 }
 
 export interface MajikTimestamp {
@@ -386,6 +388,8 @@ export interface FormatHandler {
   embed(bytes: Uint8Array, signatureJson: string): Promise<Uint8Array>;
   extract(bytes: Uint8Array): Promise<string | null>;
   strip(bytes: Uint8Array): Promise<Uint8Array>;
+  /** Optional: reason to show when a signature marker exists but no well-formed block was found. */
+  diagnose?(bytes: Uint8Array): string | null;
 }
 
 // ─── Embed / Extract Results ──────────────────────────────────────────────────
@@ -572,9 +576,9 @@ export interface FileChainVerification {
   history: RevisionCommitmentResult[];
   chainValid: boolean;
 }
-export type EnvelopeInput = 
-  | MajikSignatureEnvelope 
-  | MajikSignatureEnvelopeJSON 
+export type EnvelopeInput =
+  | MajikSignatureEnvelope
+  | MajikSignatureEnvelopeJSON
   | FileLike;
 export type FileLike = Blob | File | Uint8Array | ArrayBuffer;
 export type RevisionCheckStatus =

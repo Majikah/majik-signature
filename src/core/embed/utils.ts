@@ -321,3 +321,21 @@ export function toZippable(files: Record<string, Uint8Array>) {
   }
   return out;
 }
+
+
+export function matchesAt(bytes: Uint8Array, pattern: Uint8Array, offset: number): boolean {
+  if (offset < 0 || offset + pattern.length > bytes.length) return false;
+  for (let i = 0; i < pattern.length; i++) if (bytes[offset + i] !== pattern[i]) return false;
+  return true;
+}
+
+export function includesBytes(bytes: Uint8Array, pattern: Uint8Array): boolean {
+  if (pattern.length === 0) return true;
+  const first = pattern[0];
+  let i = bytes.indexOf(first);
+  while (i !== -1) {
+    if (matchesAt(bytes, pattern, i)) return true;
+    i = bytes.indexOf(first, i + 1);
+  }
+  return false;
+}

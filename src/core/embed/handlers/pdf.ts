@@ -1,36 +1,29 @@
 /**
  * handlers/pdf.ts — PDF handler
  *
- * Embeds the MajikSignature as a binary trailer appended after the PDF's
- * last %%EOF marker. This approach is:
- *   - Deterministic: strip() is a pure byte slice, no parsing
- *   - Non-destructive: the PDF remains valid and openable
- *   - Spec-compliant: appending after %%EOF is allowed by PDF 1.7 §7.5.6
+ * Layout (unchanged, existing signed PDFs stay valid):
+ *   [PDF bytes]["\n%%MajikSig%%\n"][signature JSON utf8][4-byte big-endian length]
  *
- * If you want human-readable metadata visible in Adobe/Preview, call
- * MajikSignatureClient.addDisplayMetadata() after signing — that is a
- * separate display-only step and does not affect verification.
+ * Security invariant (see advisory for 0.4.1):
+ *   The block is parsed FROM THE TAIL using the length field, and must end the
+ *   file exactly. Anything that is not a well-formed tail block is CONTENT and
+ *   stays inside the hashed bytes. Previously strip() cut at the last
+ *   occurrence of the magic anywhere and discarded the rest, so a PDF
+ *   incremental update placed after a "\n%%MajikSig%%\n" comment line was
+ *   never hashed on the detached-verification path.
  */
 
 import { FormatHandler } from "../../types";
+import { concatBytes, includesBytes, matchesAt } from "../utils";
 
 const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46]; // %PDF
 const MAGIC = new TextEncoder().encode("\n%%MajikSig%%\n");
 
+const STRICT_UTF8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+
 export class PdfHandler implements FormatHandler {
   readonly name = "PDF";
   readonly supportedMimeTypes = ["application/pdf"] as const;
-
-  private _findMagic(bytes: Uint8Array): number {
-    outer: for (let i = bytes.length - MAGIC.length; i >= 0; i--) {
-      if (bytes[i] !== MAGIC[0]) continue;
-      for (let j = 1; j < MAGIC.length; j++) {
-        if (bytes[i + j] !== MAGIC[j]) continue outer;
-      }
-      return i;
-    }
-    return -1;
-  }
 
   canHandle(bytes: Uint8Array, mimeType?: string): boolean {
     if (mimeType === "application/pdf") return true;
@@ -43,33 +36,55 @@ export class PdfHandler implements FormatHandler {
     );
   }
 
+  /** Pure append (callers strip first) — same reasoning as TextHandler.embed. */
   async embed(bytes: Uint8Array, signatureJson: string): Promise<Uint8Array> {
-    const clean = await this.strip(bytes);
     const sigBytes = new TextEncoder().encode(signatureJson);
     const lenBytes = new Uint8Array(4);
     new DataView(lenBytes.buffer).setUint32(0, sigBytes.length, false);
-
-    const out = new Uint8Array(
-      clean.length + MAGIC.length + sigBytes.length + lenBytes.length,
-    );
-    out.set(clean, 0);
-    out.set(MAGIC, clean.length);
-    out.set(sigBytes, clean.length + MAGIC.length);
-    out.set(lenBytes, clean.length + MAGIC.length + sigBytes.length);
-    return out;
-  }
-
-  async strip(bytes: Uint8Array): Promise<Uint8Array> {
-    const i = this._findMagic(bytes);
-    return i === -1 ? bytes : bytes.slice(0, i);
+    return concatBytes(bytes, MAGIC, sigBytes, lenBytes);
   }
 
   async extract(bytes: Uint8Array): Promise<string | null> {
-    const i = this._findMagic(bytes);
-    if (i === -1) return null;
-    const sigStart = i + MAGIC.length;
-    const sigEnd = bytes.length - 4;
-    return new TextDecoder().decode(bytes.slice(sigStart, sigEnd));
+    return this.split(bytes)?.payload ?? null;
+  }
+
+  async strip(bytes: Uint8Array): Promise<Uint8Array> {
+    return this.split(bytes)?.original ?? bytes;
+  }
+
+  /** Single tail-anchored parser shared by extract() and strip(). */
+  split(bytes: Uint8Array): { payload: string; original: Uint8Array } | null {
+    if (bytes.length < MAGIC.length + 1 + 4) return null;
+
+    const lenPos = bytes.length - 4;
+    const sigLen = new DataView(
+      bytes.buffer,
+      bytes.byteOffset + lenPos,
+      4,
+    ).getUint32(0, false);
+
+    const sigStart = lenPos - sigLen;
+    if (sigLen === 0 || sigStart < MAGIC.length) return null;
+
+    const magicStart = sigStart - MAGIC.length;
+    if (!matchesAt(bytes, MAGIC, magicStart)) return null;
+
+    let payload: string;
+    try {
+      payload = STRICT_UTF8.decode(bytes.subarray(sigStart, lenPos));
+    } catch {
+      return null;
+    }
+    return { payload, original: bytes.slice(0, magicStart) };
+  }
+
+  diagnose(bytes: Uint8Array): string | null {
+    if (this.split(bytes)) return null;
+    if (!includesBytes(bytes, MAGIC)) return null;
+    return (
+      "A Majik signature marker was found, but no well-formed signature block " +
+      "ends the file. The file may have been modified after signing."
+    );
   }
 }
 

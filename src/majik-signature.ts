@@ -884,7 +884,12 @@ export class MajikSignature {
     file: FileLike,
     envelope: EnvelopeInput,
     keyOrPublicKeys: MajikKey | MajikSignerPublicKeys,
-    options?: { expectedSignerId?: string; mimeType?: string; now?: Date },
+    options?: {
+      expectedSignerId?: string;
+      mimeType?: string;
+      now?: Date;
+      requireCanonical?: boolean;
+    },
     debug: boolean = false,
   ): Promise<VerificationResult[]> {
     if (MajikSignature._isMajikKey(keyOrPublicKeys)) {

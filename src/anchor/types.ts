@@ -15,7 +15,7 @@ export interface MajikChainAnchor {
   version: 1;
   id: string; // internal UUID, matches chain_anchors.id
   payload: MajikChainAnchorPayload;
-  memo: MajikChainAnchorMemo; // exact string written on-chain: "majik-notary-v1:{sealHash}"
+  memo: MajikChainAnchorMemo; // exact string written on-chain: "majik-notary-v-1:{sealHash}"
   txSignature: MajikChainAnchorTxSignature; // base58
   slot: number | null; // null until confirmed
   blockTime: number | null; // Unix seconds, null until confirmed

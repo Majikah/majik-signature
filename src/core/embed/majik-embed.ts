@@ -87,6 +87,11 @@ import {
   verifySignatureOrder,
   VerifySignatureOrderOptions,
 } from "../order";
+import {
+  assertCanonical,
+  noSignatureReason,
+  prepareDetachedBytes,
+} from "./canonical";
 
 // ─── Adapter interfaces ───────────────────────────────────────────────────────
 // Unchanged — these solve the crypto-side circular dependency, orthogonal to
@@ -331,7 +336,14 @@ export class MajikSignatureEmbed {
       );
     }
 
-    const priorStrippedBytes = await priorHandler.strip(priorBytes);
+    const priorCanonical = await assertCanonical(priorHandler, priorBytes, raw);
+    if (!priorCanonical.ok) {
+      throw new MajikSignatureError(
+        `priorSignedFile is not in canonical signed form: ${priorCanonical.reason}`,
+      );
+    }
+    const priorStrippedBytes = priorCanonical.original;
+
     const { ok, latest, history } =
       MajikSignatureEmbed._verifyEnvelopeSelfContained(
         envelope,
@@ -773,7 +785,12 @@ export class MajikSignatureEmbed {
     );
 
     const raw = await handler.extract(bytes);
-    if (!raw) return [MajikSignatureEmbed._noSignatureResult()];
+    if (!raw)
+      return [
+        MajikSignatureEmbed._noSignatureResult(
+          noSignatureReason(handler, bytes),
+        ),
+      ];
 
     let envelope: MajikSignatureEnvelope;
     try {
@@ -788,7 +805,17 @@ export class MajikSignatureEmbed {
       ];
     }
 
-    const originalBytes = await handler.strip(bytes);
+    const canonical = await assertCanonical(handler, bytes, raw);
+    if (!canonical.ok) {
+      return [
+        {
+          valid: false,
+          reason: canonical.reason,
+          timestamp: new Date().toISOString(),
+        },
+      ];
+    }
+    const originalBytes = canonical.original;
 
     if (debug) {
       console.log(
@@ -850,7 +877,11 @@ export class MajikSignatureEmbed {
     envelopeInput: EnvelopeInput,
     publicKeys: MajikSignerPublicKeys,
     MajikSig: MajikSignatureStaticAdapter,
-    options?: ExtractOptions & { expectedSignerId?: string; now?: Date }, // FIX
+    options?: ExtractOptions & {
+      expectedSignerId?: string;
+      now?: Date;
+      requireCanonical?: boolean;
+    }, // FIX
     debug: boolean = false,
   ): Promise<VerificationResult[]> {
     const { bytes, handler } = await MajikSignatureEmbed._prepare(
@@ -859,7 +890,20 @@ export class MajikSignatureEmbed {
     );
 
     const envelope = await MajikSignatureEnvelope.from(envelopeInput);
-    const originalBytes = await handler.strip(bytes);
+    const prepared = await prepareDetachedBytes(handler, bytes, {
+      requireCanonical: options?.requireCanonical,
+      validateEnvelope: (r) => void MajikSignatureEnvelope.fromJSON(r),
+    });
+    if (!prepared.ok) {
+      return [
+        {
+          valid: false,
+          reason: prepared.reason,
+          timestamp: new Date().toISOString(),
+        },
+      ];
+    }
+    const originalBytes = prepared.original;
 
     if (debug) {
       console.log(
@@ -897,7 +941,11 @@ export class MajikSignatureEmbed {
     envelopeInput: EnvelopeInput,
     key: MajikKey,
     MajikSig: MajikSignatureStaticAdapter,
-    options?: ExtractOptions & { expectedSignerId?: string; now?: Date },
+    options?: ExtractOptions & {
+      expectedSignerId?: string;
+      now?: Date;
+      requireCanonical?: boolean;
+    },
     debug: boolean = false,
   ): Promise<VerificationResult[]> {
     const publicKeys = MajikSig.publicKeysFromMajikKey(key);
@@ -1103,7 +1151,12 @@ export class MajikSignatureEmbed {
       }
     }
 
-    const originalBytes = raw ? await handler.strip(bytes) : bytes;
+    let originalBytes = bytes;
+    if (raw) {
+      const c = await assertCanonical(handler, bytes, raw);
+      if (!c.ok) throw new MajikSignatureError(c.reason);
+      originalBytes = c.original;
+    }
 
     return verifySignatureOrder(
       envelope,
@@ -1138,7 +1191,11 @@ export class MajikSignatureEmbed {
       );
     }
 
-    const originalBytes = await handler.strip(bytes);
+    const prepared = await prepareDetachedBytes(handler, bytes, {
+      validateEnvelope: (r) => void MajikSignatureEnvelope.fromJSON(r),
+    });
+    if (!prepared.ok) throw new MajikSignatureError(prepared.reason);
+    const originalBytes = prepared.original;
 
     return verifySignatureOrder(
       envelope,
@@ -1165,7 +1222,9 @@ export class MajikSignatureEmbed {
       );
 
     const envelope = MajikSignatureEnvelope.fromJSON(raw);
-    const originalBytes = await handler.strip(bytes);
+    const canonical = await assertCanonical(handler, bytes, raw);
+    if (!canonical.ok) throw new MajikSignatureError(canonical.reason);
+    const originalBytes = canonical.original;
 
     const allowlistIntegrity = envelope.verifyAllowlistIntegrity();
     const chainIntegrity = envelope.verifyVersionChainIntegrity();
@@ -1213,15 +1272,31 @@ export class MajikSignatureEmbed {
     // Normalize + strip every supplied revision up front. Include finalFile
     // to ensure the final state is naturally matchable without forcing
     // the caller to pass it twice.
-    const normalized = await Promise.all(
-      [...revisions, finalFile].map(async (input) => {
-        const revBlob = normalizeToBlob(await normalizeToBytes(input));
-        const { bytes: rBytes, handler: rHandler } =
-          await MajikSignatureEmbed._prepare(revBlob);
-        const stripped = await rHandler.strip(rBytes);
-        return { stripped, contentHash: bytesToBase64(hashContent(stripped)) };
-      }),
+    const normalized = (
+      await Promise.all(
+        [...revisions, finalFile].map(async (input) => {
+          const revBlob = normalizeToBlob(await normalizeToBytes(input));
+          const { bytes: rBytes, handler: rHandler } =
+            await MajikSignatureEmbed._prepare(revBlob);
+          const rRaw = await rHandler.extract(rBytes);
+          let stripped: Uint8Array;
+          if (rRaw !== null) {
+            const c = await assertCanonical(rHandler, rBytes, rRaw);
+            if (!c.ok) return null; // non-canonical revision can't be matched
+            stripped = c.original;
+          } else {
+            stripped = await rHandler.strip(rBytes);
+          }
+          return {
+            stripped,
+            contentHash: bytesToBase64(hashContent(stripped)),
+          };
+        }),
+      )
+    ).filter(
+      (r): r is { stripped: Uint8Array; contentHash: string } => r !== null,
     );
+
     const results: RevisionCheckResult[] = [];
 
     for (let i = 0; i < chain.length; i++) {
@@ -1583,12 +1658,10 @@ export class MajikSignatureEmbed {
       : MajikSignatureEnvelope.empty();
   }
 
-  private static _noSignatureResult(): VerificationResult {
-    return {
-      valid: false,
-      reason: "No embedded signature found",
-      timestamp: new Date().toISOString(),
-    };
+  private static _noSignatureResult(
+    reason = "No embedded signature found",
+  ): VerificationResult {
+    return { valid: false, reason, timestamp: new Date().toISOString() };
   }
 
   /**

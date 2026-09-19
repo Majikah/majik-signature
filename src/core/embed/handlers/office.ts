@@ -32,6 +32,21 @@ const OFFICE_MIME_TYPES = [
 ];
 
 const ZIP_MAGIC = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+const SNIFF_ENTRIES = new Set(["[Content_Types].xml", "mimetype"]);
+const MAX_SIGNATURE_ENTRY_BYTES = 8 * 1024 * 1024;
+export const MAX_UNZIPPED_BYTES = 512 * 1024 * 1024;
+
+function unzipBounded(bytes: Uint8Array): Record<string, Uint8Array> {
+  let total = 0;
+  return unzipSync(bytes, {
+    filter: (f) => {
+      total += f.originalSize;
+      if (total > MAX_UNZIPPED_BYTES)
+        throw new Error("Archive too large to process");
+      return true;
+    },
+  });
+}
 
 export class OfficeHandler implements FormatHandler {
   readonly name = "Office (DOCX/XLSX/PPTX/ODF)";
@@ -46,7 +61,11 @@ export class OfficeHandler implements FormatHandler {
 
     // Distinguish from plain ZIP by checking for Office content types file
     try {
-      const files = unzipSync(bytes);
+      const files = unzipSync(bytes, {
+        filter: (f) =>
+          SNIFF_ENTRIES.has(f.name) &&
+          f.originalSize <= MAX_SIGNATURE_ENTRY_BYTES,
+      });
       return (
         "[Content_Types].xml" in files || "mimetype" in files // ODF
       );
@@ -57,7 +76,7 @@ export class OfficeHandler implements FormatHandler {
 
   async embed(bytes: Uint8Array, signatureJson: string): Promise<Uint8Array> {
     try {
-      const files = unzipSync(bytes);
+      const files = unzipBounded(bytes);
       delete files[OFFICE_ZIP_ENTRY];
       files[OFFICE_ZIP_ENTRY] = strToU8(signatureJson);
       return zipSync(toZippable(files), { level: 0 });
@@ -69,7 +88,11 @@ export class OfficeHandler implements FormatHandler {
   async extract(bytes: Uint8Array): Promise<string | null> {
     if (!this.canHandle(bytes)) return null;
     try {
-      const files = unzipSync(bytes);
+      const files = unzipSync(bytes, {
+        filter: (f) =>
+          f.name === OFFICE_ZIP_ENTRY &&
+          f.originalSize <= MAX_SIGNATURE_ENTRY_BYTES,
+      });
       if (!(OFFICE_ZIP_ENTRY in files)) return null;
       return strFromU8(files[OFFICE_ZIP_ENTRY]);
     } catch {
@@ -80,7 +103,7 @@ export class OfficeHandler implements FormatHandler {
   async strip(bytes: Uint8Array): Promise<Uint8Array> {
     if (!this.canHandle(bytes)) return bytes;
     try {
-      const files = unzipSync(bytes);
+      const files = unzipBounded(bytes);
       // Always re-canonicalize — even when there's no signature entry
       // yet (first sign). sign() hashes whatever this returns; verify()
       // must be able to reproduce the *exact same* bytes later. Short-
