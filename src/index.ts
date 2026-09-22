@@ -15,6 +15,8 @@ export * from "./core/errors";
 // ── Constants ─────────────────────────────────────────────────────────────────
 export * from "./core/constants";
 
+export * from "./core/embed/handlers";
+
 export * from "./core/embed/majik-embed";
 
 export * from "./core/envelope";

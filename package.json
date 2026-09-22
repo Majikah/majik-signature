@@ -49,8 +49,10 @@
     "package": "npm run build && npm version patch && git push && git push --tags",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:legacy": "npx vitest test/handler.test.ts",
-    "test:legacy:text": "npx vitest test/fix/text-handler.test.ts"
+    "test:legacy": "vitest run test/handler.test.ts",
+    "test:legacy:text": "vitest run  test/fix/text-handler.test.ts",
+    "test:handlers": "vitest run test/mjksig-file-handler.test.ts",
+    "test:core": "vitest run test/majik-signature.test.ts"
   },
   "dependencies": {
     "@majikah/majik-key": "^0.5.2",

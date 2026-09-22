@@ -1,0 +1,10 @@
+export { PdfHandler } from "./pdf";
+export { PngHandler } from "./png";
+export { JpegHandler } from "./jpeg";
+export { WavHandler } from "./wav";
+export { Mp3Handler } from "./mp3";
+export { Mp4Handler } from "./mp4";
+export { FlacHandler } from "./flac";
+export { MkvHandler } from "./mkv";
+export { OfficeHandler } from "./office";
+export { TextHandler } from "./text";

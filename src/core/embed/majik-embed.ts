@@ -3,22 +3,36 @@
  *
  * Universal MajikSignature embedding and extraction for any file format.
  *
+ * @remarks
+ * This module is the file-orchestration layer of Majik Signature. It does not
+ * own the signing primitives themselves; instead, it coordinates file bytes,
+ * format handlers, `MajikSignatureEnvelope`, and a small crypto adapter that
+ * supplies the actual `sign()` / `verify()` operations.
+ *
+ * The public APIs are intentionally expressed in terms of `FileLike` so the
+ * same code can be used with browser `Blob`/`File` objects as well as raw
+ * `Uint8Array` / `ArrayBuffer` data in Node.js, Bun, Deno, and Tauri.
+ *
  * Circular dependency note:
  * ─────────────────────────
- * majik-embed lives inside the majik-signature package and cannot import
- * MajikSignature directly — that would create a circular dependency:
+ * `majik-embed` lives inside the majik-signature package and cannot import
+ * `MajikSignature` directly — that would create a circular dependency:
  *
  *   majik-signature → majik-embed → majik-signature  ✗
  *
- * Operations that need MajikSignature (signing, verifying) receive it via
- * the MajikSignatureStaticAdapter interface — no circular import needed.
+ * Operations that need `MajikSignature` (signing, verifying) receive it via
+ * the `MajikSignatureStaticAdapter` interface — no circular import needed.
  *
- * MajikSignatureEnvelope, by contrast, is pure/structural (no crypto), so it
+ * `MajikSignatureEnvelope`, by contrast, is pure/structural (no crypto), so it
  * IS imported directly here — no adapter required for it. All parsing,
  * validation, allowlist enforcement, seal computation, and signatory/issuer
  * resolution now live on that class (core/envelope.ts). This file is
  * reduced to file-format orchestration: read bytes → resolve handler →
  * extract/strip → delegate to the envelope class → re-embed.
+ *
+ * @internal
+ * This module is primarily an implementation-level orchestration surface.
+ * The public `MajikSignature` class exposes the higher-level user-facing API.
  */
 
 import type { ISODateString, MajikKey } from "@majikah/majik-key";
@@ -43,7 +57,6 @@ import type {
   FileVerifyResult,
   FileVersion,
   FormatHandler,
-  MajikSignatureEnvelopeJSON,
   MajikSignatureJSON,
   MajikSignerPublicKeys,
   MajikTimestamp,
@@ -60,23 +73,25 @@ import type {
 import { MajikSignatureEnvelope } from "../../core/envelope";
 import { FormatHandlerRegistry } from "./registry";
 import {
-  blobToBytes,
   bytesToBlob,
   detectMimeType,
   normalizeToBlob,
   normalizeToBytes,
 } from "./utils";
 
-import { PdfHandler } from "./handlers/pdf";
-import { PngHandler } from "./handlers/png";
-import { JpegHandler } from "./handlers/jpeg";
-import { WavHandler } from "./handlers/wav";
-import { Mp3Handler } from "./handlers/mp3";
-import { Mp4Handler } from "./handlers/mp4";
-import { FlacHandler } from "./handlers/flac";
-import { MkvHandler } from "./handlers/mkv";
-import { OfficeHandler } from "./handlers/office";
-import { TextHandler } from "./handlers/text";
+import {
+  PdfHandler,
+  PngHandler,
+  FlacHandler,
+  JpegHandler,
+  MkvHandler,
+  Mp3Handler,
+  Mp4Handler,
+  OfficeHandler,
+  TextHandler,
+  WavHandler,
+} from "./handlers";
+
 import { FallbackHandler } from "./fallback";
 import { base64ToBytes, bytesToBase64, hashContent } from "../hash";
 import { MajikSignatureError, MajikSignatureValidationError } from "../errors";
@@ -94,20 +109,64 @@ import {
 } from "./canonical";
 
 // ─── Adapter interfaces ───────────────────────────────────────────────────────
-// Unchanged — these solve the crypto-side circular dependency, orthogonal to
-// the envelope class (see file header).
 
+/**
+ * Minimal instance-level bridge between `MajikSignatureEmbed` and the concrete
+ * `MajikSignature` class.
+ *
+ * @remarks
+ * The adapter exists solely to break the `MajikSignature ↔ majik-embed`
+ * circular dependency. `MajikSignatureEmbed` only needs to serialize a
+ * produced signature and, optionally, attach a trusted timestamp.
+ *
+ * Implementations may expose additional methods; only the members declared
+ * here are consumed by this module.
+ */
 export interface MajikSignatureAdapter {
-  toJSON(): MajikSignatureJSON;
   /**
-   * Optional — attach a TSA timestamp to this signature. Present because
-   * MajikSignature implements it; declared optional here so any future
-   * adapter that doesn't support TSA still satisfies this interface.
+   * Return the complete wire-format representation of this signature.
+   *
+   * @remarks
+   * The returned object is inserted into a `MajikSignatureEnvelope`. It must
+   * therefore contain the signer keys, content hash, timestamp, and both
+   * hybrid signature values expected by `MajikSignatureJSON`.
+   */
+  toJSON(): MajikSignatureJSON;
+
+  /**
+   * Attach and validate a trusted timestamp to this signature, when supported.
+   *
+   * @remarks
+   * This member is optional so adapters that do not implement TSA support can
+   * still satisfy the interface. Callers requesting TSA explicitly must treat
+   * its absence as an error rather than silently dropping the timestamp.
    */
   addTSA?(tsa: MajikTimestamp): void;
 }
 
+/**
+ * Static crypto bridge consumed by `MajikSignatureEmbed`.
+ *
+ * @remarks
+ * This interface represents the subset of `MajikSignature` functionality
+ * needed by the embedding layer. Keeping it structural prevents a runtime
+ * circular import while preserving strong typing between the two modules.
+ *
+ * The adapter owns cryptographic signing and verification; this file owns
+ * byte preparation, handler selection, envelope orchestration, and result
+ * packaging.
+ */
 export interface MajikSignatureStaticAdapter {
+  /**
+   * Create a hybrid signature over content bytes.
+   *
+   * @param content Content bytes (or a UTF-8 string) to sign.
+   * @param key Unlocked `MajikKey` containing the signing material.
+   * @param options Standard signing options plus internal commitments used by
+   * file-level workflows such as allowlists and revision chains.
+   * @returns A signature adapter whose `toJSON()` result can be inserted into
+   * an envelope.
+   */
   sign(
     content: Uint8Array | string,
     key: MajikKey,
@@ -117,6 +176,17 @@ export interface MajikSignatureStaticAdapter {
     },
   ): Promise<MajikSignatureAdapter>;
 
+  /**
+   * Verify one signature against content and the caller-supplied public keys.
+   *
+   * @param content Canonical content bytes being verified.
+   * @param signature Signature adapter or serialized signature JSON.
+   * @param publicKeys Public keys that the caller has chosen to trust for the
+   * signer being checked.
+   * @param now Optional verification time used when evaluating `validUntil`.
+   * @returns A normal verification result; cryptographic failure is reported
+   * as `valid: false` rather than as an exception in the normal case.
+   */
   verify(
     content: Uint8Array | string,
     signature: MajikSignatureAdapter | MajikSignatureJSON,
@@ -124,15 +194,31 @@ export interface MajikSignatureStaticAdapter {
     now?: Date,
   ): VerificationResult;
 
-  /** Commitment-only check — no content bytes required. See MajikSignature.verifyCommitment. */
+  /**
+   * Verify the cryptographic commitment carried by a signature without the
+   * original content bytes.
+   *
+   * @remarks
+   * Used for earlier revisions in self-contained file-chain verification.
+   * This checks the canonical signature commitment and expiry, but cannot
+   * independently prove that the referenced historical content bytes existed.
+   */
   verifyCommitment(
     signature: MajikSignatureAdapter | MajikSignatureJSON,
     publicKeys: MajikSignerPublicKeys,
     now?: Date,
   ): VerificationResult;
 
+  /**
+   * Extract public verification keys from a `MajikKey`.
+   *
+   * @remarks
+   * This operation only needs public material and therefore also works with a
+   * locked key, provided the underlying `MajikKey` can expose its public keys.
+   */
   publicKeysFromMajikKey(key: MajikKey): MajikSignerPublicKeys;
 
+  /** Rehydrate a concrete signature instance from its JSON representation. */
   fromJSON(json: MajikSignatureJSON | string): MajikSignatureAdapter;
 }
 
@@ -152,17 +238,55 @@ const DEFAULT_REGISTRY = new FormatHandlerRegistry()
 
 // ─── MajikSignatureEmbed ──────────────────────────────────────────────────────
 
+/**
+ * File-format orchestration layer for Majik Signature.
+ *
+ * @remarks
+ * `MajikSignatureEmbed` coordinates the complete embedded/detached file flow:
+ *
+ * `FileLike → bytes → MIME/handler detection → extract/strip → envelope → crypto adapter → embed`
+ *
+ * It intentionally does **not** implement the signing algorithms themselves.
+ * Those operations are supplied through `MajikSignatureStaticAdapter`, while
+ * structural envelope operations are delegated to `MajikSignatureEnvelope`.
+ *
+ * The class supports native handlers for known formats and a universal
+ * fallback handler for formats without a dedicated embedding strategy.
+ *
+ * @internal
+ * The higher-level `MajikSignature` API normally calls this class rather than
+ * application code importing it directly.
+ */
 export class MajikSignatureEmbed {
   // ── embed ──────────────────────────────────────────────────────────────────
 
   /**
-   * Embed a pre-computed signature into a file Blob.
-   * Reads any existing envelope, upserts the new signature by signerId,
-   * and writes the updated envelope back.
-   * Does NOT sign — call signAndEmbed() for sign + embed together.
+   * Embed a pre-computed signature into a file.
+   *
+   * @remarks
+   * This method **does not perform signing**. It reads the existing embedded
+   * envelope (if any), upserts the supplied signature by `signerId`, strips the
+   * previous envelope, and writes the updated envelope back using the selected
+   * format handler.
+   *
+   * Because `MajikSignatureEnvelope.withSignature()` enforces sealing rules,
+   * adding a signature to a sealed envelope fails before any file is rewritten.
+   * Re-embedding is idempotent: an existing envelope is replaced rather than
+   * stacked on top of itself.
+   *
+   * @param file Source file or raw file-like bytes.
+   * @param signature Signature instance or its serializable JSON representation.
+   * @param options MIME-type override or fallback-handler override.
+   * @returns Embedded file plus the handler and MIME type used.
+   * @throws `MajikSignatureError` when the target envelope is sealed or the
+   * signature/envelope cannot be processed.
+   * @example
+   * ```ts
+   * const signed = await MajikSignatureEmbed.embed(file, signature);
+   * ```
    */
   static async embed(
-    file: FileLike, // Changed
+    file: FileLike,
     signature: MajikSignatureAdapter | MajikSignatureJSON,
     options?: EmbedOptions,
   ): Promise<EmbedResult> {
@@ -193,19 +317,43 @@ export class MajikSignatureEmbed {
   // ── signAndEmbed ───────────────────────────────────────────────────────────
 
   /**
-   * Sign a file and embed the signature in one call.
+   * Sign a file and embed the resulting signature in one operation.
    *
-   * Flow:
-   *   1. Read existing envelope (or start fresh)
-   *   2. assertCanSign() — rejects sealed envelopes and non-allowlisted signers
-   *      before any cryptographic operation (issuer always bypasses)
-   *   3. Strip existing envelope to get clean original bytes
-   *   4. Resolve allowlistHash for this signer (establishing / re-signing / none)
-   *   5. Sign the clean bytes
-   *   6. If establishing an allowlist, attach it BEFORE upserting the signature
-   *      (withAllowlist() requires zero existing signatures — see note below)
-   *   7. Upsert signature into envelope
-   *   8. Embed updated envelope back into the file
+   * @remarks
+   * This is the canonical embedded-signing pipeline. The method:
+   *
+   * 1. Resolves the file format handler and extracts any existing envelope.
+   * 2. Enforces seal and allowlist rules before signing.
+   * 3. Strips the current envelope to recover the canonical content bytes.
+   * 4. Computes allowlist and revision-chain commitments where applicable.
+   * 5. Delegates the actual cryptographic signing to `MajikSig.sign()`.
+   * 6. Establishes the allowlist when this is the first signer.
+   * 7. Appends the new `FileVersion` and signature to the immutable envelope.
+   * 8. Embeds the updated envelope back into the original file format.
+   *
+   * `priorSignedFile` changes the workflow into revision-aware signing: the
+   * previous signed file is independently checked before its version chain is
+   * extended. This is intended for visual-stamping workflows where each
+   * signer's turn changes the underlying file bytes.
+   *
+   * @param file File received by the current signer. If `priorSignedFile` is
+   * supplied, this is the file after the current signer's own modification.
+   * @param key Signing key used for this signer.
+   * @param MajikSig Static crypto adapter supplied by the concrete signature implementation.
+   * @param options File embedding, content-signing, allowlist, expiry, and
+   * revision options.
+   * @param debug When true, emits content-hash diagnostics to the console.
+   * @returns Embedded file metadata plus the newly created signature and the
+   * resulting immutable envelope.
+   * @throws `MajikSignatureError` for sealed files, invalid prior revisions,
+   * malformed envelopes, or other orchestration failures.
+   * @throws `MajikSignatureValidationError` when revision-chain input is structurally invalid.
+   * @example
+   * ```ts
+   * const result = await MajikSignatureEmbed.signAndEmbed(file, key, MajikSignature, {
+   *   expectedSigners: [alice, bob],
+   * });
+   * ```
    */
   static async signAndEmbed<T extends MajikSignatureAdapter>(
     file: FileLike,
@@ -307,6 +455,26 @@ export class MajikSignatureEmbed {
 
   // ── Private: read prior file's envelope, verify it fully, bootstrap chain ──
 
+  /**
+   * Read and fully self-verify the prior signed file used by revision-aware signing.
+   *
+   * @remarks
+   * This is intentionally stricter than simply parsing the previous envelope.
+   * It verifies allowlist integrity, revision-chain structure, canonical file
+   * form, and the cryptographic state of the previous signers before permitting
+   * a new revision to build on top of them.
+   *
+   * Legacy files that predate `fileVersions` are bootstrapped with a synthetic
+   * version-1 entry derived from their first signature and the current stripped
+   * content hash.
+   *
+   * @param priorFile Previous signed file supplied as the revision baseline.
+   * @param MajikSig Static crypto adapter used for self-contained verification.
+   * @param debug Emit diagnostic content hashes when enabled.
+   * @returns A validated envelope ready for the next revision.
+   * @throws `MajikSignatureError` when the prior file is missing, non-canonical,
+   * tampered, or otherwise unsafe to extend.
+   */
   private static async _readAndVerifyPriorEnvelope(
     priorFile: FileLike,
     MajikSig: MajikSignatureStaticAdapter,
@@ -376,6 +544,19 @@ export class MajikSignatureEmbed {
     return envelope;
   }
 
+  /**
+   * Verify the current revision plus all historical signer commitments using
+   * only the final stripped bytes and the envelope's stored chain metadata.
+   *
+   * @remarks
+   * The newest matching signature is verified against the current bytes.
+   * Earlier signatures are verified with the adapter's commitment-only path,
+   * because their original bytes are no longer necessarily available.
+   *
+   * This is the Tier-1/self-contained path: it proves the signature commitments
+   * and chain integrity, but does not independently prove that archived
+   * historical bytes once existed.
+   */
   private static _verifyEnvelopeSelfContained(
     envelope: MajikSignatureEnvelope,
     currentStrippedBytes: Uint8Array,
@@ -494,22 +675,28 @@ export class MajikSignatureEmbed {
   // ── signDetached ───────────────────────────────────────────────────────────
 
   /**
-   * Sign a file and return the envelope detached, along with the specific
-   * signature just produced.
+   * Sign a file without embedding the resulting envelope.
    *
-   * If options.tsa is provided, it's attached to this signer's signature
-   * via addTSA() immediately after signing and before it's upserted into
-   * the envelope — addTSA() itself validates that the TSA's digest matches
-   * this content's hash and that the TSA's own signature verifies, so no
-   * duplicate validation is needed here. If the adapter doesn't support
-   * addTSA (i.e. MajikSig.addTSA is undefined), a TSA option is a hard
-   * error rather than a silent no-op — attaching a timestamp is something
-   * the caller explicitly asked for, so failing to do it must be loud.
+   * @remarks
+   * The returned `blob` is the clean/stripped file content. The envelope is
+   * returned separately so callers can persist it as JSON, base64, MJKSIG, or
+   * another application-specific record.
    *
-   * Returns `signature` — the most recent signature produced by this call
-   * (with the TSA attached, if one was provided) — in addition to the full
-   * `envelope`, so callers don't have to re-extract it via
-   * envelope.findSignature(key.fingerprint) themselves.
+   * `existingEnvelope` continues a detached multi-signature workflow without
+   * requiring the envelope to be embedded in the file first. TSA attachment is
+   * performed before the signature is added to the returned envelope; if the
+   * adapter does not support `addTSA()`, explicitly requesting `tsa` fails
+   * rather than silently dropping the timestamp.
+   *
+   * @param file Source file or raw bytes.
+   * @param key Signing key for this signer.
+   * @param MajikSig Static crypto adapter.
+   * @param options Signing, allowlist, expiry, detached-envelope, and TSA options.
+   * @param debug Emit the stripped content hash for diagnostics.
+   * @returns Clean file Blob, resulting envelope, this call's signature, and
+   * resolved handler metadata.
+   * @throws `MajikSignatureError` when signing is disallowed, the envelope is
+   * sealed, or TSA was requested but unsupported.
    */
   static async signDetached<
     T extends MajikSignatureAdapter = MajikSignatureAdapter,
@@ -569,9 +756,6 @@ export class MajikSignatureEmbed {
     });
 
     // ── Attach TSA, if provided ──────────────────────────────────────────────
-    // Must happen before toJSON()/upsert — the envelope needs the signature
-    // WITH its tsa field already set, not a bare signature followed by a
-    // separate mutation the caller has to remember to do.
     if (options?.tsa) {
       if (typeof signature.addTSA !== "function") {
         throw new MajikSignatureError(
@@ -607,12 +791,31 @@ export class MajikSignatureEmbed {
   // ── signBatchDetached ────────────────────────────────────────────────────────
 
   /**
-   * Sign a batch of files (folder or zip contents) as detached envelopes,
-   * packaged either as one MajikSignatureMap (default) or as separate
-   * .mjksig Blobs per file.
+   * Sign multiple files as detached envelopes and package the results.
    *
-   * Reuses signDetached() per file — no duplicated crypto path. The only
-   * new logic here is path-uniqueness validation and result packaging.
+   * @remarks
+   * Each file is processed through `signDetached()`, so the batch path uses the
+   * same handler selection, canonicalization, allowlist, and cryptographic
+   * behavior as single-file detached signing.
+   *
+   * In `"map"` mode, results are collected into one immutable
+   * `MajikSignatureMap` plus a ready-to-store `.mjksmap` Blob. In `"separate"`
+   * mode, each file gets its own `.mjksig` Blob.
+   *
+   * Duplicate paths and an empty batch are rejected before cryptography starts.
+   * By default the first signing failure aborts the entire operation; with
+   * `continueOnError: true`, failures are collected and successful files remain
+   * in the returned result.
+   *
+   * @param files Batch inputs. Paths must be unique and non-empty.
+   * @param key Signing key shared by every file in the batch.
+   * @param MajikSig Static crypto adapter.
+   * @param options Batch mode and shared signing options.
+   * @param debug Emit per-file hash diagnostics.
+   * @returns Discriminated union keyed by `mode` containing the packaged
+   * signatures and any collected failures.
+   * @throws `MajikSignatureValidationError` for invalid batch structure.
+   * @throws `MajikSignatureError` when signing fails and `continueOnError` is false.
    */
   static async signBatchDetached(
     files: BatchFileInput[],
@@ -674,8 +877,11 @@ export class MajikSignatureEmbed {
   // ── Private batch helpers ───────────────────────────────────────────────────
 
   /**
-   * Sign one file detached and extract the contentHash this signer produced
-   * for it — needed to populate the map entry without re-hashing separately.
+   * Sign one batch item through the normal detached-signing path and reuse the
+   * resulting signature's content hash when constructing the manifest entry.
+   *
+   * @internal
+   * Avoids a second content hash computation solely for manifest bookkeeping.
    */
   private static async _signOneDetached(
     file: BatchFileInput,
@@ -699,9 +905,6 @@ export class MajikSignatureEmbed {
 
     const sig = envelope.findSignature(key.fingerprint);
     if (!sig) {
-      // Should be unreachable — signDetached() always upserts this signer's
-      // entry — but fail loudly rather than silently omitting the file from
-      // the map if signDetached's contract is ever violated.
       throw new MajikSignatureError(
         `Internal error: no signature found for this signer after signing "${file.path}"`,
       );
@@ -711,12 +914,15 @@ export class MajikSignatureEmbed {
   }
 
   /**
-   * Validate the batch before touching any crypto: non-empty, every file has
-   * a non-empty path, and no two files share a path. Duplicate paths would
-   * otherwise silently overwrite each other's map entry via withEntry()'s
-   * replace-on-match semantics — catching it here means the failure is
-   * "your batch has a duplicate path" up front, not a mysteriously missing
-   * entry discovered later.
+   * Validate batch shape before any cryptographic work begins.
+   *
+   * @remarks
+   * Paths must be non-empty and unique because `MajikSignatureMap` keys entries
+   * by path. Rejecting duplicates here prevents a later `withEntry()` upsert
+   * from silently replacing a sibling file's manifest entry.
+   *
+   * @throws `MajikSignatureValidationError` when the batch is empty or contains
+   * a missing/duplicate path.
    */
   private static _assertValidBatch(files: BatchFileInput[]): void {
     if (!files || files.length === 0) {
@@ -747,8 +953,22 @@ export class MajikSignatureEmbed {
   // ── extract ────────────────────────────────────────────────────────────────
 
   /**
-   * Extract the envelope from a file as a MajikSignatureEnvelope instance.
-   * Returns null if no signature is found.
+   * Extract an embedded envelope without performing cryptographic verification.
+   *
+   * @remarks
+   * Extraction answers "is there a parseable embedded envelope?" rather than
+   * "are its signatures valid?". Use the verification APIs when authenticity
+   * or integrity must be established.
+   *
+   * The returned envelope is an immutable `MajikSignatureEnvelope` instance.
+   * Legacy bare single-signature payloads are transparently promoted by the
+   * envelope parser.
+   *
+   * @param file Source file or raw file-like bytes.
+   * @param options MIME override or fallback-handler selection.
+   * @returns Parsed envelope plus handler name, or `null` when no envelope exists.
+   * @throws `MajikSignatureSerializationError` when an embedded payload exists
+   * but cannot be parsed as a valid envelope.
    */
   static async extract(
     file: FileLike,
@@ -769,8 +989,23 @@ export class MajikSignatureEmbed {
   // ── verify ─────────────────────────────────────────────────────────────────
 
   /**
-   * Verify a file's embedded signatures against public keys.
-   * Returns one VerificationResult per signature in the envelope.
+   * Verify every embedded signature against caller-supplied public keys.
+   *
+   * @remarks
+   * The file is first canonicalized and stripped so the embedded envelope is
+   * not included in the content hash. All signatures in the envelope are then
+   * checked unless `expectedSignerId` is provided.
+   *
+   * Verification failures are returned as `VerificationResult` values. They
+   * are not treated as exceptions in the normal cryptographic-failure path.
+   *
+   * @param file Signed file or raw file-like bytes.
+   * @param publicKeys Public keys used for cryptographic verification.
+   * @param MajikSig Static crypto adapter.
+   * @param options MIME override, signer filter, and verification clock.
+   * @param debug Emit canonical content hash diagnostics.
+   * @returns One `VerificationResult` per selected signer, or a single failure
+   * result describing the missing/malformed envelope or canonicalization problem.
    */
   static async verify(
     file: FileLike,
@@ -848,6 +1083,20 @@ export class MajikSignatureEmbed {
 
   // ── verifyWithKey ──────────────────────────────────────────────────────────
 
+  /**
+   * Convenience form of `verify()` that derives public keys from a `MajikKey`.
+   *
+   * @remarks
+   * Only public key material is consumed by verification, so the supplied key
+   * does not need to be unlocked merely to verify an existing signature.
+   *
+   * @param file Signed file to verify.
+   * @param key `MajikKey` whose public signing keys should be used.
+   * @param MajikSig Static crypto adapter.
+   * @param options Same extraction and verification options as `verify()`.
+   * @param debug Emit verification diagnostics when enabled.
+   * @returns Same result shape as `verify()`.
+   */
   static async verifyWithKey(
     file: FileLike,
     key: MajikKey,
@@ -868,9 +1117,24 @@ export class MajikSignatureEmbed {
   // ── verifyDetached ─────────────────────────────────────────────────────────
 
   /**
-   * Verify a file against a provided, detached envelope (instance, blob or JSON).
-   * Still strips the file in case it also contains an embedded envelope,
-   * ensuring verification runs against the clean original bytes.
+   * Verify file bytes against an externally supplied detached envelope.
+   *
+   * @remarks
+   * The detached envelope may be an instance, JSON shape, MJKSIG `Blob`, or
+   * raw MJKSIG bytes. The file is always prepared into canonical verification
+   * bytes, and any accidentally embedded envelope is stripped so the detached
+   * envelope never becomes part of the content hash.
+   *
+   * `requireCanonical` can be used when the caller wants a non-canonical file
+   * representation to be rejected instead of merely stripped for verification.
+   *
+   * @param file File whose content is being verified.
+   * @param envelopeInput Detached envelope in any accepted representation.
+   * @param publicKeys Public keys used for cryptographic verification.
+   * @param MajikSig Static crypto adapter.
+   * @param options MIME override, signer filter, verification time, and canonicality policy.
+   * @param debug Emit the canonical content hash.
+   * @returns One verification result per selected signer.
    */
   static async verifyDetached(
     file: FileLike,
@@ -881,7 +1145,7 @@ export class MajikSignatureEmbed {
       expectedSignerId?: string;
       now?: Date;
       requireCanonical?: boolean;
-    }, // FIX
+    },
     debug: boolean = false,
   ): Promise<VerificationResult[]> {
     const { bytes, handler } = await MajikSignatureEmbed._prepare(
@@ -930,12 +1194,23 @@ export class MajikSignatureEmbed {
       MajikSig,
       handler.name,
       options?.expectedSignerId,
-      options?.now, // FIX
+      options?.now,
     );
   }
 
   // ── verifyDetachedWithKey ──────────────────────────────────────────────────
 
+  /**
+   * Convenience form of `verifyDetached()` using public keys derived from a `MajikKey`.
+   *
+   * @param file File whose canonical content is being checked.
+   * @param envelopeInput Detached envelope in instance, JSON, MJKSIG bytes, or Blob form.
+   * @param key `MajikKey` supplying the public verification keys.
+   * @param MajikSig Static crypto adapter.
+   * @param options Detached-verification options.
+   * @param debug Emit diagnostic content hashes.
+   * @returns Same verification result shape as `verifyDetached()`.
+   */
   static async verifyDetachedWithKey(
     file: FileLike,
     envelopeInput: EnvelopeInput,
@@ -962,20 +1237,27 @@ export class MajikSignatureEmbed {
   // ── verifyFilesFromMjksMap ───────────────────────────────────────────────────
 
   /**
-   * Verify a batch of extracted files against a MajikSignatureMap.
+   * Verify a collection of files against a `MajikSignatureMap` manifest.
    *
-   * For each file: resolve against the map (tolerating relocation — a file
-   * moved or renamed after signing is still found and verified by content,
-   * not just by its original path), then run the normal signature
-   * verification via the envelope stored in that entry. Never throws
-   * per-file — every outcome (missing, tampered, relocated-but-valid,
-   * invalid, verified) is reported in the returned array, so a caller can
-   * render a full per-file status table in one pass instead of catching
-   * exceptions.
+   * @remarks
+   * Each file is first resolved against the manifest by path and then, when
+   * necessary, by content hash. This makes the workflow tolerant of files that
+   * were renamed or moved after signing.
    *
-   * Set options.requireAllPresent to escalate a missing file to a thrown
-   * error instead — useful when the caller expects a closed, complete set
-   * (e.g. "this zip must contain everything the map lists").
+   * Normal verification outcomes are reported per file instead of thrown:
+   * `verified`, `invalid`, `tampered`, and `not_in_map`. Set
+   * `requireAllPresent` when a missing file should instead abort the operation.
+   *
+   * @param map Immutable batch manifest.
+   * @param files Files being checked. Paths need not match their original
+   * locations when relocation-by-hash is desired.
+   * @param publicKeys Public keys used for signature verification.
+   * @param MajikSig Static crypto adapter.
+   * @param options Expected signer filter, missing-file policy, and verification time.
+   * @param debug Emit per-file content hashes.
+   * @returns One `FileVerifyResult` per supplied file.
+   * @throws `MajikSignatureError` only for configured hard-failure conditions,
+   * such as `requireAllPresent` encountering a missing file.
    */
   static async verifyFilesFromMjksMap(
     map: MajikSignatureMap,
@@ -1014,9 +1296,6 @@ export class MajikSignatureEmbed {
         continue;
       }
 
-      // At this point status is "path_match" or "relocated" — both have a
-      // confirmed content match against resolved.entry, so verification
-      // proceeds identically. Only the reported metadata differs.
       const originalBytes = new Uint8Array(await file.blob.arrayBuffer());
 
       if (debug) {
@@ -1073,7 +1352,17 @@ export class MajikSignatureEmbed {
     return results;
   }
 
-  /** Convenience overload — resolves public keys from a MajikKey. */
+  /**
+   * Convenience overload for batch-map verification using a `MajikKey`.
+   *
+   * @param map Manifest containing detached signature envelopes.
+   * @param files Files to resolve and verify against the manifest.
+   * @param key `MajikKey` supplying the public verification keys.
+   * @param MajikSig Static crypto adapter.
+   * @param options Batch verification options.
+   * @param debug Emit diagnostics when enabled.
+   * @returns Same result shape as `verifyFilesFromMjksMap()`.
+   */
   static async verifyFilesFromMjksMapWithKey(
     map: MajikSignatureMap,
     files: BatchVerifyInput[],
@@ -1094,8 +1383,11 @@ export class MajikSignatureEmbed {
   }
 
   /**
-   * Summarize a batch verification result — one glance at pass/fail counts
-   * without the caller re-deriving it from the array each time.
+   * Reduce per-file batch verification results to one aggregate summary.
+   *
+   * @param results Results returned by `verifyFilesFromMjksMap()`.
+   * @returns Count of every status plus `allValid`, which is true only when
+   * every supplied file has status `"verified"` and the result set is non-empty.
    */
   static summarizeBatchVerification(
     results: FileVerifyResult[],
@@ -1121,10 +1413,25 @@ export class MajikSignatureEmbed {
   }
 
   /**
-   * Verify the chronological signing order of a file's embedded envelope
-   * against an expected sequence of signers.
-   * expectedOrder accepts MajikKey instances and/or ExpectedSigner objects,
-   * mixed freely — normalized internally.
+   * Verify the chronological signing order of an embedded envelope.
+   *
+   * @remarks
+   * `expectedOrder` may mix `MajikKey` instances and `ExpectedSigner` objects.
+   * The underlying order verifier normalizes these identities and compares only
+   * valid signatures belonging to the expected sequence.
+   *
+   * TSA-attested timestamps are preferred by the order-verification layer when
+   * available; self-reported timestamps remain distinguishable through the
+   * returned order result.
+   *
+   * @param file Signed file containing the envelope to inspect.
+   * @param expectedOrder Signers in the required chronological sequence.
+   * @param MajikSig Static crypto adapter used for signature verification.
+   * @param options Extraction settings plus strictness configuration.
+   * @returns Detailed order-verification status, including pending, invalid,
+   * unexpected, and ordering-violation information.
+   * @throws `MajikSignatureError` when the envelope is structurally present but
+   * fails required pre-verification integrity/canonicality checks.
    */
   static async verifyFileOrder(
     file: FileLike,
@@ -1168,8 +1475,16 @@ export class MajikSignatureEmbed {
   }
 
   /**
-   * Verify the chronological signing order against a detached envelope
-   * (instance, JSON, MJKSIG bytes, or Blob).
+   * Verify chronological signing order against a detached envelope.
+   *
+   * @param file File whose canonical content is being checked.
+   * @param envelopeInput Detached envelope in instance, JSON, MJKSIG bytes, or Blob form.
+   * @param expectedOrder Required chronological signer sequence.
+   * @param MajikSig Static crypto adapter.
+   * @param options Extraction and strict-order options.
+   * @returns Detailed `SignatureOrderResult` for the supplied sequence.
+   * @throws `MajikSignatureError` when envelope integrity or canonical file
+   * preparation fails.
    */
   static async verifyDetachedOrder(
     file: FileLike,
@@ -1206,6 +1521,26 @@ export class MajikSignatureEmbed {
     );
   }
 
+  /**
+   * Perform Tier-1, self-contained verification of a file revision chain.
+   *
+   * @remarks
+   * The current/latest signer is verified against the current stripped bytes.
+   * Earlier signers are checked through commitment-only verification and the
+   * version-chain hash. No archived copies of earlier revisions are required.
+   *
+   * This method proves chain and signature commitment integrity, but not the
+   * historical existence of the exact earlier bytes; use
+   * `verifyFileRevisions()` for archive-assisted Tier-2 verification.
+   *
+   * @param file Final file containing the revision chain.
+   * @param MajikSig Static crypto adapter.
+   * @param options MIME override and verification clock.
+   * @returns Latest verification, historical commitment results, and aggregate
+   * `chainValid` status.
+   * @throws `MajikSignatureError` when no embedded envelope exists or the file
+   * cannot be prepared canonically.
+   */
   static async verifyFileChain(
     file: FileLike,
     MajikSig: MajikSignatureStaticAdapter,
@@ -1240,6 +1575,30 @@ export class MajikSignatureEmbed {
     return { latest, history, chainValid };
   }
 
+  /**
+   * Perform Tier-2, archive-assisted verification of every recorded revision.
+   *
+   * @remarks
+   * The supplied historical files are canonicalized and matched to
+   * `fileVersions[].contentHash`. Each matched revision is then verified with
+   * its corresponding signature and chain commitment.
+   *
+   * The final file is automatically included in the supplied set, so callers
+   * do not need to pass it again in `revisions`.
+   *
+   * When `resolvePublicKeys` is omitted, the public keys embedded in each
+   * signature are used. Applications with an external identity/key registry
+   * can provide a resolver to verify against independently supplied keys.
+   *
+   * @param finalFile Current signed file containing the revision chain.
+   * @param revisions Retained earlier revision files. Each may be `Blob`,
+   * `File`, `Uint8Array`, or `ArrayBuffer` through `FileLike`.
+   * @param MajikSig Static crypto adapter.
+   * @param options Verification clock and optional trusted public-key resolver.
+   * @returns Per-revision status plus `allValid` and `isCompleteSet` aggregates.
+   * @throws `MajikSignatureError` when the final file has no envelope or no
+   * revision chain to verify.
+   */
   static async verifyFileRevisions(
     finalFile: FileLike,
     revisions: FileLike[],
@@ -1269,9 +1628,6 @@ export class MajikSignatureEmbed {
       );
     }
 
-    // Normalize + strip every supplied revision up front. Include finalFile
-    // to ensure the final state is naturally matchable without forcing
-    // the caller to pass it twice.
     const normalized = (
       await Promise.all(
         [...revisions, finalFile].map(async (input) => {
@@ -1282,7 +1638,7 @@ export class MajikSignatureEmbed {
           let stripped: Uint8Array;
           if (rRaw !== null) {
             const c = await assertCanonical(rHandler, rBytes, rRaw);
-            if (!c.ok) return null; // non-canonical revision can't be matched
+            if (!c.ok) return null;
             stripped = c.original;
           } else {
             stripped = await rHandler.strip(rBytes);
@@ -1390,8 +1746,24 @@ export class MajikSignatureEmbed {
   // ── seal ───────────────────────────────────────────────────────────────────
 
   /**
-   * Seal a multi-sig envelope, preventing any further signatures.
-   * Issuer-only / already-sealed checks are enforced by envelope.withSeal().
+   * Apply a cryptographic seal to an embedded envelope.
+   *
+   * @remarks
+   * Sealing computes a SHA3-512 integrity hash over the current signatories
+   * and seal timestamp and permanently prevents further signatures through the
+   * envelope state model. It is an integrity lock, not another signer
+   * signature.
+   *
+   * With an allowlist, only the issuer may seal. An already sealed envelope
+   * cannot be sealed again.
+   *
+   * @param file Signed file containing the envelope to seal.
+   * @param key Key/fingerprint of the actor attempting to seal the envelope.
+   * @param options MIME override and optional deterministic seal timestamp.
+   * @returns Sealed file, seal metadata, and handler information.
+   * @throws `MajikSignatureError` when no envelope exists or it is already sealed.
+   * @throws `MajikSignatureKeyError` when a restricted envelope is sealed by
+   * someone other than its issuer.
    */
   static async seal(
     file: FileLike,
@@ -1416,8 +1788,6 @@ export class MajikSignatureEmbed {
     }
 
     const envelope = MajikSignatureEnvelope.fromJSON(raw);
-    // Throws MajikSignatureError (already sealed) or MajikSignatureKeyError
-    // (wrong issuer) — same failure modes as the previous implementation.
     const sealedEnvelope = envelope.withSeal(
       key.fingerprint,
       options?.timestamp,
@@ -1438,8 +1808,16 @@ export class MajikSignatureEmbed {
     };
   }
 
-  // ── verifySeal ─────────────────────────────────────────────────────────────
-
+  /**
+   * Verify the structural integrity of an embedded seal.
+   *
+   * @remarks
+   * This verifies the seal hash against the current envelope state; it does
+   * **not** verify the individual Ed25519/ML-DSA-87 signatures contained in the
+   * envelope. Use `verify()` / `verifyWithKey()` for signer verification too.
+   *
+   * @returns `SealVerificationResult`, or an invalid result when no envelope exists.
+   */
   static async verifySeal(
     file: FileLike,
     options?: ExtractOptions,
@@ -1449,8 +1827,11 @@ export class MajikSignatureEmbed {
     return result.envelope.verifySeal();
   }
 
-  // ── getSealInfo ────────────────────────────────────────────────────────────
-
+  /**
+   * Read seal metadata without verifying the seal hash.
+   *
+   * @returns `{ sealHash, sealTimestamp, sealedBy }` when sealed, otherwise `null`.
+   */
   static async getSealInfo(
     file: FileLike,
     options?: ExtractOptions,
@@ -1459,8 +1840,11 @@ export class MajikSignatureEmbed {
     return result ? result.envelope.getSealInfo() : null;
   }
 
-  // ── isSealed ───────────────────────────────────────────────────────────────
-
+  /**
+   * Perform a cheap structural check for whether a file contains a sealed envelope.
+   *
+   * @remarks Does not verify the seal hash or individual signatures.
+   */
   static async isSealed(
     file: FileLike,
     options?: ExtractOptions,
@@ -1469,8 +1853,13 @@ export class MajikSignatureEmbed {
     return result ? result.envelope.isSealed() : false;
   }
 
-  // ── isMultiSig ─────────────────────────────────────────────────────────────
-
+  /**
+   * Check whether a file contains a restricted multi-signature envelope.
+   *
+   * @remarks The result follows `MajikSignatureEnvelope.isMultiSig()` semantics:
+   * an allowlist with more than one expected signer is required. Unsigned,
+   * open-signing, and single-signer files return `false`.
+   */
   static async isMultiSig(
     file: FileLike,
     options?: ExtractOptions,
@@ -1479,21 +1868,33 @@ export class MajikSignatureEmbed {
     return result ? result.envelope.isMultiSig() : false;
   }
 
-  // ── canSign ────────────────────────────────────────────────────────────────
-
+  /**
+   * Check whether a key is currently permitted to sign a file.
+   *
+   * @remarks
+   * For an unsigned file, no envelope-level restriction exists and the method
+   * returns `{ permitted: true }`. For existing envelopes, seal and allowlist
+   * rules are evaluated without performing a new signature operation.
+   *
+   * @returns Permission status and, on denial, a human-readable reason.
+   */
   static async canSign(
     file: FileLike,
     key: MajikKey,
     options?: ExtractOptions,
   ): Promise<{ permitted: boolean; reason?: string }> {
     const result = await MajikSignatureEmbed.extract(file, options);
-    // No envelope — unsigned file, anyone may sign
     if (!result) return { permitted: true };
     return result.envelope.canSign(key);
   }
 
-  // ── getSignatories ─────────────────────────────────────────────────────────
-
+  /**
+   * Resolve expected/signed/pending signatory state from an embedded envelope.
+   *
+   * @param filter Optional requested view. The returned object preserves the
+   * full `{ all, signed, pending }` shape.
+   * @returns Signatory status, or `null` when no relevant envelope state exists.
+   */
   static async getSignatories(
     file: FileLike,
     options?: ExtractOptions,
@@ -1503,8 +1904,13 @@ export class MajikSignatureEmbed {
     return result ? result.envelope.getSignatories(filter) : null;
   }
 
-  // ── getIssuer ──────────────────────────────────────────────────────────────
-
+  /**
+   * Resolve the envelope issuer.
+   *
+   * @remarks For restricted envelopes this is the allowlist establisher. For
+   * open-signing envelopes it falls back to the first signer. Unsigned files
+   * return `null`.
+   */
   static async getIssuer(
     file: FileLike,
     options?: ExtractOptions,
@@ -1513,8 +1919,13 @@ export class MajikSignatureEmbed {
     return result ? result.envelope.resolveIssuer() : null;
   }
 
-  // ── getEnvelopeInfo ────────────────────────────────────────────────────────
-
+  /**
+   * Return a one-call snapshot of the embedded envelope state.
+   *
+   * @remarks Useful for rendering signing-status UI without repeatedly parsing
+   * the same file for multi-sig, seal, issuer, allowlist, and signature-count
+   * information.
+   */
   static async getEnvelopeInfo(
     file: FileLike,
     options?: ExtractOptions,
@@ -1525,6 +1936,16 @@ export class MajikSignatureEmbed {
 
   // ── strip ──────────────────────────────────────────────────────────────────
 
+  /**
+   * Remove the embedded signature envelope from a file.
+   *
+   * @remarks
+   * Native handlers remove only their own signature representation. For the
+   * universal fallback, the trailer is removed. The returned Blob is the clean
+   * file representation used as signing/verification input.
+   *
+   * @returns A new Blob containing the stripped file bytes.
+   */
   static async strip(file: FileLike, options?: ExtractOptions): Promise<Blob> {
     const { bytes, mimeType, handler } = await MajikSignatureEmbed._prepare(
       file,
@@ -1536,6 +1957,12 @@ export class MajikSignatureEmbed {
 
   // ── hasSignature ───────────────────────────────────────────────────────────
 
+  /**
+   * Check for structural presence of an embedded signature envelope.
+   *
+   * @remarks This does not perform cryptographic verification and should be used
+   * as a cheap guard before calling `verify()` when appropriate.
+   */
   static async hasSignature(
     file: FileLike,
     options?: ExtractOptions,
@@ -1546,6 +1973,11 @@ export class MajikSignatureEmbed {
 
   // ── getAllowlist ───────────────────────────────────────────────────────────
 
+  /**
+   * Read the current signing allowlist from an embedded envelope.
+   *
+   * @returns A defensive copy of the allowlist, or `null` for unsigned/open-signing files.
+   */
   static async getAllowlist(
     file: FileLike,
     options?: ExtractOptions,
@@ -1555,14 +1987,33 @@ export class MajikSignatureEmbed {
     return [...result.envelope.allowlist];
   }
 
+  /**
+   * Default format-handler registry used by all file operations.
+   *
+   * @remarks
+   * The registry is exposed for discovery/introspection. Callers should prefer
+   * the higher-level file APIs rather than mutating the registry during normal
+   * application execution.
+   */
   static readonly registry = DEFAULT_REGISTRY;
 
+  /**
+   * List the names of handlers currently registered in the default registry.
+   *
+   * @returns Handler names in registry order.
+   */
   static listHandlers(): string[] {
     return DEFAULT_REGISTRY.listHandlers();
   }
 
   // ── canAnchor ──────────────────────────────────────────────────────────────
 
+  /**
+   * Check whether an embedded envelope is structurally eligible for chain anchoring.
+   *
+   * @remarks Anchoring requires the envelope to be sealed. This method does not
+   * submit anything to a blockchain and does not inspect on-chain state.
+   */
   static async canAnchor(
     file: FileLike,
     options?: ExtractOptions,
@@ -1580,9 +2031,20 @@ export class MajikSignatureEmbed {
   // ── registerChainAnchor ───────────────────────────────────────────────────
 
   /**
-   * Embed an already-confirmed chain anchor into the envelope.
-   * Sealed check, digest match, and upsert-by-id dedup are all enforced by
-   * envelope.withChainAnchor().
+   * Embed an already-confirmed external chain anchor into a sealed envelope.
+   *
+   * @remarks
+   * This method does **not** submit or verify a blockchain transaction. The
+   * caller is responsible for obtaining a confirmed `MajikChainAnchor` first.
+   * `MajikSignatureEnvelope.withChainAnchor()` enforces the sealed-state and
+   * seal-digest match, and upserts anchors by `anchor.id`.
+   *
+   * @param file Sealed signed file whose envelope will receive the anchor.
+   * @param anchor Previously confirmed chain-anchor record.
+   * @param options File handler options.
+   * @returns Updated embedded file.
+   * @throws `MajikSignatureError` when the envelope is missing, unsealed, or
+   * the anchor's digest does not match the current seal hash.
    */
   static async registerChainAnchor(
     file: FileLike,
@@ -1616,6 +2078,11 @@ export class MajikSignatureEmbed {
 
   // ── getChainAnchors ────────────────────────────────────────────────────────
 
+  /**
+   * Read all chain anchors currently embedded in a file envelope.
+   *
+   * @returns Defensive copy of the anchors, or an empty array for unsigned files.
+   */
   static async getChainAnchors(
     file: FileLike,
     options?: ExtractOptions,
@@ -1625,18 +2092,23 @@ export class MajikSignatureEmbed {
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
-  // Consolidates the bytes → mimeType → handler resolution and the
-  // extract-or-empty envelope read, both previously repeated at the top of
-  // nearly every public method.
 
+  /**
+   * Normalize input bytes, determine the MIME type, and resolve the format handler.
+   *
+   * @remarks
+   * This is the common entry point for nearly every public file operation. When
+   * `forceFallback` is enabled, native format detection is bypassed and the
+   * universal trailer handler is used explicitly.
+   *
+   * @internal
+   */
   private static async _prepare(
     file: FileLike,
     options?: { mimeType?: string; forceFallback?: boolean },
   ): Promise<{ bytes: Uint8Array; mimeType: string; handler: FormatHandler }> {
-    // Leverage your existing util instead of blobToBytes
     const bytes = await normalizeToBytes(file);
 
-    // Safely extract type only if it's a Blob/File
     const declaredType = file instanceof Blob ? file.type : undefined;
     const mimeType = options?.mimeType ?? detectMimeType(bytes, declaredType);
 
@@ -1647,7 +2119,12 @@ export class MajikSignatureEmbed {
     return { bytes, mimeType, handler };
   }
 
-  /** Extract + parse, or a fresh empty envelope when none exists. */
+  /**
+   * Extract and parse an embedded envelope, or produce an empty envelope when
+   * the file is currently unsigned.
+   *
+   * @internal
+   */
   private static async _readEnvelope(
     handler: FormatHandler,
     bytes: Uint8Array,
@@ -1658,6 +2135,12 @@ export class MajikSignatureEmbed {
       : MajikSignatureEnvelope.empty();
   }
 
+  /**
+   * Construct the standard no-signature verification result used by file-level
+   * verification APIs.
+   *
+   * @internal
+   */
   private static _noSignatureResult(
     reason = "No embedded signature found",
   ): VerificationResult {
@@ -1665,9 +2148,15 @@ export class MajikSignatureEmbed {
   }
 
   /**
-   * Shared by verify() and verifyDetached(): filter by expectedSignerId,
-   * verify each remaining signature, and stamp the handler name onto each
-   * result. Previously duplicated near-verbatim in both methods.
+   * Verify selected envelope signatures against canonical file bytes.
+   *
+   * @remarks
+   * Centralizes signer filtering and handler metadata so `verify()` and
+   * `verifyDetached()` remain behaviorally aligned. If `expectedSignerId` is
+   * supplied, only that signer is verified. A missing selected signer produces
+   * a normal invalid result rather than an exception.
+   *
+   * @internal
    */
   private static _verifySignatures(
     envelope: MajikSignatureEnvelope,
@@ -1676,7 +2165,7 @@ export class MajikSignatureEmbed {
     MajikSig: MajikSignatureStaticAdapter,
     handlerName: string,
     expectedSignerId?: string,
-    now?: Date, // NEW
+    now?: Date,
   ): VerificationResult[] {
     const sigsToVerify = expectedSignerId
       ? envelope.signatures.filter((s) => s.signerId === expectedSignerId)
