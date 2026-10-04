@@ -404,7 +404,8 @@ For automation and CI environments, signing-key passphrases can be supplied thro
 
 For the complete command reference, workflow combinations, options, compatibility rules, examples, exit codes, automation guidance, and `npx` usage, see:
 
-**[`CLI_README.md`](./CLI_README.md)**
+
+[![CLIREADME](https://img.shields.io/badge/Read_the_CLI_Documentation_Here-EA7F05?style=for-the-badge&logoColor=ea7f05)](./CLI_README.md)
 
 
 ---
