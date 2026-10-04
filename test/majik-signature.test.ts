@@ -47,6 +47,7 @@ const FILE_FIXTURES: FileFixture[] = [
   },
   { label: "CSV File", file: "sample.csv", contentType: "text/csv" },
   { label: "PDF Document", file: "sample.pdf", contentType: "application/pdf" },
+
 ];
 
 function loadFixture(filename: string): Uint8Array {
