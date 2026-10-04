@@ -24,16 +24,12 @@
  */
 
 import { unzipSync } from "fflate";
-import { FormatHandler } from "../../types";
+import { FormatHandler } from "../../types.js";
 
 const MSIX_MIME_TYPES = ["application/msix", "application/appx"] as const;
 
-const ZIP_MAGIC = 0x04034b50;
 
-const MSIX_REQUIRED_ENTRIES = new Set([
-  "AppxManifest.xml",
-  "AppxBlockMap.xml",
-]);
+const MSIX_REQUIRED_ENTRIES = new Set(["AppxManifest.xml", "AppxBlockMap.xml"]);
 
 export class MsixHandler implements FormatHandler {
   readonly name = "MSIX / AppX";
@@ -97,10 +93,7 @@ export class MsixHandler implements FormatHandler {
    *
    * Use detached signatures / MJKS Maps instead.
    */
-  async embed(
-    _bytes: Uint8Array,
-    _signatureJson: string,
-  ): Promise<Uint8Array> {
+  async embed(_bytes: Uint8Array, _signatureJson: string): Promise<Uint8Array> {
     throw new Error(
       "MsixHandler does not support embedded signatures. " +
         "MSIX packages must be signed using detached Majik Signature " +

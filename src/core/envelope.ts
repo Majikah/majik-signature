@@ -31,15 +31,15 @@ import {
   MJKSIG_MEDIA_TYPE,
   MJKSIG_SUPPORTED_VERSIONS,
   MJKSIG_VERSION,
-} from "./constants";
+} from "./constants.js";
 import {
   MajikSignatureAllowlistError,
   MajikSignatureError,
   MajikSignatureKeyError,
   MajikSignatureSerializationError,
   MajikSignatureValidationError,
-} from "./errors";
-import { hashContent, bytesToBase64 } from "./hash";
+} from "./errors.js";
+import { hashContent, bytesToBase64 } from "./hash.js";
 import type {
   EnvelopeInfo,
   EnvelopeInput,
@@ -53,9 +53,9 @@ import type {
   SignatoriesFilter,
   SignatoriesResult,
   SignatoryInfo,
-} from "./types";
-import type { MajikChainAnchor } from "../anchor/types";
-import { normalizeToBytes } from "./embed/utils";
+} from "./types.js";
+import type { MajikChainAnchor } from "../anchor/types.js";
+import { normalizeToBytes } from "./embed/utils.js";
 
 // ─── Allowlist check result ───────────────────────────────────────────────────
 

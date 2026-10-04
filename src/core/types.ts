@@ -8,9 +8,9 @@
  */
 
 import type { ISODateString, MajikKeyFingerprint } from "@majikah/majik-key";
-import type { MajikChainAnchor } from "../anchor/types";
-import type { ContentType } from "./constants";
-import type { MajikSignatureEnvelope } from "./envelope";
+import type { MajikChainAnchor } from "../anchor/types.js";
+import type { ContentType } from "./constants.js";
+import type { MajikSignatureEnvelope } from "./envelope.js";
 
 /** Standard content-type constants exposed by Majik Signature. */
 export type { ContentType };

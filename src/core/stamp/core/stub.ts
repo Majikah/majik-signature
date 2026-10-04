@@ -58,7 +58,7 @@
  * Our minimum is 640x640 → comfortable (480 bytes capacity, 113% headroom).
  */
 
-import type { ImageSignatureStub } from "./types";
+import type { ImageSignatureStub } from "./types.js";
 
 const MAGIC = new Uint8Array([0x4d, 0x53, 0x49, 0x47]); // 'MSIG'
 const VERSION = 1;

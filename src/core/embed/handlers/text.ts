@@ -21,14 +21,14 @@
  * extract() and strip() share one parser (split()) so they cannot disagree.
  */
 
-import { FormatHandler } from "../../types";
+import { FormatHandler } from "../../types.js";
 import {
   concatBytes,
   includesBytes,
   matchesAt,
   textDecode,
   textEncode,
-} from "../utils";
+} from "../utils.js";
 
 const BEGIN_MARKER = "<!-- MAJIK-SIGNATURE-BEGIN -->";
 const END_MARKER = "<!-- MAJIK-SIGNATURE-END -->";

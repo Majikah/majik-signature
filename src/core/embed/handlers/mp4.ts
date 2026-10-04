@@ -15,17 +15,16 @@
  * If moov doesn't exist (fragmented MP4), fall through to FallbackHandler.
  */
 
-import { FormatHandler } from "../../types";
-import { MP4_BOX_TYPE } from "../constants";
+import { FormatHandler } from "../../types.js";
+import { MP4_BOX_TYPE } from "../constants.js";
 import {
   concatBytes,
   readUint32BE,
   textDecode,
   textEncode,
   writeUint32BE,
-} from "../utils";
+} from "../utils.js";
 
-const MAJK_TYPE = textEncode(MP4_BOX_TYPE); // "majk"
 
 export class Mp4Handler implements FormatHandler {
   readonly name = "MP4/MOV";

@@ -11,9 +11,9 @@
  * Falls back to Tier-2 trailer if segment injection fails.
  */
 
-import { FormatHandler } from "../../types";
+import { FormatHandler } from "../../types.js";
 
-import { concatBytes, textDecode, textEncode } from "../utils";
+import { concatBytes, textDecode, textEncode } from "../utils.js";
 
 const JPEG_SOI = new Uint8Array([0xff, 0xd8]);
 const APP15_MARKER = new Uint8Array([0xff, 0xef]);
@@ -168,7 +168,6 @@ export class JpegHandler implements FormatHandler {
     return concatBytes(...parts);
   }
 }
-
 
 // Freeze static methods
 Object.freeze(JpegHandler);

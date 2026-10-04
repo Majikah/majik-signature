@@ -2,13 +2,13 @@
  * utils.ts — Byte manipulation, MIME sniffing, and encoding helpers
  */
 
-import { MajikSignatureValidationError } from "../errors";
-import { FileLike } from "../types";
+import { MajikSignatureValidationError } from "../errors.js";
+import { FileLike } from "../types.js";
 import {
   CANONICAL_MTIME,
   TRAILER_MAGIC,
   TRAILER_SUFFIX_LENGTH,
-} from "./constants";
+} from "./constants.js";
 
 /** Normalize any supported input into raw bytes, defensively copied. */
 export async function normalizeToBytes(input: FileLike): Promise<Uint8Array> {

@@ -38,25 +38,25 @@ export {
   MajikImageSignature,
   MajikImageSignatureError,
   MajikImageCapacityError,
-} from "./image-signature";
+} from "./image-signature.js";
 
 export type {
   ImageVerificationResult,
   VerificationLayer,
-} from "./image-signature";
+} from "./image-signature.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type { ImageSignatureStub, ImageSignOptions } from "./core/types";
+export type { ImageSignatureStub, ImageSignOptions } from "./core/types.js";
 
 // ── Advanced / testing primitives ─────────────────────────────────────────────
 //
 // These are intentionally not re-exported from the main majik-signature index.
 // Import from '@majikah/majik-signature/stamp' if you need them directly.
 
-export { computePHash, hammingDistance, pHashMatches } from "./core/phash";
+export { computePHash, hammingDistance, pHashMatches } from "./core/phash.js";
 
-export { dctEmbed, dctExtract, dctCapacity } from "./core/dct-stego";
+export { dctEmbed, dctExtract, dctCapacity } from "./core/dct-stego.js";
 
 export {
   rsEncode,
@@ -64,22 +64,22 @@ export {
   RS_DATA_BYTES,
   RS_ECC_BYTES,
   RS_TOTAL_BYTES,
-} from "./core/reed-solomon";
+} from "./core/reed-solomon.js";
 
-export { serializeStub, deserializeStub, STUB_SIZE } from "./core/stub";
+export { serializeStub, deserializeStub, STUB_SIZE } from "./core/stub.js";
 
-export { buildImageSigningPayload } from "./core/payload";
+export { buildImageSigningPayload } from "./core/payload.js";
 
 export {
   pixelRowEmbed,
   pixelRowExtract,
   pixelRowStrip,
   pixelRowHasSignature,
-} from "./core/pixel-row";
+} from "./core/pixel-row.js";
 
 export {
   decodeImage,
   encodeImage,
   padToMinimum,
   MIN_DIMENSION,
-} from "./core/image-utils";
+} from "./core/image-utils.js";

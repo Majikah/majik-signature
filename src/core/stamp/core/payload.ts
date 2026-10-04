@@ -14,7 +14,7 @@
  * UTF-8 encoded to produce the final bytes that are signed.
  */
 
-import type { ImageSigningPayloadFields } from "./types";
+import type { ImageSigningPayloadFields } from "./types.js";
 
 const DOMAIN_PREFIX = "majik-image-v1:";
 

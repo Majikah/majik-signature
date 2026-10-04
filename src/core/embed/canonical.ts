@@ -19,8 +19,8 @@
  * This relies on embed() being deterministic (Office pins mtime + level).
  */
 
-import type { FormatHandler } from "../types";
-import { bufferEqual } from "./utils";
+import type { FormatHandler } from "../types.js";
+import { bufferEqual } from "./utils.js";
 
 export type CanonicalResult =
   | { ok: true; original: Uint8Array }

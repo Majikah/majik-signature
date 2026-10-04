@@ -13,14 +13,14 @@
  *       "ISIG" [4B size] [signature JSON, null-padded to even length]
  */
 
-import { FormatHandler } from "../../types";
+import { FormatHandler } from "../../types.js";
 import {
   concatBytes,
   readUint32LE,
   textDecode,
   textEncode,
   writeUint32LE,
-} from "../utils";
+} from "../utils.js";
 
 const RIFF_MAGIC = textEncode("RIFF");
 const WAVE_MAGIC = textEncode("WAVE");

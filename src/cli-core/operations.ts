@@ -17,7 +17,6 @@
 
 import {
   basename,
-  dirname,
   extname,
   isAbsolute,
   join,
@@ -29,11 +28,11 @@ import { zipSync } from "fflate";
 
 import { MajikKey } from "@majikah/majik-key";
 
-import { MajikSignature } from "../majik-signature";
+import { MajikSignature } from "../majik-signature.js";
 
-import { MajikSignatureEnvelope } from "../core/envelope";
+import { MajikSignatureEnvelope } from "../core/envelope.js";
 
-import { MajikSignatureMap } from "../core/mjksmap";
+import { MajikSignatureMap } from "../core/mjksmap.js";
 
 import type {
   BatchFileInput,

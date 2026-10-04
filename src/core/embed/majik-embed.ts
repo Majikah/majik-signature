@@ -69,15 +69,15 @@ import type {
   SignatoriesResult,
   SignOptions,
   VerificationResult,
-} from "../../core/types";
-import { MajikSignatureEnvelope } from "../../core/envelope";
-import { FormatHandlerRegistry } from "./registry";
+} from "../../core/types.js";
+import { MajikSignatureEnvelope } from "../../core/envelope.js";
+import { FormatHandlerRegistry } from "./registry.js";
 import {
   bytesToBlob,
   detectMimeType,
   normalizeToBlob,
   normalizeToBytes,
-} from "./utils";
+} from "./utils.js";
 
 import {
   PdfHandler,
@@ -93,21 +93,21 @@ import {
   MsixHandler,
 } from "./handlers";
 
-import { FallbackHandler } from "./fallback";
-import { base64ToBytes, bytesToBase64, hashContent } from "../hash";
-import { MajikSignatureError, MajikSignatureValidationError } from "../errors";
-import { MajikChainAnchor } from "../../anchor/types";
-import { MajikSignatureMap } from "../mjksmap";
+import { FallbackHandler } from "./fallback.js";
+import { base64ToBytes, bytesToBase64, hashContent } from "../hash.js";
+import { MajikSignatureError, MajikSignatureValidationError } from "../errors.js";
+import { MajikChainAnchor } from "../../anchor/types.js";
+import { MajikSignatureMap } from "../mjksmap.js";
 import {
   SignatureOrderResult,
   verifySignatureOrder,
   VerifySignatureOrderOptions,
-} from "../order";
+} from "../order.js";
 import {
   assertCanonical,
   noSignatureReason,
   prepareDetachedBytes,
-} from "./canonical";
+} from "./canonical.js";
 
 // ─── Adapter interfaces ───────────────────────────────────────────────────────
 

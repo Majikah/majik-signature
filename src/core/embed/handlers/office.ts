@@ -14,9 +14,9 @@
  */
 
 import { unzipSync, zipSync, strToU8, strFromU8 } from "fflate";
-import { OFFICE_ZIP_ENTRY } from "../constants";
-import { FormatHandler } from "../../types";
-import { toZippable } from "../utils";
+import { OFFICE_ZIP_ENTRY } from "../constants.js";
+import { FormatHandler } from "../../types.js";
+import { toZippable } from "../utils.js";
 
 const OFFICE_MIME_TYPES = [
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -153,10 +153,7 @@ export class OfficeHandler implements FormatHandler {
     }
   }
 
-  async embed(
-    bytes: Uint8Array,
-    signatureJson: string,
-  ): Promise<Uint8Array> {
+  async embed(bytes: Uint8Array, signatureJson: string): Promise<Uint8Array> {
     try {
       const files = unzipBounded(bytes);
 

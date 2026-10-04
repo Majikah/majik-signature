@@ -9,8 +9,8 @@
  *   [4B length][4B type "iTXt"][keyword\0][compression_flag][compression_method][lang\0][translated_keyword\0][text][4B CRC]
  */
 
-import { FormatHandler } from "../../types";
-import { PNG_KEYWORD } from "../constants";
+import { FormatHandler } from "../../types.js";
+import { PNG_KEYWORD } from "../constants.js";
 import {
   concatBytes,
   crc32,
@@ -18,7 +18,7 @@ import {
   textDecode,
   textEncode,
   writeUint32BE,
-} from "../utils";
+} from "../utils.js";
 
 const PNG_SIGNATURE = new Uint8Array([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,

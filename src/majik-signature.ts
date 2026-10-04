@@ -16,16 +16,16 @@ import {
   MAJIK_NOTARY_MEMO_DOMAIN,
   MAJIK_SIGNATURE_VERSION,
   MAJIK_TIMESTAMP_VERSION,
-} from "./core/constants";
+} from "./core/constants.js";
 import {
   MajikSignatureError,
   MajikSignatureKeyError,
   MajikSignatureVerificationError,
   MajikSignatureSerializationError,
-} from "./core/errors";
-import { MajikSignatureValidator } from "./core/validator";
-import { buildSigningPayload, buildTSACanonicalBytes } from "./core/payload";
-import { hashContent, bytesToBase64, base64ToBytes } from "./core/hash";
+} from "./core/errors.js";
+import { MajikSignatureValidator } from "./core/validator.js";
+import { buildSigningPayload, buildTSACanonicalBytes } from "./core/payload.js";
+import { hashContent, bytesToBase64, base64ToBytes } from "./core/hash.js";
 import type {
   BatchFileInput,
   BatchSignOptions,
@@ -55,23 +55,23 @@ import type {
   SignatoryInfo,
   SignOptions,
   VerificationResult,
-} from "./core/types";
-import { MajikSignatureEmbed } from "./core/embed/majik-embed";
+} from "./core/types.js";
+import { MajikSignatureEmbed } from "./core/embed/majik-embed.js";
 
 // ── Stamp (image signing) imports ─────────────────────────────────────────────
-import { MajikImageSignature } from "./core/stamp/image-signature";
+import { MajikImageSignature } from "./core/stamp/image-signature.js";
 import type {
   ImageVerificationResult,
   ImageSignOptions,
   ImageSignatureStub,
 } from "./core/stamp";
-import { MajikChainAnchor, MajikChainAnchorMemo } from "./anchor/types";
-import { MajikSignatureEnvelope } from "./core/envelope";
-import { MajikSignatureMap } from "./core/mjksmap";
+import { MajikChainAnchor, MajikChainAnchorMemo } from "./anchor/types.js";
+import { MajikSignatureEnvelope } from "./core/envelope.js";
+import { MajikSignatureMap } from "./core/mjksmap.js";
 import {
   SignatureOrderResult,
   normalizeExpectedOrder as normalizeExpectedOrderUtil,
-} from "./core/order";
+} from "./core/order.js";
 
 const secureFill = Uint8Array.prototype.fill;
 

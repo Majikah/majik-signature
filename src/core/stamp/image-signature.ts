@@ -92,23 +92,23 @@ export interface MajikSignatureStaticAdapter {
   ): Promise<Array<{ valid: boolean; reason?: string }>>; // ← was single object
 }
 
-import { computePHash, pHashMatches, hammingDistance } from "./core/phash";
-import { dctEmbed, dctExtract, dctCapacity } from "./core/dct-stego";
-import { rsEncode, rsDecode, RS_TOTAL_BYTES } from "./core/reed-solomon";
-import { serializeStub, deserializeStub } from "./core/stub";
-import { buildImageSigningPayload } from "./core/payload";
+import { computePHash, pHashMatches, hammingDistance } from "./core/phash.js";
+import { dctEmbed, dctExtract, dctCapacity } from "./core/dct-stego.js";
+import { rsEncode, rsDecode, RS_TOTAL_BYTES } from "./core/reed-solomon.js";
+import { serializeStub, deserializeStub } from "./core/stub.js";
+import { buildImageSigningPayload } from "./core/payload.js";
 import {
   pixelRowEmbed,
   pixelRowExtract,
   pixelRowStrip,
-} from "./core/pixel-row";
+} from "./core/pixel-row.js";
 import {
   decodeImage,
   encodeImage,
   padToMinimum,
   MIN_DIMENSION,
-} from "./core/image-utils";
-import type { ImageSignatureStub, ImageSignOptions } from "./core/types";
+} from "./core/image-utils.js";
+import type { ImageSignatureStub, ImageSignOptions } from "./core/types.js";
 
 // ─── Result types ─────────────────────────────────────────────────────────────
 

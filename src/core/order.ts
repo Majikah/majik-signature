@@ -21,15 +21,15 @@ import type { MajikKey } from "@majikah/majik-key";
 import {
   MajikSignatureKeyError,
   MajikSignatureValidationError,
-} from "./errors";
-import { base64ToBytes, bytesToBase64 } from "./hash";
-import type { MajikSignatureEnvelope } from "./envelope";
+} from "./errors.js";
+import { base64ToBytes, bytesToBase64 } from "./hash.js";
+import type { MajikSignatureEnvelope } from "./envelope.js";
 import type {
   ExpectedSigner,
   MajikSignatureJSON,
   MajikSignerPublicKeys,
   VerificationResult,
-} from "./types";
+} from "./types.js";
 
 // ─── Public types ──────────────────────────────────────────────────────────
 

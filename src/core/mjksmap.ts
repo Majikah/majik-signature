@@ -16,9 +16,9 @@
 import {
   MajikSignatureSerializationError,
   MajikSignatureValidationError,
-} from "./errors";
-import { hashContent, bytesToBase64 } from "./hash";
-import { MajikSignatureEnvelope } from "./envelope";
+} from "./errors.js";
+import { hashContent, bytesToBase64 } from "./hash.js";
+import { MajikSignatureEnvelope } from "./envelope.js";
 import {
   MJKSMAP_HEADER_LEN,
   MJKSMAP_MAGIC,
@@ -26,14 +26,14 @@ import {
   MJKSMAP_MEDIA_TYPE,
   MJKSMAP_SUPPORTED_VERSIONS,
   MJKSMAP_VERSION,
-} from "./constants";
+} from "./constants.js";
 import type {
   MajikSignatureEnvelopeJSON,
   MjksMapEntry,
   MjksMapFindResult,
   MjksMapJSON,
   MjksMapResolveResult,
-} from "./types";
+} from "./types.js";
 
 // ─── Path normalization ────────────────────────────────────────────────────────
 

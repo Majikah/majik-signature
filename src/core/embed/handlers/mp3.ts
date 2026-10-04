@@ -14,9 +14,9 @@
  *   "ID3" [1B major_ver=3][1B revision=0][1B flags=0][4B syncsafe_size]
  */
 
-import { FormatHandler } from "../../types";
-import { ID3_TXXX_DESCRIPTION } from "../constants";
-import { concatBytes, textDecode, textEncode } from "../utils";
+import { FormatHandler } from "../../types.js";
+import { ID3_TXXX_DESCRIPTION } from "../constants.js";
+import { concatBytes, textDecode, textEncode } from "../utils.js";
 
 export class Mp3Handler implements FormatHandler {
   readonly name = "MP3";

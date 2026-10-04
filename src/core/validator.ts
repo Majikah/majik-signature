@@ -13,11 +13,11 @@ import {
   CONTENT_HASH_B64_LEN,
   ALLOWLIST_HASH_B64_LEN,
   SEAL_HASH_HEX_LEN,
-} from "./constants";
+} from "./constants.js";
 import {
   MajikSignatureValidationError,
   MajikSignatureKeyError,
-} from "./errors";
+} from "./errors.js";
 import type {
   ExpectedSigner,
   MajikSignatureJSON,
@@ -25,7 +25,7 @@ import type {
   MajikTimestamp,
   MajikTSAPayload,
   MultiSigEnvelope,
-} from "./types";
+} from "./types.js";
 
 export class MajikSignatureValidator {
   // ── Assertions ──────────────────────────────────────────────────────────────

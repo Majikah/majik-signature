@@ -25,8 +25,8 @@ import {
   MAJIK_SIGNATURE_DOMAIN,
   MAJIK_SIGNATURE_VERSION,
   MAJIK_TSA_DOMAIN,
-} from "./constants";
-import { MajikTSAPayload } from "./types";
+} from "./constants.js";
+import { MajikTSAPayload } from "./types.js";
 
 /**
  * Fields used to construct a canonical Majik Signature signing payload.
