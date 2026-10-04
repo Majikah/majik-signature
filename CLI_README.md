@@ -29,6 +29,81 @@ mjksig
 
 ---
 
+## Table of Contents
+
+- [Majik Signature CLI](#majik-signature-cli)
+  - [Table of Contents](#table-of-contents)
+  - [Quick Start](#quick-start)
+    - [Run directly with `npx`](#run-directly-with-npx)
+    - [Install globally](#install-globally)
+- [Feature Overview](#feature-overview)
+- [Available Commands](#available-commands)
+- [Key Handling](#key-handling)
+  - [Passphrase resolution](#passphrase-resolution)
+    - [Interactive use](#interactive-use)
+    - [Non-interactive use](#non-interactive-use)
+  - [Supported key backup format](#supported-key-backup-format)
+- [`sign`](#sign)
+  - [Basic syntax](#basic-syntax)
+    - [Example](#example)
+  - [`sign` options](#sign-options)
+- [Supported `sign` Workflows and Combinations](#supported-sign-workflows-and-combinations)
+    - [Combining independent metadata options](#combining-independent-metadata-options)
+- [Invalid `sign` Combinations](#invalid-sign-combinations)
+- [`verify`](#verify)
+  - [Syntax](#syntax)
+  - [Options](#options)
+- [`verify` Examples](#verify-examples)
+- [Verification Outcomes and Exit Codes](#verification-outcomes-and-exit-codes)
+- [`seal`](#seal)
+  - [Syntax](#syntax-1)
+  - [Options](#options-1)
+  - [Examples](#examples)
+- [`can-sign`](#can-sign)
+  - [Syntax](#syntax-2)
+  - [Options](#options-2)
+  - [Examples](#examples-1)
+- [`inspect`](#inspect)
+  - [Syntax](#syntax-3)
+  - [Options](#options-3)
+  - [Examples](#examples-2)
+- [MJKSMAP Workflows](#mjksmap-workflows)
+  - [Create a map](#create-a-map)
+  - [Verify the map](#verify-the-map)
+  - [Create a map and bundle](#create-a-map-and-bundle)
+  - [Establish an allowlist during map creation](#establish-an-allowlist-during-map-creation)
+- [Multi-Signature and Allowlists](#multi-signature-and-allowlists)
+  - [Establish an allowlist](#establish-an-allowlist)
+  - [Check permission](#check-permission)
+  - [Co-sign an MJKSMAP](#co-sign-an-mjksmap)
+- [Batch Detached Signing](#batch-detached-signing)
+  - [Basic batch signing](#basic-batch-signing)
+  - [Continue after individual failures](#continue-after-individual-failures)
+  - [Continue and overwrite](#continue-and-overwrite)
+- [JSON Output](#json-output)
+- [Common End-to-End Recipes](#common-end-to-end-recipes)
+  - [1. Sign a document for self-contained verification](#1-sign-a-document-for-self-contained-verification)
+  - [2. Create and verify a detached signature](#2-create-and-verify-a-detached-signature)
+  - [3. Sign and expire a document](#3-sign-and-expire-a-document)
+  - [4. Sign and seal a final document](#4-sign-and-seal-a-final-document)
+  - [5. Sign an entire project folder](#5-sign-an-entire-project-folder)
+  - [6. Create a portable map bundle](#6-create-a-portable-map-bundle)
+  - [7. Authorize a second signer and co-sign a map](#7-authorize-a-second-signer-and-co-sign-a-map)
+  - [8. Run in CI without an interactive terminal](#8-run-in-ci-without-an-interactive-terminal)
+- [`npx` Usage](#npx-usage)
+- [Complete Command Cheat Sheet](#complete-command-cheat-sheet)
+- [Operational Notes](#operational-notes)
+    - [Use JSON output for automation](#use-json-output-for-automation)
+    - [Use `--overwrite` deliberately](#use---overwrite-deliberately)
+    - [Protect private key backups](#protect-private-key-backups)
+    - [Prefer pinned versions in reproducible automation](#prefer-pinned-versions-in-reproducible-automation)
+    - [Verify before distribution](#verify-before-distribution)
+- [Summary](#summary)
+
+
+
+---
+
 ## Quick Start
 
 ### Run directly with `npx`
@@ -60,35 +135,35 @@ mjksig --version
 
 # Feature Overview
 
-| Feature | CLI support | Purpose |
-|---|---|---|
-| Embedded signing | Yes | Store the signature envelope inside the original file. |
-| Detached signing | Yes | Create a separate `.mjksig` signature envelope. |
-| Folder signing | Yes | Create a `.mjksmap` manifest for a directory. |
-| MJKSMAP verification | Yes | Detect tampered, missing, and relocated files. |
-| Multi-signer allowlists | Yes | Restrict who may add later signatures. |
-| Map co-signing | Yes | Add an authorized second signature to every map entry. |
-| Sealing | Yes | Prevent further signing of a signed envelope. |
-| JSON output | Yes | Consume results programmatically in scripts and CI. |
-| Batch continuation | Yes | Continue folder detached signing after individual failures. |
-| TSA token input | Yes | Supply a TSA token in supported detached/co-sign workflows. |
-| Interactive passphrase | Yes | Prompt for a hidden Majik Key passphrase in a terminal. |
-| Environment passphrase | Yes | Use `MAJIK_KEY_PASSPHRASE` in CI/non-interactive execution. |
-| PNG Majik Key restore | No | The npm CLI currently accepts JSON key backups only. |
+| Feature                 | CLI support | Purpose                                                     |
+| ----------------------- | ----------- | ----------------------------------------------------------- |
+| Embedded signing        | Yes         | Store the signature envelope inside the original file.      |
+| Detached signing        | Yes         | Create a separate `.mjksig` signature envelope.             |
+| Folder signing          | Yes         | Create a `.mjksmap` manifest for a directory.               |
+| MJKSMAP verification    | Yes         | Detect tampered, missing, and relocated files.              |
+| Multi-signer allowlists | Yes         | Restrict who may add later signatures.                      |
+| Map co-signing          | Yes         | Add an authorized second signature to every map entry.      |
+| Sealing                 | Yes         | Prevent further signing of a signed envelope.               |
+| JSON output             | Yes         | Consume results programmatically in scripts and CI.         |
+| Batch continuation      | Yes         | Continue folder detached signing after individual failures. |
+| TSA token input         | Yes         | Supply a TSA token in supported detached/co-sign workflows. |
+| Interactive passphrase  | Yes         | Prompt for a hidden Majik Key passphrase in a terminal.     |
+| Environment passphrase  | Yes         | Use `MAJIK_KEY_PASSPHRASE` in CI/non-interactive execution. |
+| PNG Majik Key restore   | No          | The npm CLI currently accepts JSON key backups only.        |
 
 ---
 
 # Available Commands
 
-| Command | Main purpose | Typical output |
-|---|---|---|
-| `mjksig --help` | Show CLI help | Help text |
-| `mjksig --version` | Show installed CLI version | Version string |
-| `mjksig sign <input>` | Sign a file or folder | Embedded signature, `.mjksig`, or `.mjksmap` |
-| `mjksig verify <input>` | Verify signed content | Exit status plus verification result |
-| `mjksig seal <input>` | Seal an existing envelope | Updated signed file or `.mjksig` |
-| `mjksig can-sign <input>` | Check signing permission | Permission result |
-| `mjksig inspect <input>` | Inspect signature metadata | Envelope information |
+| Command                   | Main purpose               | Typical output                               |
+| ------------------------- | -------------------------- | -------------------------------------------- |
+| `mjksig --help`           | Show CLI help              | Help text                                    |
+| `mjksig --version`        | Show installed CLI version | Version string                               |
+| `mjksig sign <input>`     | Sign a file or folder      | Embedded signature, `.mjksig`, or `.mjksmap` |
+| `mjksig verify <input>`   | Verify signed content      | Exit status plus verification result         |
+| `mjksig seal <input>`     | Seal an existing envelope  | Updated signed file or `.mjksig`             |
+| `mjksig can-sign <input>` | Check signing permission   | Permission result                            |
+| `mjksig inspect <input>`  | Inspect signature metadata | Envelope information                         |
 
 ---
 
@@ -177,26 +252,26 @@ mjksig sign ./contract.pdf --key ./alice.json
 
 ## `sign` options
 
-| Option | Argument | Description |
-|---|---|---|
-| `-k, --key <path>` | Path | Majik Key JSON backup used for signing. Required. |
-| `-o, --output <path>` | Path | Custom output file or directory where supported by the selected workflow. |
-| `--detached` | None | Use detached `.mjksig` signing instead of embedding the envelope. |
-| `--map` | None | Use MJKSMAP folder-signing mode. |
-| `--mjksmap` | None | Alias for `--map`. |
-| `--as-map` | None | Alias for `--map`. |
-| `--cosign <path>` | Path | Co-sign an existing MJKSMAP. |
-| `--cosign-map <path>` | Path | Explicit alias/path form for MJKSMAP co-signing. |
-| `--bundle` | None | Create a ZIP bundle in supported map/co-sign workflows. |
-| `--seal` | None | Seal the resulting signed envelope in workflows that support sealing. |
-| `--content-type <mime>` | MIME type | Set the signature content type metadata. |
-| `--timestamp <iso>` | ISO timestamp | Set an explicit signature timestamp. |
-| `--valid-until <iso>` | ISO timestamp | Add an expiration timestamp to the signature metadata. |
-| `--allow-key <path>` | Path | Add an additional authorized signer to the signing allowlist. Repeatable. |
-| `--tsa-token <path>` | Path | Supply a TSA token in supported detached/co-sign workflows. |
-| `--continue-on-error` | None | Continue folder processing after an individual failure. |
-| `--overwrite` | None | Replace an existing output where supported. |
-| `--json` | None | Emit machine-readable JSON instead of human-readable output. |
+| Option                  | Argument      | Description                                                               |
+| ----------------------- | ------------- | ------------------------------------------------------------------------- |
+| `-k, --key <path>`      | Path          | Majik Key JSON backup used for signing. Required.                         |
+| `-o, --output <path>`   | Path          | Custom output file or directory where supported by the selected workflow. |
+| `--detached`            | None          | Use detached `.mjksig` signing instead of embedding the envelope.         |
+| `--map`                 | None          | Use MJKSMAP folder-signing mode.                                          |
+| `--mjksmap`             | None          | Alias for `--map`.                                                        |
+| `--as-map`              | None          | Alias for `--map`.                                                        |
+| `--cosign <path>`       | Path          | Co-sign an existing MJKSMAP.                                              |
+| `--cosign-map <path>`   | Path          | Explicit alias/path form for MJKSMAP co-signing.                          |
+| `--bundle`              | None          | Create a ZIP bundle in supported map/co-sign workflows.                   |
+| `--seal`                | None          | Seal the resulting signed envelope in workflows that support sealing.     |
+| `--content-type <mime>` | MIME type     | Set the signature content type metadata.                                  |
+| `--timestamp <iso>`     | ISO timestamp | Set an explicit signature timestamp.                                      |
+| `--valid-until <iso>`   | ISO timestamp | Add an expiration timestamp to the signature metadata.                    |
+| `--allow-key <path>`    | Path          | Add an additional authorized signer to the signing allowlist. Repeatable. |
+| `--tsa-token <path>`    | Path          | Supply a TSA token in supported detached/co-sign workflows.               |
+| `--continue-on-error`   | None          | Continue folder processing after an individual failure.                   |
+| `--overwrite`           | None          | Replace an existing output where supported.                               |
+| `--json`                | None          | Emit machine-readable JSON instead of human-readable output.              |
 
 ---
 
@@ -204,39 +279,39 @@ mjksig sign ./contract.pdf --key ./alice.json
 
 The following table covers the meaningful CLI workflow combinations exposed by the current command parser and exercised by the test suite.
 
-| Workflow | Example | What it does |
-|---|---|---|
-| Embedded signing | `mjksig sign report.pdf --key alice.json` | Signs the file and embeds the signature envelope into the file. |
-| Embedded + JSON | `mjksig sign report.pdf --key alice.json --json` | Same as embedded signing, with JSON result output. |
-| Embedded + content type | `mjksig sign data.bin --key alice.json --content-type application/octet-stream` | Stores the supplied MIME type in signature metadata. |
-| Embedded + fixed timestamp | `mjksig sign report.pdf --key alice.json --timestamp 2026-10-01T12:00:00.000Z` | Uses a deterministic signature timestamp. |
-| Embedded + expiration | `mjksig sign report.pdf --key alice.json --valid-until 2027-01-01T00:00:00.000Z` | Adds `validUntil` metadata. |
-| Embedded + allowlist | `mjksig sign contract.pdf --key alice.json --allow-key bob.json` | Alice signs first and establishes an allowlist that includes Bob. |
-| Embedded + multiple allowlist keys | `mjksig sign contract.pdf --key alice.json --allow-key bob.json --allow-key carol.json` | Establishes an allowlist containing multiple authorized signers. |
-| Embedded + seal | `mjksig sign final.pdf --key alice.json --seal` | Signs and seals the resulting envelope. |
-| Embedded + metadata + JSON | `mjksig sign report.pdf --key alice.json --content-type application/pdf --timestamp 2026-10-01T12:00:00.000Z --json` | Signs with explicit metadata and machine-readable output. |
-| Detached signing | `mjksig sign report.pdf --key alice.json --detached` | Creates `report.pdf.mjksig` and leaves the source file unchanged. |
-| Detached + custom output | `mjksig sign report.pdf --key alice.json --detached --output ./signatures/report.mjksig` | Writes the detached envelope to a custom path. |
-| Detached + overwrite | `mjksig sign report.pdf --key alice.json --detached --output ./report.mjksig --overwrite` | Replaces an existing detached output. |
-| Detached + allowlist | `mjksig sign contract.pdf --key alice.json --detached --allow-key bob.json` | Creates a detached envelope with an allowlist. |
-| Detached + JSON | `mjksig sign report.pdf --key alice.json --detached --json` | Detached signing with JSON result output. |
-| Detached + TSA token | `mjksig sign report.pdf --key alice.json --detached --tsa-token ./token.bin` | Supplies a TSA token to a supported detached signing flow. |
-| Folder MJKSMAP signing | `mjksig sign ./project --key alice.json --map` | Signs the folder into `signatures.mjksmap`. |
-| Folder MJKSMAP via alias | `mjksig sign ./project --key alice.json --mjksmap` | Same as `--map`. |
-| Folder MJKSMAP via alias | `mjksig sign ./project --key alice.json --as-map` | Same as `--map`. |
-| MJKSMAP + allowlist | `mjksig sign ./project --key alice.json --map --allow-key bob.json` | Creates mapped entries while authorizing Bob to co-sign. |
-| MJKSMAP + multiple allowlist keys | `mjksig sign ./project --key alice.json --map --allow-key bob.json --allow-key carol.json` | Establishes a multi-signer allowlist on map entries. |
-| MJKSMAP + bundle | `mjksig sign ./project --key alice.json --map --bundle` | Creates the map plus a ZIP bundle. |
-| MJKSMAP + JSON | `mjksig sign ./project --key alice.json --map --json` | Creates the map with machine-readable output. |
-| MJKSMAP + allowlist + bundle | `mjksig sign ./project --key alice.json --map --allow-key bob.json --bundle` | Creates an authorized map and a ZIP bundle. |
-| MJKSMAP co-sign | `mjksig sign ./project --key bob.json --cosign ./project/signatures.mjksmap --overwrite` | Bob adds a signature to each map entry for which Bob is authorized. |
-| MJKSMAP co-sign via `--cosign-map` | `mjksig sign ./project --key bob.json --cosign-map ./project/signatures.mjksmap --overwrite` | Same co-signing workflow using the explicit `--cosign-map` option. |
-| MJKSMAP co-sign + bundle | `mjksig sign ./project --key bob.json --cosign ./project/signatures.mjksmap --bundle --overwrite` | Co-signs the map and produces the supported bundle output. |
-| MJKSMAP co-sign + JSON | `mjksig sign ./project --key bob.json --cosign ./project/signatures.mjksmap --overwrite --json` | Co-signs with machine-readable output. |
-| Folder detached signing | `mjksig sign ./documents --key alice.json --detached` | Processes signable files in a directory using detached sidecars. |
-| Folder detached + continue | `mjksig sign ./documents --key alice.json --detached --continue-on-error` | Keeps processing when an individual file cannot be signed. |
-| Folder detached + overwrite | `mjksig sign ./documents --key alice.json --detached --overwrite` | Replaces existing detached outputs where supported. |
-| Folder detached + continue + overwrite | `mjksig sign ./documents --key alice.json --detached --continue-on-error --overwrite` | Continues through failures and replaces existing sidecars where appropriate. |
+| Workflow                               | Example                                                                                                              | What it does                                                                 |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Embedded signing                       | `mjksig sign report.pdf --key alice.json`                                                                            | Signs the file and embeds the signature envelope into the file.              |
+| Embedded + JSON                        | `mjksig sign report.pdf --key alice.json --json`                                                                     | Same as embedded signing, with JSON result output.                           |
+| Embedded + content type                | `mjksig sign data.bin --key alice.json --content-type application/octet-stream`                                      | Stores the supplied MIME type in signature metadata.                         |
+| Embedded + fixed timestamp             | `mjksig sign report.pdf --key alice.json --timestamp 2026-10-01T12:00:00.000Z`                                       | Uses a deterministic signature timestamp.                                    |
+| Embedded + expiration                  | `mjksig sign report.pdf --key alice.json --valid-until 2027-01-01T00:00:00.000Z`                                     | Adds `validUntil` metadata.                                                  |
+| Embedded + allowlist                   | `mjksig sign contract.pdf --key alice.json --allow-key bob.json`                                                     | Alice signs first and establishes an allowlist that includes Bob.            |
+| Embedded + multiple allowlist keys     | `mjksig sign contract.pdf --key alice.json --allow-key bob.json --allow-key carol.json`                              | Establishes an allowlist containing multiple authorized signers.             |
+| Embedded + seal                        | `mjksig sign final.pdf --key alice.json --seal`                                                                      | Signs and seals the resulting envelope.                                      |
+| Embedded + metadata + JSON             | `mjksig sign report.pdf --key alice.json --content-type application/pdf --timestamp 2026-10-01T12:00:00.000Z --json` | Signs with explicit metadata and machine-readable output.                    |
+| Detached signing                       | `mjksig sign report.pdf --key alice.json --detached`                                                                 | Creates `report.pdf.mjksig` and leaves the source file unchanged.            |
+| Detached + custom output               | `mjksig sign report.pdf --key alice.json --detached --output ./signatures/report.mjksig`                             | Writes the detached envelope to a custom path.                               |
+| Detached + overwrite                   | `mjksig sign report.pdf --key alice.json --detached --output ./report.mjksig --overwrite`                            | Replaces an existing detached output.                                        |
+| Detached + allowlist                   | `mjksig sign contract.pdf --key alice.json --detached --allow-key bob.json`                                          | Creates a detached envelope with an allowlist.                               |
+| Detached + JSON                        | `mjksig sign report.pdf --key alice.json --detached --json`                                                          | Detached signing with JSON result output.                                    |
+| Detached + TSA token                   | `mjksig sign report.pdf --key alice.json --detached --tsa-token ./token.bin`                                         | Supplies a TSA token to a supported detached signing flow.                   |
+| Folder MJKSMAP signing                 | `mjksig sign ./project --key alice.json --map`                                                                       | Signs the folder into `signatures.mjksmap`.                                  |
+| Folder MJKSMAP via alias               | `mjksig sign ./project --key alice.json --mjksmap`                                                                   | Same as `--map`.                                                             |
+| Folder MJKSMAP via alias               | `mjksig sign ./project --key alice.json --as-map`                                                                    | Same as `--map`.                                                             |
+| MJKSMAP + allowlist                    | `mjksig sign ./project --key alice.json --map --allow-key bob.json`                                                  | Creates mapped entries while authorizing Bob to co-sign.                     |
+| MJKSMAP + multiple allowlist keys      | `mjksig sign ./project --key alice.json --map --allow-key bob.json --allow-key carol.json`                           | Establishes a multi-signer allowlist on map entries.                         |
+| MJKSMAP + bundle                       | `mjksig sign ./project --key alice.json --map --bundle`                                                              | Creates the map plus a ZIP bundle.                                           |
+| MJKSMAP + JSON                         | `mjksig sign ./project --key alice.json --map --json`                                                                | Creates the map with machine-readable output.                                |
+| MJKSMAP + allowlist + bundle           | `mjksig sign ./project --key alice.json --map --allow-key bob.json --bundle`                                         | Creates an authorized map and a ZIP bundle.                                  |
+| MJKSMAP co-sign                        | `mjksig sign ./project --key bob.json --cosign ./project/signatures.mjksmap --overwrite`                             | Bob adds a signature to each map entry for which Bob is authorized.          |
+| MJKSMAP co-sign via `--cosign-map`     | `mjksig sign ./project --key bob.json --cosign-map ./project/signatures.mjksmap --overwrite`                         | Same co-signing workflow using the explicit `--cosign-map` option.           |
+| MJKSMAP co-sign + bundle               | `mjksig sign ./project --key bob.json --cosign ./project/signatures.mjksmap --bundle --overwrite`                    | Co-signs the map and produces the supported bundle output.                   |
+| MJKSMAP co-sign + JSON                 | `mjksig sign ./project --key bob.json --cosign ./project/signatures.mjksmap --overwrite --json`                      | Co-signs with machine-readable output.                                       |
+| Folder detached signing                | `mjksig sign ./documents --key alice.json --detached`                                                                | Processes signable files in a directory using detached sidecars.             |
+| Folder detached + continue             | `mjksig sign ./documents --key alice.json --detached --continue-on-error`                                            | Keeps processing when an individual file cannot be signed.                   |
+| Folder detached + overwrite            | `mjksig sign ./documents --key alice.json --detached --overwrite`                                                    | Replaces existing detached outputs where supported.                          |
+| Folder detached + continue + overwrite | `mjksig sign ./documents --key alice.json --detached --continue-on-error --overwrite`                                | Continues through failures and replaces existing sidecars where appropriate. |
 
 ### Combining independent metadata options
 
@@ -268,14 +343,14 @@ mjksig sign contract.pdf \
 
 The CLI intentionally rejects certain combinations.
 
-| Combination | Result | Why |
-|---|---|---|
-| `--map --detached` | Invalid | Map mode and detached single-envelope mode are different workflows. |
-| `--map --cosign` | Invalid | Initial map creation and map co-signing are separate operations. |
-| `--detached --cosign` | Invalid | Detached signing and MJKSMAP co-signing are separate operations. |
-| `--bundle` without `--map` or `--cosign` | Invalid | Bundling is tied to map/co-sign workflows. |
-| `--tsa-token` without `--detached` or `--cosign` | Invalid | TSA token input is restricted to supported detached/co-sign workflows. |
-| `--allow-key` with `--cosign` | Invalid | Co-signing uses the allowlist already established by the existing envelope/map. |
+| Combination                                      | Result  | Why                                                                             |
+| ------------------------------------------------ | ------- | ------------------------------------------------------------------------------- |
+| `--map --detached`                               | Invalid | Map mode and detached single-envelope mode are different workflows.             |
+| `--map --cosign`                                 | Invalid | Initial map creation and map co-signing are separate operations.                |
+| `--detached --cosign`                            | Invalid | Detached signing and MJKSMAP co-signing are separate operations.                |
+| `--bundle` without `--map` or `--cosign`         | Invalid | Bundling is tied to map/co-sign workflows.                                      |
+| `--tsa-token` without `--detached` or `--cosign` | Invalid | TSA token input is restricted to supported detached/co-sign workflows.          |
+| `--allow-key` with `--cosign`                    | Invalid | Co-signing uses the allowlist already established by the existing envelope/map. |
 
 > **Allowlist rule:** the first signer establishes the signing allowlist. A later signer should not try to create a new allowlist after another signer has already signed the file. Use the co-sign workflow for an already-authorized signer.
 
@@ -297,35 +372,35 @@ mjksig verify <input> [options]
 
 ## Options
 
-| Option | Argument | Description |
-|---|---|---|
-| `-k, --key <path>` | Path | Optional Majik Key reference for supported verification workflows. |
-| `--detached <path>` | Path | Detached `.mjksig` envelope to verify against the input file. |
-| `--map <path>` | Path | `.mjksmap` file used to verify a folder. |
-| `--order <signers>` | CSV | Expected signer fingerprints in order, separated by commas. |
-| `--strict` | None | Enable strict verification behavior. |
-| `--json` | None | Emit machine-readable JSON. |
+| Option              | Argument | Description                                                        |
+| ------------------- | -------- | ------------------------------------------------------------------ |
+| `-k, --key <path>`  | Path     | Optional Majik Key reference for supported verification workflows. |
+| `--detached <path>` | Path     | Detached `.mjksig` envelope to verify against the input file.      |
+| `--map <path>`      | Path     | `.mjksmap` file used to verify a folder.                           |
+| `--order <signers>` | CSV      | Expected signer fingerprints in order, separated by commas.        |
+| `--strict`          | None     | Enable strict verification behavior.                               |
+| `--json`            | None     | Emit machine-readable JSON.                                        |
 
 ---
 
 # `verify` Examples
 
-| Workflow | Example | What it does |
-|---|---|---|
-| Verify embedded | `mjksig verify report.pdf` | Verifies the signature embedded in `report.pdf`. |
-| Verify embedded + JSON | `mjksig verify report.pdf --json` | Returns the embedded verification result as JSON. |
-| Verify embedded + strict | `mjksig verify report.pdf --strict` | Performs strict verification. |
-| Verify with signer order | `mjksig verify report.pdf --order alice,bob` | Supplies an expected signer sequence. |
-| Verify + order + strict | `mjksig verify report.pdf --order alice,bob --strict` | Combines signer-order and strict verification. |
-| Verify detached | `mjksig verify report.pdf --detached report.pdf.mjksig` | Verifies the source file against its detached envelope. |
-| Verify detached + JSON | `mjksig verify report.pdf --detached report.pdf.mjksig --json` | Detached verification with JSON output. |
-| Verify detached + order | `mjksig verify report.pdf --detached report.pdf.mjksig --order alice,bob` | Detached verification with expected signer ordering. |
-| Verify detached + strict | `mjksig verify report.pdf --detached report.pdf.mjksig --strict` | Strict detached verification. |
-| Verify MJKSMAP | `mjksig verify ./project --map ./project/signatures.mjksmap` | Verifies every mapped file against the manifest. |
-| Verify MJKSMAP + JSON | `mjksig verify ./project --map ./project/signatures.mjksmap --json` | Returns map verification as JSON. |
-| Verify MJKSMAP + order | `mjksig verify ./project --map ./project/signatures.mjksmap --order alice,bob` | Verifies the map while checking signer order. |
-| Verify MJKSMAP + strict | `mjksig verify ./project --map ./project/signatures.mjksmap --strict` | Strict map verification. |
-| Verify MJKSMAP + order + strict | `mjksig verify ./project --map ./project/signatures.mjksmap --order alice,bob --strict` | Strict map verification with signer-order constraints. |
+| Workflow                        | Example                                                                                 | What it does                                            |
+| ------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Verify embedded                 | `mjksig verify report.pdf`                                                              | Verifies the signature embedded in `report.pdf`.        |
+| Verify embedded + JSON          | `mjksig verify report.pdf --json`                                                       | Returns the embedded verification result as JSON.       |
+| Verify embedded + strict        | `mjksig verify report.pdf --strict`                                                     | Performs strict verification.                           |
+| Verify with signer order        | `mjksig verify report.pdf --order alice,bob`                                            | Supplies an expected signer sequence.                   |
+| Verify + order + strict         | `mjksig verify report.pdf --order alice,bob --strict`                                   | Combines signer-order and strict verification.          |
+| Verify detached                 | `mjksig verify report.pdf --detached report.pdf.mjksig`                                 | Verifies the source file against its detached envelope. |
+| Verify detached + JSON          | `mjksig verify report.pdf --detached report.pdf.mjksig --json`                          | Detached verification with JSON output.                 |
+| Verify detached + order         | `mjksig verify report.pdf --detached report.pdf.mjksig --order alice,bob`               | Detached verification with expected signer ordering.    |
+| Verify detached + strict        | `mjksig verify report.pdf --detached report.pdf.mjksig --strict`                        | Strict detached verification.                           |
+| Verify MJKSMAP                  | `mjksig verify ./project --map ./project/signatures.mjksmap`                            | Verifies every mapped file against the manifest.        |
+| Verify MJKSMAP + JSON           | `mjksig verify ./project --map ./project/signatures.mjksmap --json`                     | Returns map verification as JSON.                       |
+| Verify MJKSMAP + order          | `mjksig verify ./project --map ./project/signatures.mjksmap --order alice,bob`          | Verifies the map while checking signer order.           |
+| Verify MJKSMAP + strict         | `mjksig verify ./project --map ./project/signatures.mjksmap --strict`                   | Strict map verification.                                |
+| Verify MJKSMAP + order + strict | `mjksig verify ./project --map ./project/signatures.mjksmap --order alice,bob --strict` | Strict map verification with signer-order constraints.  |
 
 ---
 
@@ -333,19 +408,19 @@ mjksig verify <input> [options]
 
 The CLI uses exit codes suitable for scripting and CI.
 
-| Exit code | Meaning |
-|---:|---|
-| `0` | Operation succeeded. |
-| `1` | Operation completed with an unsuccessful result, such as invalid verification or denied signing. |
-| `2` | CLI usage/parsing failure, such as a missing required option or incompatible flags. |
+| Exit code | Meaning                                                                                          |
+| --------: | ------------------------------------------------------------------------------------------------ |
+|       `0` | Operation succeeded.                                                                             |
+|       `1` | Operation completed with an unsuccessful result, such as invalid verification or denied signing. |
+|       `2` | CLI usage/parsing failure, such as a missing required option or incompatible flags.              |
 
 Typical verification verdicts include:
 
-| Verdict | Meaning |
-|---|---|
-| `valid` | Signature verification succeeded. |
-| `invalid` | A signature exists but verification failed, such as after content tampering. |
-| `unsigned` | No recognized signature was found for the selected verification workflow. |
+| Verdict    | Meaning                                                                      |
+| ---------- | ---------------------------------------------------------------------------- |
+| `valid`    | Signature verification succeeded.                                            |
+| `invalid`  | A signature exists but verification failed, such as after content tampering. |
+| `unsigned` | No recognized signature was found for the selected verification workflow.    |
 
 For MJKSMAP verification, per-file results can additionally identify conditions such as tampering, missing files, and relocated files.
 
@@ -363,23 +438,23 @@ mjksig seal <input> --key <path>
 
 ## Options
 
-| Option | Argument | Description |
-|---|---|---|
-| `-k, --key <path>` | Path | Majik Key JSON backup used to apply the seal. Required. |
-| `-o, --output <path>` | Path | Optional output destination where supported. |
-| `--timestamp <iso>` | ISO timestamp | Explicit seal timestamp. |
-| `--overwrite` | None | Replace an existing output where supported. |
-| `--json` | None | Emit machine-readable JSON. |
+| Option                | Argument      | Description                                             |
+| --------------------- | ------------- | ------------------------------------------------------- |
+| `-k, --key <path>`    | Path          | Majik Key JSON backup used to apply the seal. Required. |
+| `-o, --output <path>` | Path          | Optional output destination where supported.            |
+| `--timestamp <iso>`   | ISO timestamp | Explicit seal timestamp.                                |
+| `--overwrite`         | None          | Replace an existing output where supported.             |
+| `--json`              | None          | Emit machine-readable JSON.                             |
 
 ## Examples
 
-| Workflow | Example | What it does |
-|---|---|---|
-| Seal embedded file | `mjksig seal final.pdf --key alice.json` | Applies a seal to the embedded envelope. |
-| Seal embedded + timestamp | `mjksig seal final.pdf --key alice.json --timestamp 2026-10-01T12:00:00.000Z` | Applies a seal with an explicit timestamp. |
-| Seal embedded + JSON | `mjksig seal final.pdf --key alice.json --json` | Applies the seal and emits JSON. |
-| Seal detached envelope | `mjksig seal final.pdf.mjksig --key alice.json` | Seals an existing `.mjksig` envelope. |
-| Seal detached + overwrite | `mjksig seal final.pdf.mjksig --key alice.json --overwrite` | Rewrites the detached envelope after sealing. |
+| Workflow                      | Example                                                                            | What it does                                                    |
+| ----------------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Seal embedded file            | `mjksig seal final.pdf --key alice.json`                                           | Applies a seal to the embedded envelope.                        |
+| Seal embedded + timestamp     | `mjksig seal final.pdf --key alice.json --timestamp 2026-10-01T12:00:00.000Z`      | Applies a seal with an explicit timestamp.                      |
+| Seal embedded + JSON          | `mjksig seal final.pdf --key alice.json --json`                                    | Applies the seal and emits JSON.                                |
+| Seal detached envelope        | `mjksig seal final.pdf.mjksig --key alice.json`                                    | Seals an existing `.mjksig` envelope.                           |
+| Seal detached + overwrite     | `mjksig seal final.pdf.mjksig --key alice.json --overwrite`                        | Rewrites the detached envelope after sealing.                   |
 | Seal detached + custom output | `mjksig seal final.pdf.mjksig --key alice.json --output ./sealed/final.pdf.mjksig` | Writes the resulting envelope to a custom path where supported. |
 
 A sealed envelope is intended to reject later signing attempts.
@@ -398,20 +473,20 @@ mjksig can-sign <input> --key <path>
 
 ## Options
 
-| Option | Argument | Description |
-|---|---|---|
-| `-k, --key <path>` | Path | Majik Key JSON backup to test. Required. |
-| `--json` | None | Emit machine-readable JSON. |
+| Option             | Argument | Description                              |
+| ------------------ | -------- | ---------------------------------------- |
+| `-k, --key <path>` | Path     | Majik Key JSON backup to test. Required. |
+| `--json`           | None     | Emit machine-readable JSON.              |
 
 ## Examples
 
-| Workflow | Example | What it does |
-|---|---|---|
-| Check unsigned file | `mjksig can-sign report.pdf --key alice.json` | Determines whether Alice is allowed to sign. |
-| Check with JSON | `mjksig can-sign report.pdf --key alice.json --json` | Same check with machine-readable output. |
-| Check a sealed file | `mjksig can-sign final.pdf --key bob.json` | Reports that the sealed file is not available for another signature. |
-| Check an allowlisted signer | `mjksig can-sign contract.pdf --key bob.json` | Determines whether Bob satisfies the signing policy. |
-| Check a denied signer | `mjksig can-sign contract.pdf --key carol.json` | Reports that Carol is not permitted when the allowlist excludes her. |
+| Workflow                    | Example                                              | What it does                                                         |
+| --------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------- |
+| Check unsigned file         | `mjksig can-sign report.pdf --key alice.json`        | Determines whether Alice is allowed to sign.                         |
+| Check with JSON             | `mjksig can-sign report.pdf --key alice.json --json` | Same check with machine-readable output.                             |
+| Check a sealed file         | `mjksig can-sign final.pdf --key bob.json`           | Reports that the sealed file is not available for another signature. |
+| Check an allowlisted signer | `mjksig can-sign contract.pdf --key bob.json`        | Determines whether Bob satisfies the signing policy.                 |
+| Check a denied signer       | `mjksig can-sign contract.pdf --key carol.json`      | Reports that Carol is not permitted when the allowlist excludes her. |
 
 ---
 
@@ -427,19 +502,19 @@ mjksig inspect <input>
 
 ## Options
 
-| Option | Argument | Description |
-|---|---|---|
-| `--json` | None | Emit machine-readable inspection data. |
+| Option   | Argument | Description                            |
+| -------- | -------- | -------------------------------------- |
+| `--json` | None     | Emit machine-readable inspection data. |
 
 ## Examples
 
-| Workflow | Example | What it does |
-|---|---|---|
-| Inspect unsigned file | `mjksig inspect report.pdf` | Determines whether a signature envelope is present. |
-| Inspect signed file | `mjksig inspect signed.pdf` | Displays signature/envelope metadata. |
-| Inspect detached envelope | `mjksig inspect signed.pdf.mjksig` | Inspects the `.mjksig` envelope directly. |
-| Inspect as JSON | `mjksig inspect signed.pdf --json` | Returns machine-readable inspection data. |
-| Inspect detached as JSON | `mjksig inspect signed.pdf.mjksig --json` | Inspects a detached envelope with JSON output. |
+| Workflow                  | Example                                   | What it does                                        |
+| ------------------------- | ----------------------------------------- | --------------------------------------------------- |
+| Inspect unsigned file     | `mjksig inspect report.pdf`               | Determines whether a signature envelope is present. |
+| Inspect signed file       | `mjksig inspect signed.pdf`               | Displays signature/envelope metadata.               |
+| Inspect detached envelope | `mjksig inspect signed.pdf.mjksig`        | Inspects the `.mjksig` envelope directly.           |
+| Inspect as JSON           | `mjksig inspect signed.pdf --json`        | Returns machine-readable inspection data.           |
+| Inspect detached as JSON  | `mjksig inspect signed.pdf.mjksig --json` | Inspects a detached envelope with JSON output.      |
 
 ---
 
@@ -775,28 +850,28 @@ mjksig verify report.pdf
 
 # Complete Command Cheat Sheet
 
-| Goal | Command |
-|---|---|
-| Show help | `mjksig --help` |
-| Show version | `mjksig --version` |
-| Embedded sign | `mjksig sign FILE --key KEY.json` |
-| Embedded sign with allowlist | `mjksig sign FILE --key ALICE.json --allow-key BOB.json` |
-| Embedded sign + seal | `mjksig sign FILE --key KEY.json --seal` |
-| Embedded sign + JSON | `mjksig sign FILE --key KEY.json --json` |
-| Detached sign | `mjksig sign FILE --key KEY.json --detached` |
-| Detached sign to custom path | `mjksig sign FILE --key KEY.json --detached --output OUT.mjksig` |
-| Verify embedded | `mjksig verify FILE` |
-| Verify detached | `mjksig verify FILE --detached FILE.mjksig` |
-| Verify map | `mjksig verify FOLDER --map FOLDER/signatures.mjksmap` |
-| Create map | `mjksig sign FOLDER --key KEY.json --map` |
-| Create map + bundle | `mjksig sign FOLDER --key KEY.json --map --bundle` |
-| Co-sign map | `mjksig sign FOLDER --key KEY.json --cosign FOLDER/signatures.mjksmap --overwrite` |
-| Check signing permission | `mjksig can-sign FILE --key KEY.json` |
-| Seal embedded | `mjksig seal FILE --key KEY.json` |
-| Seal detached | `mjksig seal FILE.mjksig --key KEY.json --overwrite` |
-| Inspect | `mjksig inspect FILE` |
-| JSON output | Add `--json` |
-| Non-interactive passphrase | Set `MAJIK_KEY_PASSPHRASE` |
+| Goal                         | Command                                                                            |
+| ---------------------------- | ---------------------------------------------------------------------------------- |
+| Show help                    | `mjksig --help`                                                                    |
+| Show version                 | `mjksig --version`                                                                 |
+| Embedded sign                | `mjksig sign FILE --key KEY.json`                                                  |
+| Embedded sign with allowlist | `mjksig sign FILE --key ALICE.json --allow-key BOB.json`                           |
+| Embedded sign + seal         | `mjksig sign FILE --key KEY.json --seal`                                           |
+| Embedded sign + JSON         | `mjksig sign FILE --key KEY.json --json`                                           |
+| Detached sign                | `mjksig sign FILE --key KEY.json --detached`                                       |
+| Detached sign to custom path | `mjksig sign FILE --key KEY.json --detached --output OUT.mjksig`                   |
+| Verify embedded              | `mjksig verify FILE`                                                               |
+| Verify detached              | `mjksig verify FILE --detached FILE.mjksig`                                        |
+| Verify map                   | `mjksig verify FOLDER --map FOLDER/signatures.mjksmap`                             |
+| Create map                   | `mjksig sign FOLDER --key KEY.json --map`                                          |
+| Create map + bundle          | `mjksig sign FOLDER --key KEY.json --map --bundle`                                 |
+| Co-sign map                  | `mjksig sign FOLDER --key KEY.json --cosign FOLDER/signatures.mjksmap --overwrite` |
+| Check signing permission     | `mjksig can-sign FILE --key KEY.json`                                              |
+| Seal embedded                | `mjksig seal FILE --key KEY.json`                                                  |
+| Seal detached                | `mjksig seal FILE.mjksig --key KEY.json --overwrite`                               |
+| Inspect                      | `mjksig inspect FILE`                                                              |
+| JSON output                  | Add `--json`                                                                       |
+| Non-interactive passphrase   | Set `MAJIK_KEY_PASSPHRASE`                                                         |
 
 ---
 
