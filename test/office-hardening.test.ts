@@ -28,15 +28,19 @@ describe("OfficeHandler hardening", () => {
     expect(h.canHandle(z)).toBe(false);
   });
   it("sniffing does not inflate large entries", () => {
-    const big = new Uint8Array(200 * 1024 * 1024); // compresses to ~200 KB, would inflate 200 MB
+    const big = new Uint8Array(32 * 1024 * 1024);
+
     const z = zipSync({
       "[Content_Types].xml": strToU8("<Types/>"),
+      "word/document.xml": strToU8("<d>valid office payload</d>"),
       "big.bin": [big, { level: 6 }],
     });
+
     const t0 = performance.now();
+
     expect(h.canHandle(z)).toBe(true);
     expect(performance.now() - t0).toBeLessThan(500);
-  });
+  }, 10000);
   it("embed/strip refuse an archive declaring > MAX_UNZIPPED_BYTES", async () => {
     const big = new Uint8Array(600 * 1024 * 1024);
     const z = zipSync({

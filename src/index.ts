@@ -22,6 +22,8 @@ export * from "./core/embed/majik-embed";
 export * from "./core/envelope";
 
 export * from "./core/mjksmap";
+export * from "./cli";
+export * from "./cli-core";
 
 // ── Chain Anchor ─────────────────────────────────────────────────────────────────
 export type * from "./anchor/types";

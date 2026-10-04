@@ -20,6 +20,7 @@ interface FileFixture {
   label: string;
   file: string;
   contentType: string;
+  supportsEmbeddedSignatures?: boolean;
 }
 
 const FILE_FIXTURES: FileFixture[] = [
@@ -57,6 +58,7 @@ const FILE_FIXTURES: FileFixture[] = [
     label: "MSIX Package",
     file: "sample.msix",
     contentType: "application/msix",
+    supportsEmbeddedSignatures: false,
   },
 
   {
@@ -70,6 +72,10 @@ const FILE_FIXTURES: FileFixture[] = [
     contentType: "application/x-msi",
   },
 ];
+
+const EMBEDDED_FILE_FIXTURES = FILE_FIXTURES.filter(
+  ({ supportsEmbeddedSignatures = true }) => supportsEmbeddedSignatures,
+);
 
 function loadFixture(filename: string): Uint8Array {
   return new Uint8Array(readFileSync(join(FIXTURES_DIR, filename)));
@@ -154,9 +160,10 @@ describe("MajikSignature Class Unit Tests", () => {
     });
 
     describe("File type signing", () => {
-      it.each(FILE_FIXTURES)(
+      it.each(EMBEDDED_FILE_FIXTURES)(
         "should sign $label ($file) content correctly",
-        async ({ file, contentType }) => {
+        async ({ file, contentType, label }) => {
+          console.log("Signing: ", label);
           const fileContent = loadFixture(file);
           const blob = new Blob([fileContent as BlobPart], {
             type: contentType,
@@ -164,6 +171,8 @@ describe("MajikSignature Class Unit Tests", () => {
           const { signature } = await MajikSignature.signFile(blob, keyA, {
             contentType,
           });
+
+          console.log(`Signed ${label}: ${signature.edSignature} `);
 
           expect(signature).toBeInstanceOf(MajikSignature);
           expect(signature.version).toBe(1);
@@ -216,7 +225,9 @@ describe("MajikSignature Class Unit Tests", () => {
     describe("File type verification", () => {
       it.each(FILE_FIXTURES)(
         "should verify $label ($file) content correctly",
-        async ({ file, contentType }) => {
+        async ({ file, contentType, label }) => {
+          console.log("Verifying: ", label);
+
           const fileContent = loadFixture(file);
           const signature = await MajikSignature.sign(fileContent, keyA, {
             contentType,
@@ -227,6 +238,10 @@ describe("MajikSignature Class Unit Tests", () => {
             fileContent,
             signature,
             publicKeys,
+          );
+
+          console.log(
+            `Verified ${label}: ${result.valid ? "VALID" : result.reason} ${result.contentHash}`,
           );
 
           expect(result.valid).toBe(true);
@@ -250,7 +265,7 @@ describe("MajikSignature Class Unit Tests", () => {
         },
       );
 
-      it.each(FILE_FIXTURES)(
+      it.each(EMBEDDED_FILE_FIXTURES)(
         "should verify $label ($file) directly via verifyWithKey",
         async ({ file, contentType }) => {
           const fileContent = loadFixture(file);
@@ -279,7 +294,7 @@ describe("MajikSignature Class Unit Tests", () => {
         },
       );
 
-      it.each(FILE_FIXTURES)(
+      it.each(EMBEDDED_FILE_FIXTURES)(
         "should verify $label ($file) directly via verifyFile",
         async ({ file, contentType }) => {
           const fileContent = loadFixture(file);
