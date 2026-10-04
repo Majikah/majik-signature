@@ -1,21 +1,23 @@
-// mjksig-file-handler.test_5.ts
+// mjksig-file-handler.test.ts
 import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-// Import all handlers (assuming they are exported from the handlers index or their respective files)
-import { PdfHandler } from "../src/core/embed/handlers/pdf";
-import { PngHandler } from "../src/core/embed/handlers/png";
-import { JpegHandler } from "../src/core/embed/handlers/jpeg";
-import { WavHandler } from "../src/core/embed/handlers/wav";
-import { Mp3Handler } from "../src/core/embed/handlers/mp3";
-import { Mp4Handler } from "../src/core/embed/handlers/mp4";
-import { FlacHandler } from "../src/core/embed/handlers/flac";
-import { OfficeHandler } from "../src/core/embed/handlers/office";
-import { TextHandler } from "../src/core/embed/handlers/text";
-import { FormatHandler } from "../src/core/types";
-import { MkvHandler } from "../src/core/embed/handlers";
+import {
+  PdfHandler,
+  PngHandler,
+  FlacHandler,
+  JpegHandler,
+  MkvHandler,
+  Mp3Handler,
+  Mp4Handler,
+  OfficeHandler,
+  TextHandler,
+  WavHandler,
+  MsixHandler,
+} from "../src/core/embed/handlers";
+import type { FormatHandler } from "../src/core/types";
 
 const __currentDir = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(__currentDir, "fixtures");
@@ -32,6 +34,7 @@ interface HandlerFixture {
   file: string;
   mimeType: string;
   requiresMime?: boolean;
+  supportsEmbeddedSignatures?: boolean;
 }
 
 const HANDLER_FIXTURES: HandlerFixture[] = [
@@ -63,7 +66,13 @@ const HANDLER_FIXTURES: HandlerFixture[] = [
     label: "MP3",
     HandlerClass: Mp3Handler,
     file: "sample.mp3",
-    mimeType: "audio/mp3",
+    mimeType: "audio/mpeg",
+  },
+  {
+    label: "MP4",
+    HandlerClass: Mp4Handler,
+    file: "sample.mp4",
+    mimeType: "video/mp4",
   },
   {
     label: "MP4",
@@ -77,7 +86,13 @@ const HANDLER_FIXTURES: HandlerFixture[] = [
     file: "sample.mkv",
     mimeType: "video/x-matroska",
   },
-
+  {
+    label: "MSIX",
+    HandlerClass: MsixHandler,
+    file: "sample.msix",
+    mimeType: "application/msix",
+    supportsEmbeddedSignatures: false,
+  },
   {
     label: "FLAC Audio",
     HandlerClass: FlacHandler,
@@ -116,7 +131,14 @@ describe("MajikSignature File Format Handlers", () => {
   });
 
   HANDLER_FIXTURES.forEach(
-    ({ label, HandlerClass, file, mimeType, requiresMime }) => {
+    ({
+      label,
+      HandlerClass,
+      file,
+      mimeType,
+      requiresMime,
+      supportsEmbeddedSignatures = true,
+    }) => {
       describe(`${label} Handler`, () => {
         let handler: FormatHandler;
         let originalBytes: Uint8Array;
@@ -168,56 +190,66 @@ describe("MajikSignature File Format Handlers", () => {
           }
         });
 
-        it("should successfully embed and extract the signature payload", async () => {
-          console.log(`[TEST] ✍️  ${label} - Starting: embed() and extract()`);
-          try {
-            console.log(`       -> ${label}: Embedding payload...`);
-            const embeddedBytes = await handler.embed(
-              originalBytes,
-              dummySignaturePayload,
-            );
-
-            expect(embeddedBytes).toBeInstanceOf(Uint8Array);
-            expect(embeddedBytes.length).toBeGreaterThanOrEqual(
-              originalBytes.length,
-            );
+        it.skipIf(!supportsEmbeddedSignatures)(
+          "should successfully embed and extract the signature payload",
+          async () => {
             console.log(
-              `       -> ${label}: Embedding complete (${embeddedBytes.length} bytes). Extracting...`,
+              `[TEST] ✍️  ${label} - Starting: embed() and extract()`,
             );
+            try {
+              console.log(`       -> ${label}: Embedding payload...`);
+              const embeddedBytes = await handler.embed(
+                originalBytes,
+                dummySignaturePayload,
+              );
 
-            const extractedPayload = await handler.extract(embeddedBytes);
-            expect(extractedPayload).toBe(dummySignaturePayload);
-            console.log(`[PASS] 🟢 ${label} - embed() and extract() succeeded`);
-          } catch (error) {
-            console.error(
-              `[FAIL] 🔴 ${label} - embed() or extract() crashed:`,
-              error,
-            );
-            throw error;
-          }
-        });
+              expect(embeddedBytes).toBeInstanceOf(Uint8Array);
+              expect(embeddedBytes.length).toBeGreaterThanOrEqual(
+                originalBytes.length,
+              );
+              console.log(
+                `       -> ${label}: Embedding complete (${embeddedBytes.length} bytes). Extracting...`,
+              );
 
-        it("should cleanly strip an embedded signature, returning byte-for-byte original data", async () => {
-          console.log(`[TEST] 🧹 ${label} - Starting: strip()`);
-          try {
-            console.log(
-              `       -> ${label}: Embedding payload for strip test...`,
-            );
-            const embeddedBytes = await handler.embed(
-              originalBytes,
-              dummySignaturePayload,
-            );
+              const extractedPayload = await handler.extract(embeddedBytes);
+              expect(extractedPayload).toBe(dummySignaturePayload);
+              console.log(
+                `[PASS] 🟢 ${label} - embed() and extract() succeeded`,
+              );
+            } catch (error) {
+              console.error(
+                `[FAIL] 🔴 ${label} - embed() or extract() crashed:`,
+                error,
+              );
+              throw error;
+            }
+          },
+        );
 
-            console.log(`       -> ${label}: Stripping payload...`);
-            const strippedBytes = await handler.strip(embeddedBytes);
+        it.skipIf(!supportsEmbeddedSignatures)(
+          "should cleanly strip an embedded signature, returning byte-for-byte original data",
+          async () => {
+            console.log(`[TEST] 🧹 ${label} - Starting: strip()`);
+            try {
+              console.log(
+                `       -> ${label}: Embedding payload for strip test...`,
+              );
+              const embeddedBytes = await handler.embed(
+                originalBytes,
+                dummySignaturePayload,
+              );
 
-            expect(strippedBytes).toEqual(originalBytes);
-            console.log(`[PASS] 🟢 ${label} - strip() succeeded`);
-          } catch (error) {
-            console.error(`[FAIL] 🔴 ${label} - strip() crashed:`, error);
-            throw error;
-          }
-        });
+              console.log(`       -> ${label}: Stripping payload...`);
+              const strippedBytes = await handler.strip(embeddedBytes);
+
+              expect(strippedBytes).toEqual(originalBytes);
+              console.log(`[PASS] 🟢 ${label} - strip() succeeded`);
+            } catch (error) {
+              console.error(`[FAIL] 🔴 ${label} - strip() crashed:`, error);
+              throw error;
+            }
+          },
+        );
 
         // ── Negative Scenarios ─────────────────────────────────────────────────
 
@@ -242,110 +274,122 @@ describe("MajikSignature File Format Handlers", () => {
           }
         });
 
-        it("should return null when trying to extract from an unsigned file", async () => {
-          console.log(
-            `[TEST] Empty ${label} - Starting: extract() on unsigned file`,
-          );
-          try {
-            const extractedPayload = await handler.extract(originalBytes);
-            expect(extractedPayload).toBeNull();
+        it.skipIf(!supportsEmbeddedSignatures)(
+          "should return null when trying to extract from an unsigned file",
+          async () => {
             console.log(
-              `[PASS] 🟢 ${label} - extract() correctly returned null for unsigned file`,
-            );
-          } catch (error) {
-            console.error(
-              `[FAIL] 🔴 ${label} - extract() on unsigned file crashed:`,
-              error,
-            );
-            throw error;
-          }
-        });
-
-        it("should gracefully handle stripping an already unsigned file by returning original bytes", async () => {
-          console.log(
-            `[TEST] 🛡️  ${label} - Starting: strip() on unsigned file`,
-          );
-          try {
-            const strippedBytes = await handler.strip(originalBytes);
-            expect(strippedBytes).toEqual(originalBytes);
-            console.log(
-              `[PASS] 🟢 ${label} - strip() safely handled unsigned file`,
-            );
-          } catch (error) {
-            console.error(
-              `[FAIL] 🔴 ${label} - strip() on unsigned file crashed:`,
-              error,
-            );
-            throw error;
-          }
-        });
-
-        it("should gracefully handle severely truncated files without crashing", async () => {
-          console.log(
-            `[TEST] ✂️  ${label} - Starting: extract() on truncated file`,
-          );
-          try {
-            const truncatedBytes = originalBytes.slice(0, 10);
-            try {
-              const extractedPayload = await handler.extract(truncatedBytes);
-              expect(extractedPayload).toBeNull();
-            } catch (innerError) {
-              expect(innerError).toBeDefined();
-            }
-            console.log(
-              `[PASS] 🟢 ${label} - Gracefully handled truncated file`,
-            );
-          } catch (error) {
-            console.error(
-              `[FAIL] 🔴 ${label} - extract() on truncated file completely crashed:`,
-              error,
-            );
-            throw error;
-          }
-        });
-
-        it("should STRICTLY REJECT files with appended trailing garbage strings", async () => {
-          console.log(
-            `[TEST] 🗑️  ${label} - Starting: extract() on trailing garbage`,
-          );
-          try {
-            console.log(
-              `       -> ${label}: Embedding payload and appending garbage...`,
-            );
-            const embeddedBytes = await handler.embed(
-              originalBytes,
-              dummySignaturePayload,
-            );
-
-            const appendedString = new TextEncoder().encode(
-              "malicious trailing string data",
-            );
-            const tamperedBytes = new Uint8Array(
-              embeddedBytes.length + appendedString.length,
-            );
-            tamperedBytes.set(embeddedBytes);
-            tamperedBytes.set(appendedString, embeddedBytes.length);
-
-            console.log(
-              `       -> ${label}: Extracting from tampered bytes...`,
+              `[TEST] Empty ${label} - Starting: extract() on unsigned file`,
             );
             try {
-              const extractedPayload = await handler.extract(tamperedBytes);
+              const extractedPayload = await handler.extract(originalBytes);
               expect(extractedPayload).toBeNull();
-            } catch (innerError) {
-              expect(innerError).toBeDefined();
+              console.log(
+                `[PASS] 🟢 ${label} - extract() correctly returned null for unsigned file`,
+              );
+            } catch (error) {
+              console.error(
+                `[FAIL] 🔴 ${label} - extract() on unsigned file crashed:`,
+                error,
+              );
+              throw error;
             }
+          },
+        );
+
+        it.skipIf(!supportsEmbeddedSignatures)(
+          "should gracefully handle stripping an already unsigned file by returning original bytes",
+          async () => {
             console.log(
-              `[PASS] 🟢 ${label} - Correctly rejected trailing garbage`,
+              `[TEST] 🛡️  ${label} - Starting: strip() on unsigned file`,
             );
-          } catch (error) {
-            console.error(
-              `[FAIL] 🔴 ${label} - extract() on trailing garbage crashed:`,
-              error,
+            try {
+              const strippedBytes = await handler.strip(originalBytes);
+              expect(strippedBytes).toEqual(originalBytes);
+              console.log(
+                `[PASS] 🟢 ${label} - strip() safely handled unsigned file`,
+              );
+            } catch (error) {
+              console.error(
+                `[FAIL] 🔴 ${label} - strip() on unsigned file crashed:`,
+                error,
+              );
+              throw error;
+            }
+          },
+        );
+
+        it.skipIf(!supportsEmbeddedSignatures)(
+          "should gracefully handle severely truncated files without crashing",
+          async () => {
+            console.log(
+              `[TEST] ✂️  ${label} - Starting: extract() on truncated file`,
             );
-            throw error;
-          }
-        });
+            try {
+              const truncatedBytes = originalBytes.slice(0, 10);
+              try {
+                const extractedPayload = await handler.extract(truncatedBytes);
+                expect(extractedPayload).toBeNull();
+              } catch (innerError) {
+                expect(innerError).toBeDefined();
+              }
+              console.log(
+                `[PASS] 🟢 ${label} - Gracefully handled truncated file`,
+              );
+            } catch (error) {
+              console.error(
+                `[FAIL] 🔴 ${label} - extract() on truncated file completely crashed:`,
+                error,
+              );
+              throw error;
+            }
+          },
+        );
+
+        it.skipIf(!supportsEmbeddedSignatures)(
+          "should STRICTLY REJECT files with appended trailing garbage strings",
+          async () => {
+            console.log(
+              `[TEST] 🗑️  ${label} - Starting: extract() on trailing garbage`,
+            );
+            try {
+              console.log(
+                `       -> ${label}: Embedding payload and appending garbage...`,
+              );
+              const embeddedBytes = await handler.embed(
+                originalBytes,
+                dummySignaturePayload,
+              );
+
+              const appendedString = new TextEncoder().encode(
+                "malicious trailing string data",
+              );
+              const tamperedBytes = new Uint8Array(
+                embeddedBytes.length + appendedString.length,
+              );
+              tamperedBytes.set(embeddedBytes);
+              tamperedBytes.set(appendedString, embeddedBytes.length);
+
+              console.log(
+                `       -> ${label}: Extracting from tampered bytes...`,
+              );
+              try {
+                const extractedPayload = await handler.extract(tamperedBytes);
+                expect(extractedPayload).toBeNull();
+              } catch (innerError) {
+                expect(innerError).toBeDefined();
+              }
+              console.log(
+                `[PASS] 🟢 ${label} - Correctly rejected trailing garbage`,
+              );
+            } catch (error) {
+              console.error(
+                `[FAIL] 🔴 ${label} - extract() on trailing garbage crashed:`,
+                error,
+              );
+              throw error;
+            }
+          },
+        );
       });
     },
   );

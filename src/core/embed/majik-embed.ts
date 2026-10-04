@@ -90,6 +90,7 @@ import {
   OfficeHandler,
   TextHandler,
   WavHandler,
+  MsixHandler,
 } from "./handlers";
 
 import { FallbackHandler } from "./fallback";
@@ -234,7 +235,8 @@ const DEFAULT_REGISTRY = new FormatHandlerRegistry()
   .register(new FlacHandler())
   .register(new MkvHandler())
   .register(new OfficeHandler())
-  .register(new TextHandler());
+  .register(new TextHandler())
+  .register(new MsixHandler());
 
 // ─── MajikSignatureEmbed ──────────────────────────────────────────────────────
 

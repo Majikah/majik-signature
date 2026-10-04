@@ -8,6 +8,9 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "mjksig": "./dist/cli.js"
+  },
   "files": [
     "dist"
   ],
@@ -52,6 +55,7 @@
     "test:legacy": "vitest run test/handler.test.ts",
     "test:legacy:text": "vitest run  test/fix/text-handler.test.ts",
     "test:handlers": "vitest run test/mjksig-file-handler.test.ts",
+    "test:mjksmap": "vitest run test/mjksmap.test.ts",
     "test:core": "vitest run test/majik-signature.test.ts"
   },
   "dependencies": {
@@ -60,6 +64,7 @@
     "@noble/post-quantum": "^0.7.1",
     "@stablelib/ed25519": "^2.1.0",
     "@stablelib/sha256": "^2.0.1",
+    "commander": "^15.0.0",
     "fflate": "^0.8.3"
   },
   "devDependencies": {

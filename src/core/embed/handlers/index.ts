@@ -8,3 +8,4 @@ export { FlacHandler } from "./flac";
 export { MkvHandler } from "./mkv";
 export { OfficeHandler } from "./office";
 export { TextHandler } from "./text";
+export { MsixHandler } from "./msix";
