@@ -262,6 +262,65 @@ No native bindings. Works in Node.js 18+, modern browsers, Deno, Bun, and Tauri.
 
 ---
 
+## Command-Line Interface
+
+### `mjksig` — Sign, Verify, Seal, Inspect
+
+Majik Signature includes a full-featured CLI for working with signed files directly from your terminal.
+
+The `mjksig` CLI supports:
+
+* Embedded and detached signing
+* MJKSMAP folder signing and verification
+* Multi-signature allowlists and co-signing
+* Envelope sealing
+* Signing-permission checks
+* Signature inspection
+* Batch workflows
+* Machine-readable `--json` output
+* Interactive and non-interactive signing-key passphrases
+
+### Run with `npx`
+
+No global installation required:
+
+```bash
+npx @majikah/majik-signature --help
+```
+
+Sign a file:
+
+```bash
+npx @majikah/majik-signature sign report.pdf --key alice.json
+```
+
+Verify a file:
+
+```bash
+npx @majikah/majik-signature verify report.pdf
+```
+
+Or install globally and use the `mjksig` command directly:
+
+```bash
+npm install -g @majikah/majik-signature
+```
+
+```bash
+mjksig --help
+```
+
+For automation and CI environments, signing-key passphrases can be supplied through `MAJIK_KEY_PASSPHRASE`.
+
+### CLI Documentation
+
+For the complete command reference, workflow combinations, options, compatibility rules, examples, exit codes, automation guidance, and `npx` usage, see:
+
+**[`CLI_README.md`](./CLI_README.md)**
+
+
+---
+
 ## Quick Start
 
 ### Signing Raw Content
