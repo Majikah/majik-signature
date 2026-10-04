@@ -15,7 +15,7 @@ export * from "./core/errors.js";
 // ── Constants ─────────────────────────────────────────────────────────────────
 export * from "./core/constants.js";
 
-export * from "./core/embed/handlers";
+export * from "./core/embed/handlers/index.js";
 
 export * from "./core/embed/majik-embed.js";
 
@@ -23,7 +23,7 @@ export * from "./core/envelope.js";
 
 export * from "./core/mjksmap.js";
 export * from "./cli.js";
-export * from "./cli-core";
+export * from "./cli-core/index.js";
 
 // ── Chain Anchor ─────────────────────────────────────────────────────────────────
 export type * from "./anchor/types.js";

@@ -91,11 +91,14 @@ import {
   TextHandler,
   WavHandler,
   MsixHandler,
-} from "./handlers";
+} from "./handlers/index.js";
 
 import { FallbackHandler } from "./fallback.js";
 import { base64ToBytes, bytesToBase64, hashContent } from "../hash.js";
-import { MajikSignatureError, MajikSignatureValidationError } from "../errors.js";
+import {
+  MajikSignatureError,
+  MajikSignatureValidationError,
+} from "../errors.js";
 import { MajikChainAnchor } from "../../anchor/types.js";
 import { MajikSignatureMap } from "../mjksmap.js";
 import {
