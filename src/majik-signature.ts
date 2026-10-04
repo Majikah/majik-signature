@@ -64,7 +64,7 @@ import type {
   ImageVerificationResult,
   ImageSignOptions,
   ImageSignatureStub,
-} from "./core/stamp";
+} from "./core/stamp/index.js";
 import { MajikChainAnchor, MajikChainAnchorMemo } from "./anchor/types.js";
 import { MajikSignatureEnvelope } from "./core/envelope.js";
 import { MajikSignatureMap } from "./core/mjksmap.js";

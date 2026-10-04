@@ -13,6 +13,6 @@
     "skipLibCheck": true,
     "types": ["vitest/globals", "node"]
   },
-  "include": ["src/**/*", "src"],
+  "include": ["src/**/*"],
   "exclude": ["demo", "node_modules", "dist"]
 }
