@@ -26,13 +26,13 @@ const FILE_FIXTURES: FileFixture[] = [
   { label: "Plain Text", file: "sample.txt", contentType: "text/plain" },
   { label: "WEBP Image", file: "sample.webp", contentType: "image/webp" },
   { label: "PNG Image", file: "sample.png", contentType: "image/png" },
-  { label: "JPEG Image", file: "sample.jpg", contentType: "image/jpg" },
+  { label: "JPEG Image", file: "sample.jpg", contentType: "image/jpeg" },
   { label: "MP4 Video", file: "sample.mp4", contentType: "video/mp4" },
-  { label: "MOV Video", file: "sample.mov", contentType: "video/mov" },
+  { label: "MOV Video", file: "sample.mov", contentType: "video/quicktime" },
   { label: "MKV Video", file: "sample.mkv", contentType: "video/x-matroska" },
   { label: "WAV Audio", file: "sample.wav", contentType: "audio/wav" },
   { label: "FLAC Audio", file: "sample.flac", contentType: "audio/flac" },
-  { label: "MP3 Audio", file: "sample.mp3", contentType: "audio/mp3" },
+  { label: "MP3 Audio", file: "sample.mp3", contentType: "audio/mpeg" },
   {
     label: "Word Document",
     file: "sample.docx",
@@ -47,7 +47,28 @@ const FILE_FIXTURES: FileFixture[] = [
   },
   { label: "CSV File", file: "sample.csv", contentType: "text/csv" },
   { label: "PDF Document", file: "sample.pdf", contentType: "application/pdf" },
+  {
+    label: "Windows Executable",
+    file: "sample.exe",
+    contentType: "application/vnd.microsoft.portable-executable",
+  },
 
+  {
+    label: "MSIX Package",
+    file: "sample.msix",
+    contentType: "application/msix",
+  },
+
+  {
+    label: "Debian Package",
+    file: "sample.deb",
+    contentType: "application/vnd.debian.binary-package",
+  },
+  {
+    label: "Windows Installer Package",
+    file: "sample.msi",
+    contentType: "application/x-msi",
+  },
 ];
 
 function loadFixture(filename: string): Uint8Array {
