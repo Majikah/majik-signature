@@ -12,7 +12,7 @@ import { stdin as input, stdout as output } from "node:process";
 
 import { MajikKey } from "@majikah/majik-key";
 
-import { readJsonFile, resolveCliPath } from "./io";
+import { readJsonFile, resolveCliPath } from "./io.js";
 
 export type LoadedMajikKey = MajikKey;
 

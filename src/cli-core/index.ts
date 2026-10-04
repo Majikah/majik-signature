@@ -1,5 +1,5 @@
-export type * from "./types";
-export * from "./io";
-export * from "./key";
-export * from "./output";
-export * from "./operations";
+export type * from "./types.js";
+export * from "./io.js";
+export * from "./key.js";
+export * from "./output.js";
+export * from "./operations.js";

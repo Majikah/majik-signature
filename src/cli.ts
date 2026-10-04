@@ -14,11 +14,11 @@ import {
   runSeal,
   runSign,
   runVerify,
-} from "./cli-core/operations";
+} from "./cli-core/operations.js";
 
-import { printFailure, printJsonResult, printResult } from "./cli-core/output";
+import { printFailure, printJsonResult, printResult } from "./cli-core/output.js";
 
-import { getPackageVersion } from "./cli-core/io";
+import { getPackageVersion } from "./cli-core/io.js";
 
 import type {
   CanSignCliOptions,
@@ -26,7 +26,7 @@ import type {
   SealCliOptions,
   SignCliOptions,
   VerifyCliOptions,
-} from "./cli-core/types";
+} from "./cli-core/types.js";
 
 function parseCsv(value: string): string[] {
   return value

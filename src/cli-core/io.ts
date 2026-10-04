@@ -25,7 +25,7 @@ import {
 
 import { fileURLToPath } from "node:url";
 
-import type { FolderFile } from "./types";
+import type { FolderFile } from "./types.js";
 
 const MIME_TYPES: Record<string, string> = {
   ".txt": "text/plain",

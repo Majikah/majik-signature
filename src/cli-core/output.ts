@@ -4,7 +4,7 @@
  * Human-readable and machine-readable result presentation.
  */
 
-import type { CliResult } from "./types";
+import type { CliResult } from "./types.js";
 
 function stringifyValue(value: unknown): string {
   if (typeof value === "string") {
