@@ -990,7 +990,7 @@ export type BatchSignResult =
       /** Indicates manifest output mode. */
       mode: "map";
       /** Immutable batch-manifest instance covering the signed files. */
-      map: import("./mjksmap").MajikSignatureMap;
+      map: import("./mjksmap.js").MajikSignatureMap;
       /** Ready-to-store `.mjksmap` Blob. */
       mapBlob: Blob;
       /** Files that failed when `continueOnError` allowed processing to continue. */

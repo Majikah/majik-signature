@@ -26,8 +26,8 @@
  * universal trailer is removed so signatures do not accumulate back-to-back.
  */
 
-import { FormatHandler } from "../types";
-import { appendTrailer, extractTrailer } from "./utils";
+import { FormatHandler } from "../types.js";
+import { appendTrailer, extractTrailer } from "./utils.js";
 
 /**
  * Last-resort {@link FormatHandler} that embeds signatures using the universal

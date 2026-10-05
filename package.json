@@ -8,6 +8,13 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
   "bin": {
     "mjksig": "./dist/cli.js"
   },
@@ -61,7 +68,7 @@
     "test:cli": "vitest run test/mjksig-cli.test.ts"
   },
   "dependencies": {
-    "@majikah/majik-key": "^0.7.0",
+    "@majikah/majik-key": "^1.0.0",
     "@noble/hashes": "^2.4.0",
     "@noble/post-quantum": "^0.7.1",
     "@stablelib/ed25519": "^2.1.0",

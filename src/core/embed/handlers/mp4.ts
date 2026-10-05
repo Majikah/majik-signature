@@ -25,7 +25,6 @@ import {
   writeUint32BE,
 } from "../utils.js";
 
-
 export class Mp4Handler implements FormatHandler {
   readonly name = "MP4/MOV";
   readonly supportedMimeTypes = [
@@ -58,7 +57,7 @@ export class Mp4Handler implements FormatHandler {
     const moovIdx = boxes.findIndex((b) => b.type === "moov");
 
     if (moovIdx < 0) {
-      const { appendTrailer } = await import("../utils");
+      const { appendTrailer } = await import("../utils.js");
       return appendTrailer(clean, signatureJson);
     }
 
@@ -122,7 +121,7 @@ export class Mp4Handler implements FormatHandler {
 
       // Fallback: If no moov box exists, check for a Tier-2 trailer
       if (!moov) {
-        const { extractTrailer } = await import("../utils");
+        const { extractTrailer } = await import("../utils.js");
         const trailer = extractTrailer(bytes);
         return trailer ? trailer.signatureJson : null;
       }
@@ -161,7 +160,7 @@ export class Mp4Handler implements FormatHandler {
 
       // Fallback: If no moov box exists, strip the Tier-2 trailer if present
       if (moovIdx < 0) {
-        const { extractTrailer } = await import("../utils");
+        const { extractTrailer } = await import("../utils.js");
         const trailer = extractTrailer(bytes);
         return trailer ? trailer.original : bytes;
       }

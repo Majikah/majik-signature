@@ -1919,7 +1919,7 @@ export class MajikSignatureEmbed {
   static async getIssuer(
     file: FileLike,
     options?: ExtractOptions,
-  ): Promise<import("../../core/types").SignatoryInfo | null> {
+  ): Promise<import("../../core/types.js").SignatoryInfo | null> {
     const result = await MajikSignatureEmbed.extract(file, options);
     return result ? result.envelope.resolveIssuer() : null;
   }

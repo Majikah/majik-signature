@@ -39,7 +39,7 @@ import type {
   ExpectedSigner,
   MajikTimestamp,
   VerificationResult,
-} from "../core/types";
+} from "../core/types.js";
 
 import {
   getPathKind,
