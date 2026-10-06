@@ -25,6 +25,8 @@ export * from "./core/mjksmap.js";
 export * from "./cli.js";
 export * from "./cli-core/index.js";
 
+export * from "./core/order.js";
+
 // ── Chain Anchor ─────────────────────────────────────────────────────────────────
 export type * from "./anchor/types.js";
 
