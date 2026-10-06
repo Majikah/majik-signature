@@ -18,6 +18,9 @@ export * from "./core/constants.js";
 export * from "./core/embed/handlers/index.js";
 
 export * from "./core/embed/majik-embed.js";
+export * from "./core/embed/utils.js";
+export * from "./core/embed/fallback.js";
+export * from "./core/embed/canonical.js";
 
 export * from "./core/envelope.js";
 
