@@ -44,6 +44,12 @@ import type {
 } from "./types.js";
 import type { MajikChainAnchor } from "../anchor/types.js";
 import { normalizeToBytes } from "./embed/utils.js";
+import {
+  decodeCBOR,
+  encodeCBOR,
+  envelopeFromCBOR,
+  envelopeToCBOR,
+} from "./cbor/index.js";
 
 // ─── Allowlist check result ───────────────────────────────────────────────────
 
@@ -1662,6 +1668,47 @@ export class MajikSignatureEnvelope {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  // ── CBOR SERIALIZATION/DESERIALIZATION ───────────────────────────────────────────────────────
+
+  /**
+   * Encode this envelope as CBOR using native byte strings for cryptographic
+   * fields. Produces raw CBOR bytes, without an MJKSIG container header.
+   */
+  toCBOR(): Uint8Array {
+    try {
+      return encodeCBOR(envelopeToCBOR(this.toJSON()));
+    } catch (err) {
+      throw new MajikSignatureSerializationError(
+        "Failed to serialize envelope as CBOR",
+        err,
+      );
+    }
+  }
+
+  /**
+   * Decode CBOR into a structurally validated, immutable envelope.
+   *
+   * The CBOR wire representation is converted back to the existing JSON
+   * representation before the normal envelope validation is performed.
+   *
+   * Accepts raw CBOR only, not an MJKSIG container.
+   */
+  static fromCBOR(input: Uint8Array | ArrayBuffer): MajikSignatureEnvelope {
+    try {
+      const decoded = decodeCBOR(input);
+      const json = envelopeFromCBOR(decoded);
+
+      return MajikSignatureEnvelope.fromJSON(json);
+    } catch (err) {
+      if (err instanceof MajikSignatureError) throw err;
+
+      throw new MajikSignatureSerializationError(
+        "Failed to deserialize envelope from CBOR",
+        err,
+      );
     }
   }
 

@@ -72,6 +72,12 @@ import {
   SignatureOrderResult,
   normalizeExpectedOrder as normalizeExpectedOrderUtil,
 } from "./core/order.js";
+import {
+  decodeCBOR,
+  encodeCBOR,
+  signatureFromCBOR,
+  signatureToCBOR,
+} from "./core/cbor/index.js";
 
 const secureFill = Uint8Array.prototype.fill;
 
@@ -654,6 +660,45 @@ export class MajikSignature {
       if (err instanceof MajikSignatureError) throw err;
       throw new MajikSignatureSerializationError(
         "Failed to deserialize MajikSignature from base64",
+        err,
+      );
+    }
+  }
+
+  // ── CBOR SERIALIZATION/DESERIALIZATION ───────────────────────────────────────────────────────
+
+  /**
+   * Encode this signature as CBOR using native byte strings for cryptographic
+   * fields. This changes the transport representation, not the signed payload.
+   */
+  toCBOR(): Uint8Array {
+    try {
+      return encodeCBOR(signatureToCBOR(this.toJSON()));
+    } catch (err) {
+      throw new MajikSignatureSerializationError(
+        "Failed to serialize MajikSignature as CBOR",
+        err,
+      );
+    }
+  }
+
+  /**
+   * Decode CBOR into a validated MajikSignature.
+   *
+   * Decoding and structural validation do not verify the cryptographic
+   * signatures. Call verify() with the original content and public keys.
+   */
+  static fromCBOR(input: Uint8Array | ArrayBuffer): MajikSignature {
+    try {
+      const decoded = decodeCBOR(input);
+      const json = signatureFromCBOR(decoded);
+
+      return MajikSignature.fromJSON(json);
+    } catch (err) {
+      if (err instanceof MajikSignatureError) throw err;
+
+      throw new MajikSignatureSerializationError(
+        "Failed to deserialize MajikSignature from CBOR",
         err,
       );
     }
