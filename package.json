@@ -73,17 +73,18 @@
     "test:cli": "vitest run test/mjksig-cli.test.ts"
   },
   "dependencies": {
-    "@majikah/majik-key": "^1.0.2",
+    "@majikah/majik-key": "^1.1.0",
     "@noble/hashes": "^2.4.0",
     "@noble/post-quantum": "^0.7.1",
     "@stablelib/ed25519": "^2.1.0",
     "@stablelib/sha256": "^2.0.1",
+    "cbor-x": "^1.6.6",
     "commander": "^15.0.0",
     "fflate": "^0.8.3"
   },
   "devDependencies": {
-    "@types/node": "^26.6.4",
+    "@types/node": "^26.6.5",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.4"
   }
 }

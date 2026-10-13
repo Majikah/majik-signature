@@ -3,19 +3,7 @@
  *
  * MajikSignatureEnvelope — encapsulated multi-signature envelope.
  *
- * Replaces the free-function toolkit in multi-sig.ts with a single class that
- * owns parsing, validation, upserts, allowlist enforcement, seal computation,
- * and signatory/issuer resolution.
  *
- * Design constraints:
- *   - Pure/structural only. No crypto, no signing, no verifying signatures —
- *     that stays in MajikSignature / MajikSignatureEmbed to avoid the
- *     majik-signature ⇄ majik-embed circular dependency.
- *   - Immutable. Every "with*" method returns a new instance; the receiver
- *     is never mutated.
- *   - MajikSignatureEnvelopeJSON (alias of MultiSigEnvelope, see types.ts)
- *     is the on-the-wire shape. This class is the in-memory, behavior-rich
- *     counterpart — same relationship as MajikSignatureJSON / MajikSignature.
  */
 
 import type { MajikKey } from "@majikah/majik-key";
