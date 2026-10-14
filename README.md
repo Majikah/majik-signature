@@ -124,6 +124,9 @@ Beyond signing raw bytes, Majik Signature can **embed signatures directly into a
       - [`envelope.toCBOR()` / `MajikSignatureEnvelope.fromCBOR(bytes)`](#envelopetocbor--majiksignatureenvelopefromcborbytes)
   - [Supported File Formats](#supported-file-formats)
   - [Signature \& Envelope Structure](#signature--envelope-structure)
+    - [Payload Size Comparison](#payload-size-comparison)
+    - [Why can CBOR be smaller?](#why-can-cbor-be-smaller)
+    - [When should you use CBOR?](#when-should-you-use-cbor)
   - [Binary Container Formats (MJKSIG / MJKSMAP)](#binary-container-formats-mjksig--mjksmap)
     - [Usage](#usage)
   - [Error Handling](#error-handling)
@@ -153,7 +156,7 @@ Beyond signing raw bytes, Majik Signature can **embed signatures directly into a
 Most "digital signature" libraries only sign raw bytes and leave you to figure out storage, transport, and file compatibility yourself. Majik Signature is built to be dropped into a real application:
 
 - **Hybrid post-quantum by default** — every signature is Ed25519 + ML-DSA-87, not an opt-in extra.
-- **Signatures live inside the file, or travel detached** — embed directly into the file's native format, or produce a portable envelope (JSON, base64, or the self-describing `.mjksig` binary container) for out-of-band verification workflows.
+- **Signatures live inside the file, or travel detached** — embed directly into the file's native format, or produce a portable envelope as JSON, Base64, raw CBOR bytes, or a versioned `.mjksig` binary container. Legacy JSON representations remain supported for backward compatibility.
 - **Multi-party signing is a first-class concept** — not bolted on. Allowlists, sealing, issuer semantics, and chronological order verification are part of the core envelope model.
 - **Batch-aware** — sign or verify an entire folder or zip's contents against a single manifest (`.mjksmap`) instead of tracking one signature file per asset.
 - **Deterministic by design** — the library goes out of its way to guarantee that signing and verifying the same content always produces the same canonical bytes (see [Signature & Envelope Structure](#signature--envelope-structure)).
@@ -905,7 +908,7 @@ The behavior-rich, immutable in-memory counterpart to the wire-format `MultiSigE
 
 **Signatory resolution:** `resolveIssuer()`, `getSignatories(filter?)`, `getEnvelopeInfo()`
 
-**Serialization:** `toJSON()`, `serialize()` / `MajikSignatureEnvelope.deserialize(base64)`, `toMJKSIG()` / `toMJKSIGBytes()` / `MajikSignatureEnvelope.fromMJKSIG(input)`, `MajikSignatureEnvelope.isMJKSIG(input)`, `MajikSignatureEnvelope.getMJKSIGVersion(input)`
+**Serialization:** `toJSON()`, `serialize()` / `MajikSignatureEnvelope.deserialize(base64)`, `toMJKSIG()` / `toMJKSIGBytes()` / `MajikSignatureEnvelope.fromMJKSIG(input)`, `MajikSignatureEnvelope.isMJKSIG(input)`, `MajikSignatureEnvelope.getMJKSIGVersion(input)`, `toCBOR()` / `MajikSignatureEnvelope.fromCBOR(bytes)`
 
 **Creation / parsing:** `MajikSignatureEnvelope.empty()`, `MajikSignatureEnvelope.fromJSON(json)` (also transparently promotes legacy bare single-sig JSON), `MajikSignatureEnvelope.from(input)` (accepts an instance, JSON, `.mjksig` bytes, or Blob — the universal entry point used internally by every detached-envelope-accepting method)
 
@@ -1215,13 +1218,24 @@ CBOR serialization is separate from `.mjksig` container serialization: a raw CBO
 
 ```typescript
 
+import {
+  MajikSignature,
+  MajikSignatureEnvelope,
+} from '@majikah/majik-signature';
+
+// Direct signature serialization
 const signature = await MajikSignature.sign(content, key);
 const signatureCbor = signature.toCBOR();
-const restoredSignature = MajikSignature.fromCBOR(signatureCbor);
 
-const envelope = envelopeFromYourWorkflow;
+const restoredSignature =
+  MajikSignature.fromCBOR(signatureCbor);
+
+// Envelope serialization
+const { envelope } = await MajikSignature.signFileDetached(file, key);
 const envelopeCbor = envelope.toCBOR();
-const restoredEnvelope = MajikSignatureEnvelope.fromCBOR(envelopeCbor);
+
+const restoredEnvelope =
+  MajikSignatureEnvelope.fromCBOR(envelopeCbor);
 
 ```
 
@@ -1313,16 +1327,44 @@ A batch manifest (`MjksMapJSON`, backing `MajikSignatureMap`) is a flat list of 
 }
 ```
 
-**Approximate serialized sizes (per signer):**
+**Approximate serialized sizes per signer**
 
-| Format            | Size   |
-| ----------------- | ------ |
-| JSON (minified)   | ~10 KB |
-| Base64 serialized | ~14 KB |
+The following estimates illustrate the storage difference for a typical single-signer envelope. Actual sizes depend on the envelope's fields and optional metadata.
 
-The dominant contributor is `mlDsaSignature` (~6 KB base64) and `signerMlDsaPublicKey` (~3.5 KB base64) — the inherent cost of post-quantum signatures, negligible relative to any real content being signed.
+| Format                        |   Approximate Size | Description                                            |
+| ----------------------------- | -----------------: | ------------------------------------------------------ |
+| **Raw CBOR**                  |        **~7.5 KB** | Binary envelope from `envelope.toCBOR()`               |
+| `.mjksig` v2                  | ~7.5 KB + 12 bytes | CBOR payload with the standard container header        |
+| Minified JSON                 |             ~10 KB | Readable JSON envelope                                 |
+| Embedded CBOR payload         |    ~10 KB + prefix | CBOR encoded as Base64 with the embedded-format prefix |
+| Existing Base64 serialization |             ~14 KB | Text-based serialization from `envelope.serialize()`   |
 
-**Representation note:** The JSON examples above describe the logical signature, envelope, and manifest structures. They are not a byte-for-byte description of every serialized representation. Direct CBOR serialization and `.mjksig` version 2 encode the envelope using CBOR; `.mjksig` version 1 and `.mjksmap` version 1 use JSON.
+### Payload Size Comparison
+
+The chart compares approximate payload sizes before adding any additional container or embedded-payload framing.
+
+```mermaid
+xychart-beta
+    title "Approximate Envelope Payload Size per Signer"
+    x-axis ["Raw CBOR", "Minified JSON", "Base64 Serialized"]
+    y-axis "Size (KB)" 0 --> 15
+    bar [7.5, 10, 14]
+```
+
+*Illustrative estimates, not benchmark results. Measure representative envelopes from the current SDK build for exact byte counts.*
+
+### Why can CBOR be smaller?
+
+The envelope contains relatively large cryptographic fields, particularly the ML-DSA-87 signature and public key. In JSON, binary data represented as Base64 strings takes more space than the corresponding raw bytes. CBOR can encode those fields as byte strings, reducing representation overhead while preserving the envelope's logical data.
+
+### When should you use CBOR?
+
+- **Use direct CBOR or `.mjksig` v2** when compact binary storage and transport are priorities. The `.mjksig` container also supplies a magic identifier, version, and payload-length header.
+- **Use JSON** when human readability, manual inspection, or integration with JSON-based systems matters more than payload size.
+- **Use the existing Base64 serialization** when you need a text-compatible representation for systems that cannot handle binary payloads directly.
+- **For embedded signatures**, remember that the CBOR payload is Base64-wrapped to fit the existing handler interfaces. This increases its size compared with raw CBOR, so the full raw-CBOR size reduction does not carry over unchanged.
+
+**Representation note:** The JSON examples above describe the logical signature, envelope, and manifest structures—not the exact bytes of every serialized representation. Direct CBOR serialization and `.mjksig` version 2 use CBOR; `.mjksig` version 1 and `.mjksmap` version 1 continue to use JSON.
 
 ---
 
@@ -1335,11 +1377,11 @@ Both containers use the same header layout:
 
 The payload encoding is selected by the container format and version.
 
-| Format | Magic | Magic Length | Header Length | Version | Payload Encoding |
-|---|---|---:|---:|---|---|
-| `.mjksig` — detached envelope | `MJKSIG` | 6 bytes | 12 bytes | `1` | Legacy JSON |
-| `.mjksig` — detached envelope | `MJKSIG` | 6 bytes | 12 bytes | `2` | CBOR — current writer format |
-| `.mjksmap` — batch manifest | `MJKSMAP` | 7 bytes | 13 bytes | `1` | JSON — current format |
+| Format                        | Magic     | Magic Length | Header Length | Version | Payload Encoding             |
+| ----------------------------- | --------- | -----------: | ------------: | ------- | ---------------------------- |
+| `.mjksig` — detached envelope | `MJKSIG`  |      6 bytes |      12 bytes | `1`     | Legacy JSON                  |
+| `.mjksig` — detached envelope | `MJKSIG`  |      6 bytes |      12 bytes | `2`     | CBOR — current writer format |
+| `.mjksmap` — batch manifest   | `MJKSMAP` |      7 bytes |      13 bytes | `1`     | JSON — current format        |
 
 **MJKSIG compatibility:** Newly generated `.mjksig` containers use version 2 with a CBOR payload. The reader supports both version 2 CBOR and version 1 JSON, allowing older detached-envelope files to remain usable.
 
@@ -1379,7 +1421,7 @@ Majik Signature throws a typed error hierarchy rather than generic `Error` objec
 | `MajikSignatureError`              | Base class; also thrown for general/unexpected failures (e.g. signing a sealed envelope, missing envelope on seal/anchor)                                                                      |
 | `MajikSignatureKeyError`           | The key is locked, lacks signing keys, or isn't the required issuer                                                                                                                            |
 | `MajikSignatureVerificationError`  | Verification fails unexpectedly (not the same as `valid: false`), including a failed TSA signature check                                                                                       |
-| `MajikSignatureSerializationError` | JSON, Base64, CBOR, MJKSIG, or MJKSMAP parsing and encoding fails, including malformed container headers, unsupported versions, and invalid payload lengths.                                                                                                |
+| `MajikSignatureSerializationError` | JSON, Base64, CBOR, MJKSIG, or MJKSMAP parsing and encoding fails, including malformed container headers, unsupported versions, and invalid payload lengths.                                   |
 | `MajikSignatureAllowlistError`     | A non-listed signer attempts to sign a restricted file                                                                                                                                         |
 | `MajikSignatureValidationError`    | A structural shape check fails — malformed envelope, malformed batch manifest entry, empty/duplicate batch paths, empty allowlist, mismatched seal fields, invalid `expectedOrder` input, etc. |
 
