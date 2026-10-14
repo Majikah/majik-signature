@@ -24,13 +24,11 @@ export function encodeCBOR(value: unknown): Uint8Array {
  * Structural and application-specific validation belongs to the caller.
  */
 
-export function decodeCBOR(
-  input: Uint8Array | ArrayBuffer,
-): unknown {
-  const bytes =
-    input instanceof Uint8Array
-      ? input
-      : new Uint8Array(input);
+export function decodeCBOR(input: Uint8Array | ArrayBuffer): unknown {
+  const inputBytes =
+    input instanceof Uint8Array ? input : new Uint8Array(input);
+
+  const bytes = Uint8Array.from(inputBytes);
 
   if (bytes.length === 0) {
     throw new TypeError("CBOR input must not be empty");

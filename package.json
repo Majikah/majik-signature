@@ -76,7 +76,8 @@
     "test:mjksmap": "vitest run test/mjksmap.test.ts",
     "test:core": "vitest run test/majik-signature.test.ts",
     "test:cli": "vitest run test/mjksig-cli.test.ts",
-    "test:cbor": "vitest run test/cbor.test.ts"
+    "test:cbor": "vitest run test/cbor.test.ts",
+    "test:cbor:harden": "vitest run test/cbor-hardening.test.ts"
   },
   "dependencies": {
     "@majikah/majik-key": "^1.1.0",
