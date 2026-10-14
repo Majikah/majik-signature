@@ -11,7 +11,7 @@
  * Falls back to Tier-2 trailer if segment injection fails.
  */
 
-import { FormatHandler } from "../../types.js";
+import { FormatHandler } from "../types.js";
 
 import { concatBytes, textDecode, textEncode } from "../utils.js";
 

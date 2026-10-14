@@ -13,7 +13,7 @@
  *   never hashed on the detached-verification path.
  */
 
-import { FormatHandler } from "../../types.js";
+import { FormatHandler } from "../types.js";
 import { concatBytes, includesBytes, matchesAt } from "../utils.js";
 
 const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46]; // %PDF

@@ -14,6 +14,11 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./cbor": {
+      "types": "./dist/core/cbor/index.d.ts",
+      "import": "./dist/core/cbor/index.js",
+      "default": "./dist/core/cbor/index.js"
+    },
     "./cli": {
       "types": "./dist/cli.d.ts",
       "import": "./dist/cli.js",

@@ -15,7 +15,7 @@
 
 import { unzipSync, zipSync, strToU8, strFromU8 } from "fflate";
 import { OFFICE_ZIP_ENTRY } from "../constants.js";
-import { FormatHandler } from "../../types.js";
+import { FormatHandler } from "../types.js";
 import { toZippable } from "../utils.js";
 
 const OFFICE_MIME_TYPES = [

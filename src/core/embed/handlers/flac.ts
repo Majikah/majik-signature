@@ -10,7 +10,7 @@
  * application ID "MAJK" followed by the signature JSON payload.
  */
 
-import { FormatHandler } from "../../types.js";
+import { FormatHandler } from "../types.js";
 import { concatBytes, textDecode, textEncode } from "../utils.js";
 
 const FLAC_MAGIC = textEncode("fLaC");

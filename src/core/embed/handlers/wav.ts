@@ -13,7 +13,7 @@
  *       "ISIG" [4B size] [signature JSON, null-padded to even length]
  */
 
-import { FormatHandler } from "../../types.js";
+import { FormatHandler } from "../types.js";
 import {
   concatBytes,
   readUint32LE,

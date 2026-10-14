@@ -21,7 +21,7 @@
  * extract() and strip() share one parser (split()) so they cannot disagree.
  */
 
-import { FormatHandler } from "../../types.js";
+import { FormatHandler } from "../types.js";
 import {
   concatBytes,
   includesBytes,

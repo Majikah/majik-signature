@@ -24,10 +24,9 @@
  */
 
 import { unzipSync } from "fflate";
-import { FormatHandler } from "../../types.js";
+import { FormatHandler } from "../types.js";
 
 const MSIX_MIME_TYPES = ["application/msix", "application/appx"] as const;
-
 
 const MSIX_REQUIRED_ENTRIES = new Set(["AppxManifest.xml", "AppxBlockMap.xml"]);
 

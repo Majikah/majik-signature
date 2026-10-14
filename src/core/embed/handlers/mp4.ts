@@ -15,7 +15,7 @@
  * If moov doesn't exist (fragmented MP4), fall through to FallbackHandler.
  */
 
-import { FormatHandler } from "../../types.js";
+import { FormatHandler } from "../types.js";
 import { MP4_BOX_TYPE } from "../constants.js";
 import {
   concatBytes,

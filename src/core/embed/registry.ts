@@ -6,7 +6,7 @@
  * FallbackHandler is always last.
  */
 
-import { FormatHandler } from "../types.js";
+import { FormatHandler } from "./types.js";
 import { FallbackHandler } from "./fallback.js";
 
 export class FormatHandlerRegistry {

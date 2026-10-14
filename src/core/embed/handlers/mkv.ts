@@ -12,7 +12,7 @@
  * with a full EBML parser. For now, the Tier-2 trailer is the primary store.
  */
 
-import { FormatHandler } from "../../types.js";
+import { FormatHandler } from "../types.js";
 import { appendTrailer, extractTrailer } from "../utils.js";
 
 const EBML_MAGIC = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3]);

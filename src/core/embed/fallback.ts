@@ -26,7 +26,7 @@
  * universal trailer is removed so signatures do not accumulate back-to-back.
  */
 
-import { FormatHandler } from "../types.js";
+import { FormatHandler } from "./types.js";
 import { appendTrailer, extractTrailer } from "./utils.js";
 
 /**

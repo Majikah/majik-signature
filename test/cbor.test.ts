@@ -11,17 +11,26 @@ import {
   signatureFromCBOR,
   signatureToCBOR,
 } from "../src/core/cbor/cbor-wire";
-import {
-  base64ToBytes,
-  bytesToBase64,
-  hashContent,
-} from "../src/core/hash";
+import { base64ToBytes, bytesToBase64, hashContent } from "../src/core/hash";
 import type {
   MajikSignatureJSON,
   MajikSignatureEnvelopeJSON,
   MajikTimestamp,
 } from "../src/core/types";
 import type { MajikChainAnchor } from "../src/anchor/types";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { MajikSignatureEmbed } from "../src/core/embed/majik-embed";
+import {
+  MJKSIG_CBOR_VERSION,
+  MJKSIG_HEADER_LEN,
+  MJKSIG_JSON_VERSION,
+  MJKSIG_MAGIC,
+  MJKSIG_MAGIC_LEN,
+  MJKSIG_MEDIA_TYPE,
+} from "../src/core/constants";
 
 const CONTENT = new TextEncoder().encode(
   "Majik Signature CBOR round-trip fixture — signed bytes must remain identical.",
@@ -65,9 +74,13 @@ function makeAnchor(sealHash: string): MajikChainAnchor {
   };
 }
 
-function expectByteString(value: unknown, length?: number): asserts value is Uint8Array {
+function expectByteString(
+  value: unknown,
+  length?: number,
+): asserts value is Uint8Array {
   expect(value).toBeInstanceOf(Uint8Array);
-  if (length !== undefined) expect((value as Uint8Array).byteLength).toBe(length);
+  if (length !== undefined)
+    expect((value as Uint8Array).byteLength).toBe(length);
 }
 
 function expectOptionalFieldsOmitted(
@@ -79,11 +92,60 @@ function expectOptionalFieldsOmitted(
   }
 }
 
+const __currentDir = dirname(fileURLToPath(import.meta.url));
+
+const FIXTURES_DIR = join(__currentDir, "fixtures", "compat");
+
+function loadFixture(filename: string): Uint8Array {
+  return new Uint8Array(readFileSync(join(FIXTURES_DIR, filename)));
+}
+
+/**
+ * Reconstructs the legacy MJKSIG v1 binary container.
+ *
+ * Version 1 stores a UTF-8 JSON payload.
+ * Version 2 stores a CBOR payload.
+ *
+ * Intentionally does not call toMJKSIGBytes(), because that method
+ * should now generate version 2 containers.
+ */
+function makeLegacyV1MJKSIG(envelope: MajikSignatureEnvelope): Uint8Array {
+  const payload = new TextEncoder().encode(JSON.stringify(envelope.toJSON()));
+
+  if (payload.byteLength === 0) {
+    throw new Error("Legacy MJKSIG payload must not be empty");
+  }
+
+  const out = new Uint8Array(MJKSIG_HEADER_LEN + payload.byteLength);
+
+  // Magic: "MJKSIG"
+  out.set(MJKSIG_MAGIC, 0);
+
+  // Legacy JSON container version.
+  out[MJKSIG_MAGIC_LEN] = MJKSIG_JSON_VERSION;
+
+  // Reserved byte must remain zero.
+  out[MJKSIG_MAGIC_LEN + 1] = 0x00;
+
+  // Four-byte unsigned big-endian payload length.
+  const lengthOffset = MJKSIG_MAGIC_LEN + 2;
+  const view = new DataView(out.buffer, out.byteOffset, out.byteLength);
+
+  view.setUint32(lengthOffset, payload.byteLength, false);
+
+  // Payload starts immediately after the fixed header.
+  out.set(payload, MJKSIG_HEADER_LEN);
+
+  return out;
+}
+
 describe("CBOR serialization — Majik Signature", () => {
   let keyA: MajikKey;
   let keyB: MajikKey;
   let tsaKey: MajikKey;
-  let expectedSigners: ReturnType<typeof MajikSignature.expectedSignerFromKey>[];
+  let expectedSigners: ReturnType<
+    typeof MajikSignature.expectedSignerFromKey
+  >[];
   let fullSignature: MajikSignature;
   let minimalSignature: MajikSignature;
   let tsa: MajikTimestamp;
@@ -184,9 +246,17 @@ describe("CBOR serialization — Majik Signature", () => {
     });
 
     it("accepts ArrayBuffer input", () => {
-      const encoded = encodeCBOR({ version: 1, bytes: new Uint8Array([1, 2, 3]) });
-      const restored = decodeCBOR(Uint8Array.from(encoded).buffer as ArrayBuffer);
-      expect(restored).toEqual({ version: 1, bytes: new Uint8Array([1, 2, 3]) });
+      const encoded = encodeCBOR({
+        version: 1,
+        bytes: new Uint8Array([1, 2, 3]),
+      });
+      const restored = decodeCBOR(
+        Uint8Array.from(encoded).buffer as ArrayBuffer,
+      );
+      expect(restored).toEqual({
+        version: 1,
+        bytes: new Uint8Array([1, 2, 3]),
+      });
     });
 
     it("rejects empty input", () => {
@@ -228,10 +298,7 @@ describe("CBOR serialization — Majik Signature", () => {
       );
       expectByteString(cborShape.contentHash, SHA256_BYTES);
       expectByteString(cborShape.edSignature, ED25519_SIGNATURE_BYTES);
-      expectByteString(
-        cborShape.mlDsaSignature,
-        ML_DSA_87_SIGNATURE_BYTES,
-      );
+      expectByteString(cborShape.mlDsaSignature, ML_DSA_87_SIGNATURE_BYTES);
       expectByteString(cborShape.allowlistHash, SHA256_BYTES);
       expectByteString(cborShape.versionChainHash, SHA256_BYTES);
       expectByteString(cborShape.tsa?.payload.digest.value, SHA256_BYTES);
@@ -254,10 +321,7 @@ describe("CBOR serialization — Majik Signature", () => {
       );
       expectByteString(decoded.contentHash, SHA256_BYTES);
       expectByteString(decoded.edSignature, ED25519_SIGNATURE_BYTES);
-      expectByteString(
-        decoded.mlDsaSignature,
-        ML_DSA_87_SIGNATURE_BYTES,
-      );
+      expectByteString(decoded.mlDsaSignature, ML_DSA_87_SIGNATURE_BYTES);
       expect(typeof decoded.timestamp).toBe("string");
       expect(decoded.version).toBe(1);
     });
@@ -283,9 +347,9 @@ describe("CBOR serialization — Majik Signature", () => {
       const roundTripJson = fromCbor.toJSON();
 
       expect(roundTripJson).toEqual(originalJson);
-      expect(
-        MajikSignature.fromJSON(roundTripJson).toJSON(),
-      ).toEqual(originalJson);
+      expect(MajikSignature.fromJSON(roundTripJson).toJSON()).toEqual(
+        originalJson,
+      );
     });
 
     it("preserves omitted optional fields instead of converting them to null", () => {
@@ -293,13 +357,16 @@ describe("CBOR serialization — Majik Signature", () => {
       const restored = MajikSignature.fromCBOR(minimalSignature.toCBOR());
 
       expect(restored.toJSON()).toEqual(json);
-      expectOptionalFieldsOmitted(restored.toJSON() as unknown as Record<string, unknown>, [
-        "contentType",
-        "allowlistHash",
-        "validUntil",
-        "tsa",
-        "versionChainHash",
-      ]);
+      expectOptionalFieldsOmitted(
+        restored.toJSON() as unknown as Record<string, unknown>,
+        [
+          "contentType",
+          "allowlistHash",
+          "validUntil",
+          "tsa",
+          "versionChainHash",
+        ],
+      );
     });
 
     it("preserves optional TSA, expiry, allowlist, and revision commitments", () => {
@@ -342,7 +409,9 @@ describe("CBOR serialization — Majik Signature", () => {
 
     it("rejects unsupported signature versions", () => {
       const wire = signatureToCBOR(fullSignature.toJSON());
-      expect(() => signatureFromCBOR({ ...wire, version: 2 })).toThrow(/version/i);
+      expect(() => signatureFromCBOR({ ...wire, version: 2 })).toThrow(
+        /version/i,
+      );
     });
 
     it("rejects cryptographic fields represented as strings instead of byte strings", () => {
@@ -383,7 +452,9 @@ describe("CBOR serialization — Majik Signature", () => {
         },
       };
 
-      expect(() => signatureFromCBOR({ ...wire, tsa: badTsa })).toThrow(/nonce must be 32 bytes/i);
+      expect(() => signatureFromCBOR({ ...wire, tsa: badTsa })).toThrow(
+        /nonce must be 32 bytes/i,
+      );
     });
   });
 
@@ -415,7 +486,10 @@ describe("CBOR serialization — Majik Signature", () => {
       expectByteString(cborShape.sealHash, SHA3_512_BYTES);
       expectByteString(cborShape.sealedBy, SHA256_BYTES);
       expectByteString(cborShape.allowlist?.[0].signerId, SHA256_BYTES);
-      expectByteString(cborShape.allowlist?.[0].edPublicKey, ED25519_PUBLIC_KEY_BYTES);
+      expectByteString(
+        cborShape.allowlist?.[0].edPublicKey,
+        ED25519_PUBLIC_KEY_BYTES,
+      );
       expectByteString(
         cborShape.allowlist?.[0].mlDsaPublicKey,
         ML_DSA_87_PUBLIC_KEY_BYTES,
@@ -433,7 +507,10 @@ describe("CBOR serialization — Majik Signature", () => {
     });
 
     it("preserves real CBOR byte strings throughout the nested envelope", () => {
-      const decoded = decodeCBOR(complexEnvelope.toCBOR()) as Record<string, unknown>;
+      const decoded = decodeCBOR(complexEnvelope.toCBOR()) as Record<
+        string,
+        unknown
+      >;
       const signatures = decoded.signatures as Record<string, unknown>[];
       const allowlist = decoded.allowlist as Record<string, unknown>[];
       const versions = decoded.fileVersions as Record<string, unknown>[];
@@ -452,7 +529,9 @@ describe("CBOR serialization — Majik Signature", () => {
     });
 
     it("preserves seal, allowlist, revision-chain integrity, and TSA after round-trip", () => {
-      const restored = MajikSignatureEnvelope.fromCBOR(complexEnvelope.toCBOR());
+      const restored = MajikSignatureEnvelope.fromCBOR(
+        complexEnvelope.toCBOR(),
+      );
 
       expect(restored.isValid()).toBe(true);
       expect(restored.isSealed()).toBe(true);
@@ -477,7 +556,9 @@ describe("CBOR serialization — Majik Signature", () => {
     });
 
     it("preserves chain-anchor values exactly across CBOR → JSON round-trip", () => {
-      const restored = MajikSignatureEnvelope.fromCBOR(complexEnvelope.toCBOR());
+      const restored = MajikSignatureEnvelope.fromCBOR(
+        complexEnvelope.toCBOR(),
+      );
       expect(restored.chainAnchors).toEqual(complexEnvelope.chainAnchors);
       expect(restored.chainAnchors[0].payload.digest.value).toBe(
         complexEnvelope.chainAnchors[0].payload.digest.value,
@@ -492,19 +573,24 @@ describe("CBOR serialization — Majik Signature", () => {
 
     it("round-trips an empty/minimal envelope and omits optional sections", () => {
       const before = minimalEnvelope.toJSON();
-      const restored = MajikSignatureEnvelope.fromCBOR(minimalEnvelope.toCBOR());
+      const restored = MajikSignatureEnvelope.fromCBOR(
+        minimalEnvelope.toCBOR(),
+      );
 
       expect(restored.toJSON()).toEqual(before);
       expect(restored.signatures).toEqual([]);
-      expectOptionalFieldsOmitted(restored.toJSON() as unknown as Record<string, unknown>, [
-        "allowlist",
-        "allowlistSignerId",
-        "sealHash",
-        "sealTimestamp",
-        "sealedBy",
-        "chainAnchors",
-        "fileVersions",
-      ]);
+      expectOptionalFieldsOmitted(
+        restored.toJSON() as unknown as Record<string, unknown>,
+        [
+          "allowlist",
+          "allowlistSignerId",
+          "sealHash",
+          "sealTimestamp",
+          "sealedBy",
+          "chainAnchors",
+          "fileVersions",
+        ],
+      );
     });
 
     it("supports JSON → CBOR → JSON in both directions", () => {
@@ -533,27 +619,45 @@ describe("CBOR serialization — Majik Signature", () => {
     });
 
     it("rejects empty, malformed, and non-map CBOR inputs", () => {
-      expect(() => MajikSignatureEnvelope.fromCBOR(new Uint8Array())).toThrow(/CBOR/i);
-      expect(() => MajikSignatureEnvelope.fromCBOR(new Uint8Array([0xff]))).toThrow();
-      expect(() => MajikSignatureEnvelope.fromCBOR(encodeCBOR([1, 2, 3]))).toThrow();
+      expect(() => MajikSignatureEnvelope.fromCBOR(new Uint8Array())).toThrow(
+        /CBOR/i,
+      );
+      expect(() =>
+        MajikSignatureEnvelope.fromCBOR(new Uint8Array([0xff])),
+      ).toThrow();
+      expect(() =>
+        MajikSignatureEnvelope.fromCBOR(encodeCBOR([1, 2, 3])),
+      ).toThrow();
     });
 
     it("rejects unsupported envelope versions", () => {
       const wire = envelopeToCBOR(complexEnvelope.toJSON());
-      expect(() => envelopeFromCBOR({ ...wire, version: 99 })).toThrow(/version/i);
+      expect(() => envelopeFromCBOR({ ...wire, version: 99 })).toThrow(
+        /version/i,
+      );
     });
 
     it("rejects invalid envelope collection types", () => {
       const wire = envelopeToCBOR(complexEnvelope.toJSON());
-      expect(() => envelopeFromCBOR({ ...wire, signatures: "not-an-array" })).toThrow(/signatures must be an array/i);
-      expect(() => envelopeFromCBOR({ ...wire, allowlist: "not-an-array" })).toThrow(/allowlist must be an array/i);
-      expect(() => envelopeFromCBOR({ ...wire, chainAnchors: "not-an-array" })).toThrow(/chainAnchors must be an array/i);
-      expect(() => envelopeFromCBOR({ ...wire, fileVersions: "not-an-array" })).toThrow(/fileVersions must be an array/i);
+      expect(() =>
+        envelopeFromCBOR({ ...wire, signatures: "not-an-array" }),
+      ).toThrow(/signatures must be an array/i);
+      expect(() =>
+        envelopeFromCBOR({ ...wire, allowlist: "not-an-array" }),
+      ).toThrow(/allowlist must be an array/i);
+      expect(() =>
+        envelopeFromCBOR({ ...wire, chainAnchors: "not-an-array" }),
+      ).toThrow(/chainAnchors must be an array/i);
+      expect(() =>
+        envelopeFromCBOR({ ...wire, fileVersions: "not-an-array" }),
+      ).toThrow(/fileVersions must be an array/i);
     });
 
     it("rejects malformed seal hash length", () => {
       const wire = envelopeToCBOR(complexEnvelope.toJSON());
-      expect(() => envelopeFromCBOR({ ...wire, sealHash: new Uint8Array(63) })).toThrow(/64 bytes/i);
+      expect(() =>
+        envelopeFromCBOR({ ...wire, sealHash: new Uint8Array(63) }),
+      ).toThrow(/64 bytes/i);
     });
 
     it("rejects malformed chain-anchor digest length", () => {
@@ -567,10 +671,12 @@ describe("CBOR serialization — Majik Signature", () => {
         },
       };
 
-      expect(() => envelopeFromCBOR({
-        ...wire,
-        chainAnchors: [badAnchor],
-      })).toThrow(/64 bytes/i);
+      expect(() =>
+        envelopeFromCBOR({
+          ...wire,
+          chainAnchors: [badAnchor],
+        }),
+      ).toThrow(/64 bytes/i);
     });
 
     it("rejects malformed nested signature fields", () => {
@@ -581,10 +687,88 @@ describe("CBOR serialization — Majik Signature", () => {
         signerMlDsaPublicKey: new Uint8Array(2591),
       };
 
-      expect(() => envelopeFromCBOR({
-        ...wire,
-        signatures: [badFirst, wire.signatures[1]],
-      })).toThrow(/signerMlDsaPublicKey must be 2592 bytes/i);
+      expect(() =>
+        envelopeFromCBOR({
+          ...wire,
+          signatures: [badFirst, wire.signatures[1]],
+        }),
+      ).toThrow(/signerMlDsaPublicKey must be 2592 bytes/i);
+    });
+  });
+
+  // ── MJKSIG container compatibility ─────────────────────────────────────────
+
+  describe("MJKSIG container compatibility — JSON v1 / CBOR v2", () => {
+    it("writes new MJKSIG containers using version 2 CBOR", async () => {
+      const bytes = complexEnvelope.toMJKSIGBytes();
+
+      // The writer must use the new container version.
+      expect(bytes[MJKSIG_MAGIC_LEN]).toBe(MJKSIG_CBOR_VERSION);
+
+      // Validate the unchanged reserved byte.
+      expect(bytes[MJKSIG_MAGIC_LEN + 1]).toBe(0x00);
+
+      // Confirm that the payload is actually CBOR, not JSON text.
+      const payload = bytes.subarray(MJKSIG_HEADER_LEN);
+      const decoded = decodeCBOR(payload) as Record<string, unknown>;
+
+      expect(decoded.version).toBe(1);
+      expect(decoded.signatures).toBeDefined();
+
+      const signatures = decoded.signatures as Record<string, unknown>[];
+      expect(signatures).toHaveLength(2);
+
+      // Cryptographic fields should use native CBOR byte strings.
+      expectByteString(signatures[0].signerId, SHA256_BYTES);
+      expectByteString(signatures[0].mlDsaSignature, ML_DSA_87_SIGNATURE_BYTES);
+
+      // Current reader can immediately reload its newly written container.
+      const restored = await MajikSignatureEnvelope.fromMJKSIG(bytes);
+
+      expect(restored).toBeInstanceOf(MajikSignatureEnvelope);
+      expect(restored.toJSON()).toEqual(complexEnvelope.toJSON());
+      expect(restored.verifySeal().valid).toBe(true);
+    });
+
+    it("preserves the MJKSIG MIME type for the CBOR container", () => {
+      const blob = complexEnvelope.toMJKSIG();
+
+      expect(blob).toBeInstanceOf(Blob);
+      expect(blob.type).toBe(MJKSIG_MEDIA_TYPE);
+    });
+
+    it("continues reading legacy version 1 JSON containers", async () => {
+      const legacyBytes = makeLegacyV1MJKSIG(complexEnvelope);
+
+      expect(legacyBytes[MJKSIG_MAGIC_LEN]).toBe(MJKSIG_JSON_VERSION);
+
+      // Prove that the old format genuinely contains UTF-8 JSON.
+      const legacyPayload = new TextDecoder("utf-8", {
+        fatal: true,
+      }).decode(legacyBytes.subarray(MJKSIG_HEADER_LEN));
+
+      expect(() => JSON.parse(legacyPayload)).not.toThrow();
+
+      const restored = await MajikSignatureEnvelope.fromMJKSIG(legacyBytes);
+
+      expect(restored).toBeInstanceOf(MajikSignatureEnvelope);
+      expect(restored.toJSON()).toEqual(complexEnvelope.toJSON());
+
+      // Important envelope integrity checks survive legacy deserialization.
+      expect(restored.isValid()).toBe(true);
+      expect(restored.isSealed()).toBe(true);
+      expect(restored.verifySeal().valid).toBe(true);
+      expect(restored.verifyAllowlistIntegrity().valid).toBe(true);
+      expect(restored.verifyVersionChainIntegrity().valid).toBe(true);
+    });
+
+    it("rejects unsupported MJKSIG container versions", async () => {
+      const bytes = complexEnvelope.toMJKSIGBytes();
+      bytes[MJKSIG_MAGIC_LEN] = 0x7f;
+
+      await expect(MajikSignatureEnvelope.fromMJKSIG(bytes)).rejects.toThrow(
+        /unsupported.*version/i,
+      );
     });
   });
 
@@ -653,5 +837,70 @@ describe("CBOR serialization — Majik Signature", () => {
       expect(wire.mlDsaSignature).toEqual(base64ToBytes(json.mlDsaSignature));
       expect(wire.contentHash).toEqual(base64ToBytes(json.contentHash));
     });
+  });
+
+  // ── Legacy embedded-file compatibility ─────────────────────────────────────
+
+  describe("Legacy embedded-file compatibility — previous JSON signatures", () => {
+    const legacyFiles = [
+      {
+        filename: "compat.pdf",
+        mimeType: "application/pdf",
+      },
+      {
+        filename: "compat.jpg",
+        mimeType: "image/jpeg",
+      },
+      {
+        filename: "compat.wav",
+        mimeType: "audio/wav",
+      },
+    ] as const;
+
+    it.each(legacyFiles)(
+      "loads and verifies the legacy embedded signature in $filename",
+      async ({ filename, mimeType }) => {
+        const bytes = loadFixture(filename);
+
+        // Step 1: The historical embedded JSON envelope must still parse.
+        const extracted = await MajikSignatureEmbed.extract(bytes, {
+          mimeType,
+        });
+
+        expect(
+          extracted,
+          `${filename} should contain a readable legacy signature envelope`,
+        ).not.toBeNull();
+
+        const envelope = extracted!.envelope;
+
+        expect(envelope).toBeInstanceOf(MajikSignatureEnvelope);
+        expect(envelope.isValid()).toBe(true);
+        expect(envelope.signatures.length).toBeGreaterThan(0);
+
+        // Step 2: Verify each historical signature against the original file.
+        //
+        // These public keys are read from the signatures embedded in the
+        // fixed fixtures. No new key or signature is generated here.
+        for (const signatureJSON of envelope.signatures) {
+          const signature = MajikSignature.fromJSON(signatureJSON);
+          const publicKeys = signature.extractPublicKeys();
+
+          const results = await MajikSignature.verifyFile(bytes, publicKeys, {
+            mimeType,
+            expectedSignerId: signature.signerId,
+          });
+
+          expect(
+            results.some((result) => result.valid),
+            [
+              `Legacy signature verification failed for ${filename}.`,
+              `Signer: ${signature.signerId}`,
+              `Results: ${JSON.stringify(results)}`,
+            ].join("\n"),
+          ).toBe(true);
+        }
+      },
+    );
   });
 });

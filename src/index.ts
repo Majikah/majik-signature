@@ -8,6 +8,7 @@ export { MajikSignature } from "./majik-signature.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export type * from "./core/types.js";
+export type * from "./core/embed/types.js";
 
 // ── Errors ────────────────────────────────────────────────────────────────────
 export * from "./core/errors.js";
@@ -26,11 +27,13 @@ export * from "./core/envelope.js";
 
 export * from "./core/mjksmap.js";
 
-
 export * from "./core/order.js";
 
 // ── Chain Anchor ─────────────────────────────────────────────────────────────────
 export type * from "./anchor/types.js";
+
+// ── CBOR ─────────────────────────────────────────────────────────────────
+export * from "./core/cbor/index.js";
 
 // ── Low-level utilities (opt-in) ──────────────────────────────────────────────
 // These are exported for consumers who want to build on top of the primitives

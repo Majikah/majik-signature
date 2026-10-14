@@ -46,17 +46,14 @@ import type {
   BatchVerifyOptions,
   BatchVerifySummary,
   EmbedOptions,
-  EmbedResult,
   EnvelopeInfo,
   EnvelopeInput,
   ExpectedSigner,
   ExtractOptions,
-  ExtractResult,
   FileChainVerification,
   FileLike,
   FileVerifyResult,
   FileVersion,
-  FormatHandler,
   MajikSignatureJSON,
   MajikSignerPublicKeys,
   MajikTimestamp,
@@ -70,6 +67,7 @@ import type {
   SignOptions,
   VerificationResult,
 } from "../../core/types.js";
+import { FormatHandler, ExtractResult, EmbedResult } from "./types.js";
 import { MajikSignatureEnvelope } from "../../core/envelope.js";
 import { FormatHandlerRegistry } from "./registry.js";
 import {

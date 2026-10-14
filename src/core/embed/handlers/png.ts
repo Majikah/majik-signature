@@ -9,7 +9,7 @@
  *   [4B length][4B type "iTXt"][keyword\0][compression_flag][compression_method][lang\0][translated_keyword\0][text][4B CRC]
  */
 
-import { FormatHandler } from "../../types.js";
+import { FormatHandler } from "../types.js";
 import { PNG_KEYWORD } from "../constants.js";
 import {
   concatBytes,
