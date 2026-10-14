@@ -12,6 +12,7 @@ import { MajikSignatureEnvelope } from "../src/core/envelope";
 import { MajikSignatureMap } from "../src/core/mjksmap";
 import type { MajikTimestamp } from "../src/core/types";
 import { MajikSignatureEmbed } from "../src/core/embed/majik-embed";
+import { MJKSIG_VERSION } from "../src/core/constants";
 
 const __currentDir = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(__currentDir, "fixtures");
@@ -919,7 +920,7 @@ describe("MajikSignature Class Unit Tests", () => {
           expect(await MajikSignatureEnvelope.isMJKSIG(mjksigBlob)).toBe(true);
           expect(
             await MajikSignatureEnvelope.getMJKSIGVersion(mjksigBlob),
-          ).toBe(1);
+          ).toBe(MJKSIG_VERSION);
 
           const directVerifyResults = await MajikSignature.verifyFileDetached(
             strippedBlob,
