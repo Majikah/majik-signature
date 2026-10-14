@@ -27,7 +27,8 @@ export interface FormatHandler {
   canHandle(bytes: Uint8Array, mimeType?: string): boolean;
 
   /**
-   * Embed serialized signature JSON into the file bytes.
+   * Embed a serialized envelope payload into the file bytes.
+   *
    *
    * @param bytes Original file bytes without a signature envelope.
    * @param signatureJson Serialized envelope to embed.
@@ -35,8 +36,10 @@ export interface FormatHandler {
   embed(bytes: Uint8Array, signatureJson: string): Promise<Uint8Array>;
 
   /**
-   * Extract the serialized signature JSON from the file.
+   * Extract the serialized envelope payload from the file.
    *
+   * The returned string may contain the new CBOR transport format
+   * or a legacy JSON envelope.
    * @returns The embedded JSON string, or `null` when no envelope is present.
    */
   extract(bytes: Uint8Array): Promise<string | null>;

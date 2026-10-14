@@ -31,6 +31,8 @@ import {
   MJKSIG_MAGIC_LEN,
   MJKSIG_MEDIA_TYPE,
 } from "../src/core/constants";
+import { TextHandler } from "../src/core/embed/handlers";
+import { EMBEDDED_CBOR_PREFIX } from "../src/core/embed/embedded-envelope-codec";
 
 const CONTENT = new TextEncoder().encode(
   "Majik Signature CBOR round-trip fixture — signed bytes must remain identical.",
@@ -856,6 +858,35 @@ describe("CBOR serialization — Majik Signature", () => {
         mimeType: "audio/wav",
       },
     ] as const;
+
+    // Inside a describe block with a valid MajikKey named `key`:
+    it("writes new embedded envelopes in CBOR format and verifies them", async () => {
+      const source = new Blob(["New CBOR embedded-envelope regression test"], {
+        type: "text/plain",
+      });
+
+      const signed = await MajikSignature.signFile(source, keyA);
+
+      const bytes = new Uint8Array(await signed.blob.arrayBuffer());
+
+      const rawPayload = await new TextHandler().extract(bytes);
+
+      expect(rawPayload).not.toBeNull();
+      expect(rawPayload!.startsWith(EMBEDDED_CBOR_PREFIX)).toBe(true);
+
+      const extracted = await MajikSignatureEmbed.extract(bytes, {
+        mimeType: "text/plain",
+      });
+
+      expect(extracted).not.toBeNull();
+      expect(extracted!.envelope.isValid()).toBe(true);
+
+      const results = await MajikSignature.verifyFile(bytes, keyA, {
+        mimeType: "text/plain",
+      });
+
+      expect(results.some((result) => result.valid)).toBe(true);
+    });
 
     it.each(legacyFiles)(
       "loads and verifies the legacy embedded signature in $filename",

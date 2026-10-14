@@ -110,6 +110,11 @@ import {
   prepareDetachedBytes,
 } from "./canonical.js";
 
+import {
+  parseEmbeddedEnvelope,
+  serializeEmbeddedEnvelope,
+} from "./embedded-envelope-codec.js";
+
 // ─── Adapter interfaces ───────────────────────────────────────────────────────
 
 /**
@@ -310,7 +315,7 @@ export class MajikSignatureEmbed {
     const strippedBytes = await handler.strip(bytes);
     const resultBytes = await handler.embed(
       strippedBytes,
-      JSON.stringify(updated.toJSON()),
+      serializeEmbeddedEnvelope(updated),
     );
     const blob = bytesToBlob(resultBytes, mimeType);
 
@@ -443,7 +448,7 @@ export class MajikSignatureEmbed {
 
     const resultBytes = await handler.embed(
       originalBytes,
-      JSON.stringify(nextEnvelope.toJSON()),
+      serializeEmbeddedEnvelope(nextEnvelope),
     );
     const blob = bytesToBlob(resultBytes, mimeType);
 
@@ -492,7 +497,7 @@ export class MajikSignatureEmbed {
       );
     }
 
-    let envelope = MajikSignatureEnvelope.fromJSON(raw);
+    let envelope = parseEmbeddedEnvelope(raw);
 
     const allowlistIntegrity = envelope.verifyAllowlistIntegrity();
     if (!allowlistIntegrity.valid) {
@@ -985,7 +990,7 @@ export class MajikSignatureEmbed {
     const raw = await handler.extract(bytes);
     if (!raw) return null;
 
-    const envelope = MajikSignatureEnvelope.fromJSON(raw);
+    const envelope = parseEmbeddedEnvelope(raw);
     return { envelope, handler: handler.name };
   }
 
@@ -1032,7 +1037,7 @@ export class MajikSignatureEmbed {
 
     let envelope: MajikSignatureEnvelope;
     try {
-      envelope = MajikSignatureEnvelope.fromJSON(raw);
+      envelope = parseEmbeddedEnvelope(raw);
     } catch {
       return [
         {
@@ -1449,7 +1454,7 @@ export class MajikSignatureEmbed {
 
     const raw = await handler.extract(bytes);
     const envelope = raw
-      ? MajikSignatureEnvelope.fromJSON(raw)
+      ? parseEmbeddedEnvelope(raw)
       : MajikSignatureEnvelope.empty();
 
     if (raw) {
@@ -1559,7 +1564,7 @@ export class MajikSignatureEmbed {
         "Cannot verify chain — no embedded envelope found.",
       );
 
-    const envelope = MajikSignatureEnvelope.fromJSON(raw);
+    const envelope = parseEmbeddedEnvelope(raw);
     const canonical = await assertCanonical(handler, bytes, raw);
     if (!canonical.ok) throw new MajikSignatureError(canonical.reason);
     const originalBytes = canonical.original;
@@ -1623,7 +1628,7 @@ export class MajikSignatureEmbed {
         "Cannot verify revisions — no embedded envelope found.",
       );
 
-    const envelope = MajikSignatureEnvelope.fromJSON(raw);
+    const envelope = parseEmbeddedEnvelope(raw);
     const chain = envelope.fileVersions;
     if (chain.length === 0) {
       throw new MajikSignatureError(
@@ -1790,7 +1795,7 @@ export class MajikSignatureEmbed {
       );
     }
 
-    const envelope = MajikSignatureEnvelope.fromJSON(raw);
+    const envelope = parseEmbeddedEnvelope(raw);
     const sealedEnvelope = envelope.withSeal(
       key.fingerprint,
       options?.timestamp,
@@ -1799,7 +1804,7 @@ export class MajikSignatureEmbed {
     const originalBytes = await handler.strip(bytes);
     const resultBytes = await handler.embed(
       originalBytes,
-      JSON.stringify(sealedEnvelope.toJSON()),
+      serializeEmbeddedEnvelope(sealedEnvelope),
     );
     const blob = bytesToBlob(resultBytes, mimeType);
 
@@ -2066,13 +2071,13 @@ export class MajikSignatureEmbed {
       );
     }
 
-    const envelope = MajikSignatureEnvelope.fromJSON(raw);
+    const envelope = parseEmbeddedEnvelope(raw);
     const nextEnvelope = envelope.withChainAnchor(anchor);
 
     const originalBytes = await handler.strip(bytes);
     const resultBytes = await handler.embed(
       originalBytes,
-      JSON.stringify(nextEnvelope.toJSON()),
+      serializeEmbeddedEnvelope(nextEnvelope),
     );
     const blob = bytesToBlob(resultBytes, mimeType);
 
@@ -2133,9 +2138,7 @@ export class MajikSignatureEmbed {
     bytes: Uint8Array,
   ): Promise<MajikSignatureEnvelope> {
     const raw = await handler.extract(bytes);
-    return raw
-      ? MajikSignatureEnvelope.fromJSON(raw)
-      : MajikSignatureEnvelope.empty();
+    return raw ? parseEmbeddedEnvelope(raw) : MajikSignatureEnvelope.empty();
   }
 
   /**
