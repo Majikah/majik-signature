@@ -1,0 +1,5189 @@
+{
+  "title": "Majik Signature Serialization Benchmark",
+  "startedAt": "2026-10-14T04:37:51.894Z",
+  "finishedAt": "2026-10-14T04:38:16.031Z",
+  "benchmarkElapsedMs": 24137.27,
+  "iterations": 5,
+  "warmupIterations": 1,
+  "runtime": {
+    "node": "v22.19.0",
+    "platform": "win32",
+    "architecture": "x64",
+    "packageName": "@majikah/majik-signature",
+    "packageVersion": "0.10.0"
+  },
+  "keySetup": {
+    "helper": "test/helpers/crypto.ts:getTestKey()",
+    "keyCount": 5,
+    "generationMs": 9533.834,
+    "perKeyGenerationMs": [
+      2092.755,
+      1870.37,
+      1848.103,
+      1853.147,
+      1867.73
+    ],
+    "keyType": "fresh generated MajikKey instances used only for this benchmark run",
+    "secretMaterialWrittenToReport": false
+  },
+  "fixtureDiscovery": {
+    "fixtureDirectory": "C:\\PROJECT FILES\\Zelijah Files\\The Zelijah World\\Github\\MajikSignature\\majik-signature\\test\\fixtures",
+    "included": [
+      "sample.pdf",
+      "sample.jpg",
+      "sample.wav"
+    ],
+    "skipped": [],
+    "signerCount": 5
+  },
+  "timings": [
+    {
+      "name": "sample.pdf: detached signing (signer 1/5)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 60.217,
+      "meanMs": 12.043,
+      "medianMs": 11.515,
+      "minMs": 10.969,
+      "maxMs": 14.813,
+      "operationsPerSecond": 83.033
+    },
+    {
+      "name": "sample.pdf: embedded signing (signer 1/5)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 81.462,
+      "meanMs": 16.292,
+      "medianMs": 16.711,
+      "minMs": 11.063,
+      "maxMs": 21.249,
+      "operationsPerSecond": 61.378
+    },
+    {
+      "name": "sample.pdf: detached multi-sig add signer 2/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 57.543,
+      "meanMs": 11.509,
+      "medianMs": 12.045,
+      "minMs": 8.65,
+      "maxMs": 15.805,
+      "operationsPerSecond": 86.891
+    },
+    {
+      "name": "sample.pdf: embedded multi-sig add signer 2/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 97.085,
+      "meanMs": 19.417,
+      "medianMs": 14.209,
+      "minMs": 13.626,
+      "maxMs": 32.482,
+      "operationsPerSecond": 51.501
+    },
+    {
+      "name": "sample.pdf: detached multi-sig add signer 3/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 73.182,
+      "meanMs": 14.636,
+      "medianMs": 16.54,
+      "minMs": 8.717,
+      "maxMs": 18.791,
+      "operationsPerSecond": 68.323
+    },
+    {
+      "name": "sample.pdf: embedded multi-sig add signer 3/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 74.804,
+      "meanMs": 14.961,
+      "medianMs": 13.165,
+      "minMs": 11.712,
+      "maxMs": 20.068,
+      "operationsPerSecond": 66.842
+    },
+    {
+      "name": "sample.pdf: detached multi-sig add signer 4/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 52.629,
+      "meanMs": 10.526,
+      "medianMs": 9.103,
+      "minMs": 8.862,
+      "maxMs": 16.427,
+      "operationsPerSecond": 95.004
+    },
+    {
+      "name": "sample.pdf: embedded multi-sig add signer 4/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 95.282,
+      "meanMs": 19.056,
+      "medianMs": 18.388,
+      "minMs": 12.511,
+      "maxMs": 29.954,
+      "operationsPerSecond": 52.476
+    },
+    {
+      "name": "sample.pdf: detached multi-sig add signer 5/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 67.441,
+      "meanMs": 13.488,
+      "medianMs": 14.042,
+      "minMs": 9.712,
+      "maxMs": 18.049,
+      "operationsPerSecond": 74.139
+    },
+    {
+      "name": "sample.pdf: embedded multi-sig add signer 5/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 77.254,
+      "meanMs": 15.451,
+      "medianMs": 16.085,
+      "minMs": 11.266,
+      "maxMs": 21.725,
+      "operationsPerSecond": 64.722
+    },
+    {
+      "name": "sample.pdf: extract embedded envelope (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 2.08,
+      "meanMs": 0.416,
+      "medianMs": 0.41,
+      "minMs": 0.367,
+      "maxMs": 0.503,
+      "operationsPerSecond": 2404.309
+    },
+    {
+      "name": "sample.pdf: strip embedded envelope (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.645,
+      "meanMs": 0.129,
+      "medianMs": 0.128,
+      "minMs": 0.122,
+      "maxMs": 0.135,
+      "operationsPerSecond": 7747.134
+    },
+    {
+      "name": "sample.pdf: verify detached envelope (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 51.751,
+      "meanMs": 10.35,
+      "medianMs": 10.097,
+      "minMs": 9.618,
+      "maxMs": 11.433,
+      "operationsPerSecond": 96.617
+    },
+    {
+      "name": "sample.pdf: verify embedded file (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 59.97,
+      "meanMs": 11.994,
+      "medianMs": 11.537,
+      "minMs": 10.594,
+      "maxMs": 13.935,
+      "operationsPerSecond": 83.375
+    },
+    {
+      "name": "sample.pdf: signature JSON encode (1-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.078,
+      "meanMs": 0.016,
+      "medianMs": 0.015,
+      "minMs": 0.015,
+      "maxMs": 0.017,
+      "operationsPerSecond": 64350.064
+    },
+    {
+      "name": "sample.pdf: signature Base64 encode (1-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.799,
+      "meanMs": 0.36,
+      "medianMs": 0.29,
+      "minMs": 0.113,
+      "maxMs": 0.655,
+      "operationsPerSecond": 2778.858
+    },
+    {
+      "name": "sample.pdf: signature CBOR encode (1-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.328,
+      "meanMs": 0.066,
+      "medianMs": 0.038,
+      "minMs": 0.036,
+      "maxMs": 0.177,
+      "operationsPerSecond": 15257.858
+    },
+    {
+      "name": "sample.pdf: signature JSON decode (1-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.051,
+      "meanMs": 0.01,
+      "medianMs": 0.01,
+      "minMs": 0.009,
+      "maxMs": 0.012,
+      "operationsPerSecond": 99009.901
+    },
+    {
+      "name": "sample.pdf: signature Base64 decode (1-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 2.132,
+      "meanMs": 0.426,
+      "medianMs": 0.394,
+      "minMs": 0.392,
+      "maxMs": 0.498,
+      "operationsPerSecond": 2344.776
+    },
+    {
+      "name": "sample.pdf: signature CBOR decode (1-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.464,
+      "meanMs": 0.093,
+      "medianMs": 0.092,
+      "minMs": 0.091,
+      "maxMs": 0.095,
+      "operationsPerSecond": 10778.185
+    },
+    {
+      "name": "sample.pdf: envelope JSON encode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.077,
+      "meanMs": 0.015,
+      "medianMs": 0.015,
+      "minMs": 0.015,
+      "maxMs": 0.016,
+      "operationsPerSecond": 65274.151
+    },
+    {
+      "name": "sample.pdf: envelope Base64 encode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.843,
+      "meanMs": 0.369,
+      "medianMs": 0.178,
+      "minMs": 0.126,
+      "maxMs": 0.723,
+      "operationsPerSecond": 2712.968
+    },
+    {
+      "name": "sample.pdf: envelope CBOR encode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.215,
+      "meanMs": 0.043,
+      "medianMs": 0.036,
+      "minMs": 0.035,
+      "maxMs": 0.07,
+      "operationsPerSecond": 23288.309
+    },
+    {
+      "name": "sample.pdf: MJKSIG v2 container encode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.231,
+      "meanMs": 0.046,
+      "medianMs": 0.046,
+      "minMs": 0.042,
+      "maxMs": 0.053,
+      "operationsPerSecond": 21645.022
+    },
+    {
+      "name": "sample.pdf: envelope JSON decode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.052,
+      "meanMs": 0.01,
+      "medianMs": 0.01,
+      "minMs": 0.009,
+      "maxMs": 0.012,
+      "operationsPerSecond": 96339.114
+    },
+    {
+      "name": "sample.pdf: envelope Base64 decode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 2.212,
+      "meanMs": 0.442,
+      "medianMs": 0.431,
+      "minMs": 0.402,
+      "maxMs": 0.482,
+      "operationsPerSecond": 2259.989
+    },
+    {
+      "name": "sample.pdf: envelope CBOR decode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.555,
+      "meanMs": 0.111,
+      "medianMs": 0.11,
+      "minMs": 0.097,
+      "maxMs": 0.125,
+      "operationsPerSecond": 9009.009
+    },
+    {
+      "name": "sample.pdf: MJKSIG v2 container decode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.463,
+      "meanMs": 0.293,
+      "medianMs": 0.16,
+      "minMs": 0.102,
+      "maxMs": 0.81,
+      "operationsPerSecond": 3417.401
+    },
+    {
+      "name": "sample.pdf: raw signature verification (signer 1)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 49.91,
+      "meanMs": 9.982,
+      "medianMs": 9.866,
+      "minMs": 9.702,
+      "maxMs": 10.439,
+      "operationsPerSecond": 100.181
+    },
+    {
+      "name": "sample.pdf: extract embedded envelope (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 3.965,
+      "meanMs": 0.793,
+      "medianMs": 0.69,
+      "minMs": 0.647,
+      "maxMs": 1.208,
+      "operationsPerSecond": 1261.098
+    },
+    {
+      "name": "sample.pdf: strip embedded envelope (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.985,
+      "meanMs": 0.197,
+      "medianMs": 0.184,
+      "minMs": 0.109,
+      "maxMs": 0.303,
+      "operationsPerSecond": 5076.658
+    },
+    {
+      "name": "sample.pdf: verify detached envelope (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 99.444,
+      "meanMs": 19.889,
+      "medianMs": 19.801,
+      "minMs": 19.127,
+      "maxMs": 20.602,
+      "operationsPerSecond": 50.279
+    },
+    {
+      "name": "sample.pdf: verify embedded file (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 104.905,
+      "meanMs": 20.981,
+      "medianMs": 21.199,
+      "minMs": 20.379,
+      "maxMs": 21.468,
+      "operationsPerSecond": 47.662
+    },
+    {
+      "name": "sample.pdf: signature JSON encode (2-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.09,
+      "meanMs": 0.018,
+      "medianMs": 0.017,
+      "minMs": 0.015,
+      "maxMs": 0.022,
+      "operationsPerSecond": 55555.556
+    },
+    {
+      "name": "sample.pdf: signature Base64 encode (2-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.554,
+      "meanMs": 0.111,
+      "medianMs": 0.109,
+      "minMs": 0.108,
+      "maxMs": 0.116,
+      "operationsPerSecond": 9023.642
+    },
+    {
+      "name": "sample.pdf: signature CBOR encode (2-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.21,
+      "meanMs": 0.042,
+      "medianMs": 0.041,
+      "minMs": 0.04,
+      "maxMs": 0.047,
+      "operationsPerSecond": 23764.259
+    },
+    {
+      "name": "sample.pdf: signature JSON decode (2-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.056,
+      "meanMs": 0.011,
+      "medianMs": 0.011,
+      "minMs": 0.009,
+      "maxMs": 0.014,
+      "operationsPerSecond": 89605.735
+    },
+    {
+      "name": "sample.pdf: signature Base64 decode (2-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.954,
+      "meanMs": 0.391,
+      "medianMs": 0.383,
+      "minMs": 0.379,
+      "maxMs": 0.417,
+      "operationsPerSecond": 2558.985
+    },
+    {
+      "name": "sample.pdf: signature CBOR decode (2-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.515,
+      "meanMs": 0.103,
+      "medianMs": 0.096,
+      "minMs": 0.09,
+      "maxMs": 0.134,
+      "operationsPerSecond": 9699.321
+    },
+    {
+      "name": "sample.pdf: envelope JSON encode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.151,
+      "meanMs": 0.03,
+      "medianMs": 0.03,
+      "minMs": 0.029,
+      "maxMs": 0.033,
+      "operationsPerSecond": 33046.927
+    },
+    {
+      "name": "sample.pdf: envelope Base64 encode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.149,
+      "meanMs": 0.23,
+      "medianMs": 0.226,
+      "minMs": 0.217,
+      "maxMs": 0.247,
+      "operationsPerSecond": 4351.61
+    },
+    {
+      "name": "sample.pdf: envelope CBOR encode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.523,
+      "meanMs": 0.305,
+      "medianMs": 0.113,
+      "minMs": 0.066,
+      "maxMs": 1.083,
+      "operationsPerSecond": 3282.348
+    },
+    {
+      "name": "sample.pdf: MJKSIG v2 container encode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.472,
+      "meanMs": 0.094,
+      "medianMs": 0.091,
+      "minMs": 0.081,
+      "maxMs": 0.109,
+      "operationsPerSecond": 10584.251
+    },
+    {
+      "name": "sample.pdf: envelope JSON decode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.113,
+      "meanMs": 0.023,
+      "medianMs": 0.023,
+      "minMs": 0.019,
+      "maxMs": 0.026,
+      "operationsPerSecond": 44404.973
+    },
+    {
+      "name": "sample.pdf: envelope Base64 decode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.373,
+      "meanMs": 0.075,
+      "medianMs": 0.075,
+      "minMs": 0.073,
+      "maxMs": 0.076,
+      "operationsPerSecond": 13412.017
+    },
+    {
+      "name": "sample.pdf: envelope CBOR decode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.972,
+      "meanMs": 0.194,
+      "medianMs": 0.165,
+      "minMs": 0.161,
+      "maxMs": 0.298,
+      "operationsPerSecond": 5146.68
+    },
+    {
+      "name": "sample.pdf: MJKSIG v2 container decode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.934,
+      "meanMs": 0.187,
+      "medianMs": 0.174,
+      "minMs": 0.166,
+      "maxMs": 0.237,
+      "operationsPerSecond": 5354.466
+    },
+    {
+      "name": "sample.pdf: raw signature verification (signer 2)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 47.957,
+      "meanMs": 9.591,
+      "medianMs": 9.69,
+      "minMs": 9.33,
+      "maxMs": 9.738,
+      "operationsPerSecond": 104.26
+    },
+    {
+      "name": "sample.pdf: extract embedded envelope (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 4.778,
+      "meanMs": 0.956,
+      "medianMs": 0.859,
+      "minMs": 0.847,
+      "maxMs": 1.242,
+      "operationsPerSecond": 1046.463
+    },
+    {
+      "name": "sample.pdf: strip embedded envelope (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.705,
+      "meanMs": 0.141,
+      "medianMs": 0.155,
+      "minMs": 0.072,
+      "maxMs": 0.187,
+      "operationsPerSecond": 7088.177
+    },
+    {
+      "name": "sample.pdf: verify detached envelope (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 149.918,
+      "meanMs": 29.984,
+      "medianMs": 29.748,
+      "minMs": 29.11,
+      "maxMs": 30.911,
+      "operationsPerSecond": 33.352
+    },
+    {
+      "name": "sample.pdf: verify embedded file (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 161.055,
+      "meanMs": 32.211,
+      "medianMs": 32,
+      "minMs": 31.272,
+      "maxMs": 33.149,
+      "operationsPerSecond": 31.045
+    },
+    {
+      "name": "sample.pdf: signature JSON encode (3-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.083,
+      "meanMs": 0.017,
+      "medianMs": 0.016,
+      "minMs": 0.016,
+      "maxMs": 0.018,
+      "operationsPerSecond": 60313.631
+    },
+    {
+      "name": "sample.pdf: signature Base64 encode (3-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.534,
+      "meanMs": 0.107,
+      "medianMs": 0.106,
+      "minMs": 0.106,
+      "maxMs": 0.109,
+      "operationsPerSecond": 9368.559
+    },
+    {
+      "name": "sample.pdf: signature CBOR encode (3-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.2,
+      "meanMs": 0.04,
+      "medianMs": 0.04,
+      "minMs": 0.039,
+      "maxMs": 0.042,
+      "operationsPerSecond": 24937.656
+    },
+    {
+      "name": "sample.pdf: signature JSON decode (3-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.049,
+      "meanMs": 0.01,
+      "medianMs": 0.01,
+      "minMs": 0.009,
+      "maxMs": 0.011,
+      "operationsPerSecond": 101419.878
+    },
+    {
+      "name": "sample.pdf: signature Base64 decode (3-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.17,
+      "meanMs": 0.034,
+      "medianMs": 0.034,
+      "minMs": 0.033,
+      "maxMs": 0.036,
+      "operationsPerSecond": 29446.408
+    },
+    {
+      "name": "sample.pdf: signature CBOR decode (3-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.517,
+      "meanMs": 0.103,
+      "medianMs": 0.097,
+      "minMs": 0.085,
+      "maxMs": 0.132,
+      "operationsPerSecond": 9671.18
+    },
+    {
+      "name": "sample.pdf: envelope JSON encode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.209,
+      "meanMs": 0.042,
+      "medianMs": 0.042,
+      "minMs": 0.041,
+      "maxMs": 0.043,
+      "operationsPerSecond": 23912.004
+    },
+    {
+      "name": "sample.pdf: envelope Base64 encode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 2.183,
+      "meanMs": 0.437,
+      "medianMs": 0.32,
+      "minMs": 0.317,
+      "maxMs": 0.907,
+      "operationsPerSecond": 2290.006
+    },
+    {
+      "name": "sample.pdf: envelope CBOR encode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.503,
+      "meanMs": 0.101,
+      "medianMs": 0.095,
+      "minMs": 0.094,
+      "maxMs": 0.115,
+      "operationsPerSecond": 9942.334
+    },
+    {
+      "name": "sample.pdf: MJKSIG v2 container encode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.504,
+      "meanMs": 0.101,
+      "medianMs": 0.101,
+      "minMs": 0.094,
+      "maxMs": 0.109,
+      "operationsPerSecond": 9920.635
+    },
+    {
+      "name": "sample.pdf: envelope JSON decode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.134,
+      "meanMs": 0.027,
+      "medianMs": 0.025,
+      "minMs": 0.02,
+      "maxMs": 0.036,
+      "operationsPerSecond": 37397.158
+    },
+    {
+      "name": "sample.pdf: envelope Base64 decode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.467,
+      "meanMs": 0.093,
+      "medianMs": 0.092,
+      "minMs": 0.09,
+      "maxMs": 0.101,
+      "operationsPerSecond": 10708.931
+    },
+    {
+      "name": "sample.pdf: envelope CBOR decode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 2.108,
+      "meanMs": 0.422,
+      "medianMs": 0.287,
+      "minMs": 0.243,
+      "maxMs": 1.038,
+      "operationsPerSecond": 2372.367
+    },
+    {
+      "name": "sample.pdf: MJKSIG v2 container decode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.289,
+      "meanMs": 0.258,
+      "medianMs": 0.257,
+      "minMs": 0.245,
+      "maxMs": 0.275,
+      "operationsPerSecond": 3879.578
+    },
+    {
+      "name": "sample.pdf: raw signature verification (signer 3)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 47.726,
+      "meanMs": 9.545,
+      "medianMs": 9.516,
+      "minMs": 9.418,
+      "maxMs": 9.714,
+      "operationsPerSecond": 104.766
+    },
+    {
+      "name": "sample.pdf: extract embedded envelope (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 6.415,
+      "meanMs": 1.283,
+      "medianMs": 1.174,
+      "minMs": 1.166,
+      "maxMs": 1.49,
+      "operationsPerSecond": 779.387
+    },
+    {
+      "name": "sample.pdf: strip embedded envelope (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.256,
+      "meanMs": 0.251,
+      "medianMs": 0.266,
+      "minMs": 0.167,
+      "maxMs": 0.292,
+      "operationsPerSecond": 3982.16
+    },
+    {
+      "name": "sample.pdf: verify detached envelope (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 197.802,
+      "meanMs": 39.56,
+      "medianMs": 39.425,
+      "minMs": 38.389,
+      "maxMs": 41.943,
+      "operationsPerSecond": 25.278
+    },
+    {
+      "name": "sample.pdf: verify embedded file (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 221.084,
+      "meanMs": 44.217,
+      "medianMs": 43.852,
+      "minMs": 43.463,
+      "maxMs": 45.507,
+      "operationsPerSecond": 22.616
+    },
+    {
+      "name": "sample.pdf: signature JSON encode (4-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.077,
+      "meanMs": 0.015,
+      "medianMs": 0.015,
+      "minMs": 0.015,
+      "maxMs": 0.017,
+      "operationsPerSecond": 65359.477
+    },
+    {
+      "name": "sample.pdf: signature Base64 encode (4-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.535,
+      "meanMs": 0.107,
+      "medianMs": 0.107,
+      "minMs": 0.106,
+      "maxMs": 0.108,
+      "operationsPerSecond": 9338.812
+    },
+    {
+      "name": "sample.pdf: signature CBOR encode (4-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.225,
+      "meanMs": 0.045,
+      "medianMs": 0.043,
+      "minMs": 0.037,
+      "maxMs": 0.054,
+      "operationsPerSecond": 22202.487
+    },
+    {
+      "name": "sample.pdf: signature JSON decode (4-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.047,
+      "meanMs": 0.009,
+      "medianMs": 0.009,
+      "minMs": 0.009,
+      "maxMs": 0.011,
+      "operationsPerSecond": 105263.158
+    },
+    {
+      "name": "sample.pdf: signature Base64 decode (4-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.168,
+      "meanMs": 0.034,
+      "medianMs": 0.034,
+      "minMs": 0.033,
+      "maxMs": 0.034,
+      "operationsPerSecond": 29832.936
+    },
+    {
+      "name": "sample.pdf: signature CBOR decode (4-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.479,
+      "meanMs": 0.096,
+      "medianMs": 0.088,
+      "minMs": 0.082,
+      "maxMs": 0.126,
+      "operationsPerSecond": 10438.413
+    },
+    {
+      "name": "sample.pdf: envelope JSON encode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.282,
+      "meanMs": 0.056,
+      "medianMs": 0.056,
+      "minMs": 0.055,
+      "maxMs": 0.06,
+      "operationsPerSecond": 17755.682
+    },
+    {
+      "name": "sample.pdf: envelope Base64 encode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 2.325,
+      "meanMs": 0.465,
+      "medianMs": 0.437,
+      "minMs": 0.425,
+      "maxMs": 0.6,
+      "operationsPerSecond": 2150.63
+    },
+    {
+      "name": "sample.pdf: envelope CBOR encode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.706,
+      "meanMs": 0.141,
+      "medianMs": 0.132,
+      "minMs": 0.129,
+      "maxMs": 0.182,
+      "operationsPerSecond": 7081.15
+    },
+    {
+      "name": "sample.pdf: MJKSIG v2 container encode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.689,
+      "meanMs": 0.138,
+      "medianMs": 0.137,
+      "minMs": 0.125,
+      "maxMs": 0.148,
+      "operationsPerSecond": 7259.001
+    },
+    {
+      "name": "sample.pdf: envelope JSON decode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.146,
+      "meanMs": 0.029,
+      "medianMs": 0.03,
+      "minMs": 0.027,
+      "maxMs": 0.031,
+      "operationsPerSecond": 34129.693
+    },
+    {
+      "name": "sample.pdf: envelope Base64 decode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.618,
+      "meanMs": 0.124,
+      "medianMs": 0.124,
+      "minMs": 0.121,
+      "maxMs": 0.126,
+      "operationsPerSecond": 8091.924
+    },
+    {
+      "name": "sample.pdf: envelope CBOR decode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.559,
+      "meanMs": 0.312,
+      "medianMs": 0.312,
+      "minMs": 0.306,
+      "maxMs": 0.315,
+      "operationsPerSecond": 3207.39
+    },
+    {
+      "name": "sample.pdf: MJKSIG v2 container decode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.6,
+      "meanMs": 0.32,
+      "medianMs": 0.318,
+      "minMs": 0.314,
+      "maxMs": 0.329,
+      "operationsPerSecond": 3125
+    },
+    {
+      "name": "sample.pdf: raw signature verification (signer 4)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 47.436,
+      "meanMs": 9.487,
+      "medianMs": 9.317,
+      "minMs": 9.278,
+      "maxMs": 9.857,
+      "operationsPerSecond": 105.405
+    },
+    {
+      "name": "sample.pdf: extract embedded envelope (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 7.31,
+      "meanMs": 1.462,
+      "medianMs": 1.427,
+      "minMs": 1.258,
+      "maxMs": 1.762,
+      "operationsPerSecond": 684.023
+    },
+    {
+      "name": "sample.pdf: strip embedded envelope (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.471,
+      "meanMs": 0.094,
+      "medianMs": 0.09,
+      "minMs": 0.084,
+      "maxMs": 0.119,
+      "operationsPerSecond": 10624.734
+    },
+    {
+      "name": "sample.pdf: verify detached envelope (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 242.092,
+      "meanMs": 48.418,
+      "medianMs": 48.061,
+      "minMs": 46.84,
+      "maxMs": 50.705,
+      "operationsPerSecond": 20.653
+    },
+    {
+      "name": "sample.pdf: verify embedded file (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 281.446,
+      "meanMs": 56.289,
+      "medianMs": 56.224,
+      "minMs": 55.414,
+      "maxMs": 57.693,
+      "operationsPerSecond": 17.765
+    },
+    {
+      "name": "sample.pdf: signature JSON encode (5-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.079,
+      "meanMs": 0.016,
+      "medianMs": 0.016,
+      "minMs": 0.015,
+      "maxMs": 0.018,
+      "operationsPerSecond": 63211.125
+    },
+    {
+      "name": "sample.pdf: signature Base64 encode (5-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.572,
+      "meanMs": 0.114,
+      "medianMs": 0.111,
+      "minMs": 0.108,
+      "maxMs": 0.132,
+      "operationsPerSecond": 8747.376
+    },
+    {
+      "name": "sample.pdf: signature CBOR encode (5-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.19,
+      "meanMs": 0.038,
+      "medianMs": 0.036,
+      "minMs": 0.034,
+      "maxMs": 0.047,
+      "operationsPerSecond": 26274.304
+    },
+    {
+      "name": "sample.pdf: signature JSON decode (5-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.048,
+      "meanMs": 0.01,
+      "medianMs": 0.009,
+      "minMs": 0.009,
+      "maxMs": 0.011,
+      "operationsPerSecond": 103734.44
+    },
+    {
+      "name": "sample.pdf: signature Base64 decode (5-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.171,
+      "meanMs": 0.034,
+      "medianMs": 0.034,
+      "minMs": 0.033,
+      "maxMs": 0.036,
+      "operationsPerSecond": 29274.005
+    },
+    {
+      "name": "sample.pdf: signature CBOR decode (5-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.484,
+      "meanMs": 0.097,
+      "medianMs": 0.096,
+      "minMs": 0.084,
+      "maxMs": 0.114,
+      "operationsPerSecond": 10322.048
+    },
+    {
+      "name": "sample.pdf: envelope JSON encode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.345,
+      "meanMs": 0.069,
+      "medianMs": 0.069,
+      "minMs": 0.068,
+      "maxMs": 0.07,
+      "operationsPerSecond": 14505.367
+    },
+    {
+      "name": "sample.pdf: envelope Base64 encode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 2.776,
+      "meanMs": 0.555,
+      "medianMs": 0.554,
+      "minMs": 0.538,
+      "maxMs": 0.574,
+      "operationsPerSecond": 1800.893
+    },
+    {
+      "name": "sample.pdf: envelope CBOR encode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.895,
+      "meanMs": 0.179,
+      "medianMs": 0.17,
+      "minMs": 0.153,
+      "maxMs": 0.215,
+      "operationsPerSecond": 5585.968
+    },
+    {
+      "name": "sample.pdf: MJKSIG v2 container encode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.816,
+      "meanMs": 0.163,
+      "medianMs": 0.162,
+      "minMs": 0.159,
+      "maxMs": 0.172,
+      "operationsPerSecond": 6129.705
+    },
+    {
+      "name": "sample.pdf: envelope JSON decode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.174,
+      "meanMs": 0.035,
+      "medianMs": 0.035,
+      "minMs": 0.034,
+      "maxMs": 0.035,
+      "operationsPerSecond": 28719.127
+    },
+    {
+      "name": "sample.pdf: envelope Base64 decode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.757,
+      "meanMs": 0.151,
+      "medianMs": 0.152,
+      "minMs": 0.15,
+      "maxMs": 0.153,
+      "operationsPerSecond": 6601.532
+    },
+    {
+      "name": "sample.pdf: envelope CBOR decode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 2.409,
+      "meanMs": 0.482,
+      "medianMs": 0.398,
+      "minMs": 0.381,
+      "maxMs": 0.827,
+      "operationsPerSecond": 2075.464
+    },
+    {
+      "name": "sample.pdf: MJKSIG v2 container decode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 2.08,
+      "meanMs": 0.416,
+      "medianMs": 0.413,
+      "minMs": 0.407,
+      "maxMs": 0.424,
+      "operationsPerSecond": 2404.077
+    },
+    {
+      "name": "sample.pdf: raw signature verification (signer 5)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 48.019,
+      "meanMs": 9.604,
+      "medianMs": 9.523,
+      "minMs": 9.408,
+      "maxMs": 9.954,
+      "operationsPerSecond": 104.124
+    },
+    {
+      "name": "sample.jpg: detached signing (signer 1/5)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 75.468,
+      "meanMs": 15.094,
+      "medianMs": 10.695,
+      "minMs": 9.596,
+      "maxMs": 25.683,
+      "operationsPerSecond": 66.253
+    },
+    {
+      "name": "sample.jpg: embedded signing (signer 1/5)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 64.499,
+      "meanMs": 12.9,
+      "medianMs": 13.633,
+      "minMs": 9.844,
+      "maxMs": 16.321,
+      "operationsPerSecond": 77.52
+    },
+    {
+      "name": "sample.jpg: detached multi-sig add signer 2/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 65.495,
+      "meanMs": 13.099,
+      "medianMs": 10.515,
+      "minMs": 9.264,
+      "maxMs": 20.524,
+      "operationsPerSecond": 76.342
+    },
+    {
+      "name": "sample.jpg: embedded multi-sig add signer 2/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 61.679,
+      "meanMs": 12.336,
+      "medianMs": 11.892,
+      "minMs": 10.785,
+      "maxMs": 15.037,
+      "operationsPerSecond": 81.065
+    },
+    {
+      "name": "sample.jpg: detached multi-sig add signer 3/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 101.477,
+      "meanMs": 20.295,
+      "medianMs": 16.474,
+      "minMs": 14.396,
+      "maxMs": 28.814,
+      "operationsPerSecond": 49.272
+    },
+    {
+      "name": "sample.jpg: embedded multi-sig add signer 3/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 95.824,
+      "meanMs": 19.165,
+      "medianMs": 17.359,
+      "minMs": 12.153,
+      "maxMs": 26.21,
+      "operationsPerSecond": 52.179
+    },
+    {
+      "name": "sample.jpg: detached multi-sig add signer 4/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 52.413,
+      "meanMs": 10.483,
+      "medianMs": 10.899,
+      "minMs": 8.801,
+      "maxMs": 11.84,
+      "operationsPerSecond": 95.396
+    },
+    {
+      "name": "sample.jpg: embedded multi-sig add signer 4/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 78.53,
+      "meanMs": 15.706,
+      "medianMs": 13.222,
+      "minMs": 11.1,
+      "maxMs": 25.894,
+      "operationsPerSecond": 63.67
+    },
+    {
+      "name": "sample.jpg: detached multi-sig add signer 5/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 76.616,
+      "meanMs": 15.323,
+      "medianMs": 14.039,
+      "minMs": 12.098,
+      "maxMs": 22.207,
+      "operationsPerSecond": 65.26
+    },
+    {
+      "name": "sample.jpg: embedded multi-sig add signer 5/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 65.444,
+      "meanMs": 13.089,
+      "medianMs": 12.777,
+      "minMs": 11.767,
+      "maxMs": 15.323,
+      "operationsPerSecond": 76.401
+    },
+    {
+      "name": "sample.jpg: extract embedded envelope (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 2.067,
+      "meanMs": 0.413,
+      "medianMs": 0.313,
+      "minMs": 0.295,
+      "maxMs": 0.843,
+      "operationsPerSecond": 2418.497
+    },
+    {
+      "name": "sample.jpg: strip embedded envelope (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.464,
+      "meanMs": 0.093,
+      "medianMs": 0.089,
+      "minMs": 0.088,
+      "maxMs": 0.108,
+      "operationsPerSecond": 10785.16
+    },
+    {
+      "name": "sample.jpg: verify detached envelope (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 55.701,
+      "meanMs": 11.14,
+      "medianMs": 10.89,
+      "minMs": 10.09,
+      "maxMs": 13.337,
+      "operationsPerSecond": 89.765
+    },
+    {
+      "name": "sample.jpg: verify embedded file (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 77.087,
+      "meanMs": 15.417,
+      "medianMs": 11.246,
+      "minMs": 10.961,
+      "maxMs": 31.117,
+      "operationsPerSecond": 64.862
+    },
+    {
+      "name": "sample.jpg: signature JSON encode (1-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.08,
+      "meanMs": 0.016,
+      "medianMs": 0.016,
+      "minMs": 0.015,
+      "maxMs": 0.018,
+      "operationsPerSecond": 62266.501
+    },
+    {
+      "name": "sample.jpg: signature Base64 encode (1-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.582,
+      "meanMs": 0.116,
+      "medianMs": 0.11,
+      "minMs": 0.109,
+      "maxMs": 0.139,
+      "operationsPerSecond": 8588.114
+    },
+    {
+      "name": "sample.jpg: signature CBOR encode (1-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.192,
+      "meanMs": 0.038,
+      "medianMs": 0.036,
+      "minMs": 0.034,
+      "maxMs": 0.052,
+      "operationsPerSecond": 26082.42
+    },
+    {
+      "name": "sample.jpg: signature JSON decode (1-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.047,
+      "meanMs": 0.009,
+      "medianMs": 0.009,
+      "minMs": 0.009,
+      "maxMs": 0.011,
+      "operationsPerSecond": 105485.232
+    },
+    {
+      "name": "sample.jpg: signature Base64 decode (1-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.176,
+      "meanMs": 0.035,
+      "medianMs": 0.035,
+      "minMs": 0.033,
+      "maxMs": 0.038,
+      "operationsPerSecond": 28425.242
+    },
+    {
+      "name": "sample.jpg: signature CBOR decode (1-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.427,
+      "meanMs": 0.085,
+      "medianMs": 0.085,
+      "minMs": 0.083,
+      "maxMs": 0.089,
+      "operationsPerSecond": 11720.581
+    },
+    {
+      "name": "sample.jpg: envelope JSON encode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.077,
+      "meanMs": 0.015,
+      "medianMs": 0.015,
+      "minMs": 0.015,
+      "maxMs": 0.018,
+      "operationsPerSecond": 64599.483
+    },
+    {
+      "name": "sample.jpg: envelope Base64 encode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.569,
+      "meanMs": 0.114,
+      "medianMs": 0.114,
+      "minMs": 0.11,
+      "maxMs": 0.117,
+      "operationsPerSecond": 8784.259
+    },
+    {
+      "name": "sample.jpg: envelope CBOR encode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.263,
+      "meanMs": 0.053,
+      "medianMs": 0.051,
+      "minMs": 0.039,
+      "maxMs": 0.072,
+      "operationsPerSecond": 18996.96
+    },
+    {
+      "name": "sample.jpg: MJKSIG v2 container encode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.222,
+      "meanMs": 0.044,
+      "medianMs": 0.042,
+      "minMs": 0.04,
+      "maxMs": 0.053,
+      "operationsPerSecond": 22522.523
+    },
+    {
+      "name": "sample.jpg: envelope JSON decode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.438,
+      "meanMs": 0.088,
+      "medianMs": 0.009,
+      "minMs": 0.009,
+      "maxMs": 0.402,
+      "operationsPerSecond": 11423.349
+    },
+    {
+      "name": "sample.jpg: envelope Base64 decode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.179,
+      "meanMs": 0.036,
+      "medianMs": 0.035,
+      "minMs": 0.033,
+      "maxMs": 0.039,
+      "operationsPerSecond": 27870.68
+    },
+    {
+      "name": "sample.jpg: envelope CBOR decode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.425,
+      "meanMs": 0.085,
+      "medianMs": 0.084,
+      "minMs": 0.084,
+      "maxMs": 0.088,
+      "operationsPerSecond": 11753.644
+    },
+    {
+      "name": "sample.jpg: MJKSIG v2 container decode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.458,
+      "meanMs": 0.092,
+      "medianMs": 0.089,
+      "minMs": 0.086,
+      "maxMs": 0.102,
+      "operationsPerSecond": 10907.504
+    },
+    {
+      "name": "sample.jpg: raw signature verification (signer 1)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 49.082,
+      "meanMs": 9.816,
+      "medianMs": 9.896,
+      "minMs": 9.535,
+      "maxMs": 9.921,
+      "operationsPerSecond": 101.871
+    },
+    {
+      "name": "sample.jpg: extract embedded envelope (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 3.196,
+      "meanMs": 0.639,
+      "medianMs": 0.636,
+      "minMs": 0.608,
+      "maxMs": 0.686,
+      "operationsPerSecond": 1564.553
+    },
+    {
+      "name": "sample.jpg: strip embedded envelope (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.077,
+      "meanMs": 0.215,
+      "medianMs": 0.235,
+      "minMs": 0.134,
+      "maxMs": 0.261,
+      "operationsPerSecond": 4641.233
+    },
+    {
+      "name": "sample.jpg: verify detached envelope (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 100.073,
+      "meanMs": 20.015,
+      "medianMs": 19.849,
+      "minMs": 19.454,
+      "maxMs": 20.707,
+      "operationsPerSecond": 49.964
+    },
+    {
+      "name": "sample.jpg: verify embedded file (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 113.413,
+      "meanMs": 22.683,
+      "medianMs": 21.753,
+      "minMs": 21.043,
+      "maxMs": 26.603,
+      "operationsPerSecond": 44.087
+    },
+    {
+      "name": "sample.jpg: signature JSON encode (2-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.087,
+      "meanMs": 0.017,
+      "medianMs": 0.015,
+      "minMs": 0.015,
+      "maxMs": 0.025,
+      "operationsPerSecond": 57339.45
+    },
+    {
+      "name": "sample.jpg: signature Base64 encode (2-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.549,
+      "meanMs": 0.11,
+      "medianMs": 0.108,
+      "minMs": 0.107,
+      "maxMs": 0.117,
+      "operationsPerSecond": 9109.127
+    },
+    {
+      "name": "sample.jpg: signature CBOR encode (2-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.214,
+      "meanMs": 0.043,
+      "medianMs": 0.039,
+      "minMs": 0.036,
+      "maxMs": 0.052,
+      "operationsPerSecond": 23375.409
+    },
+    {
+      "name": "sample.jpg: signature JSON decode (2-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.06,
+      "meanMs": 0.012,
+      "medianMs": 0.012,
+      "minMs": 0.011,
+      "maxMs": 0.014,
+      "operationsPerSecond": 83333.333
+    },
+    {
+      "name": "sample.jpg: signature Base64 decode (2-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.279,
+      "meanMs": 0.056,
+      "medianMs": 0.057,
+      "minMs": 0.052,
+      "maxMs": 0.058,
+      "operationsPerSecond": 17901.898
+    },
+    {
+      "name": "sample.jpg: signature CBOR decode (2-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.617,
+      "meanMs": 0.123,
+      "medianMs": 0.099,
+      "minMs": 0.086,
+      "maxMs": 0.193,
+      "operationsPerSecond": 8102.415
+    },
+    {
+      "name": "sample.jpg: envelope JSON encode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.15,
+      "meanMs": 0.03,
+      "medianMs": 0.029,
+      "minMs": 0.029,
+      "maxMs": 0.033,
+      "operationsPerSecond": 33422.46
+    },
+    {
+      "name": "sample.jpg: envelope Base64 encode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.139,
+      "meanMs": 0.228,
+      "medianMs": 0.218,
+      "minMs": 0.215,
+      "maxMs": 0.267,
+      "operationsPerSecond": 4389.816
+    },
+    {
+      "name": "sample.jpg: envelope CBOR encode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.33,
+      "meanMs": 0.066,
+      "medianMs": 0.066,
+      "minMs": 0.062,
+      "maxMs": 0.069,
+      "operationsPerSecond": 15128.593
+    },
+    {
+      "name": "sample.jpg: MJKSIG v2 container encode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.338,
+      "meanMs": 0.068,
+      "medianMs": 0.068,
+      "minMs": 0.066,
+      "maxMs": 0.069,
+      "operationsPerSecond": 14810.427
+    },
+    {
+      "name": "sample.jpg: envelope JSON decode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.079,
+      "meanMs": 0.016,
+      "medianMs": 0.016,
+      "minMs": 0.015,
+      "maxMs": 0.017,
+      "operationsPerSecond": 63051.702
+    },
+    {
+      "name": "sample.jpg: envelope Base64 decode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.528,
+      "meanMs": 0.106,
+      "medianMs": 0.103,
+      "minMs": 0.097,
+      "maxMs": 0.123,
+      "operationsPerSecond": 9471.491
+    },
+    {
+      "name": "sample.jpg: envelope CBOR decode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.862,
+      "meanMs": 0.172,
+      "medianMs": 0.175,
+      "minMs": 0.163,
+      "maxMs": 0.183,
+      "operationsPerSecond": 5797.101
+    },
+    {
+      "name": "sample.jpg: MJKSIG v2 container decode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.472,
+      "meanMs": 0.294,
+      "medianMs": 0.207,
+      "minMs": 0.173,
+      "maxMs": 0.694,
+      "operationsPerSecond": 3396.047
+    },
+    {
+      "name": "sample.jpg: raw signature verification (signer 2)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 49.654,
+      "meanMs": 9.931,
+      "medianMs": 9.984,
+      "minMs": 9.784,
+      "maxMs": 10.075,
+      "operationsPerSecond": 100.698
+    },
+    {
+      "name": "sample.jpg: extract embedded envelope (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 5.025,
+      "meanMs": 1.005,
+      "medianMs": 0.921,
+      "minMs": 0.856,
+      "maxMs": 1.411,
+      "operationsPerSecond": 995.025
+    },
+    {
+      "name": "sample.jpg: strip embedded envelope (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.558,
+      "meanMs": 0.112,
+      "medianMs": 0.116,
+      "minMs": 0.097,
+      "maxMs": 0.122,
+      "operationsPerSecond": 8955.759
+    },
+    {
+      "name": "sample.jpg: verify detached envelope (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 151.159,
+      "meanMs": 30.232,
+      "medianMs": 30.561,
+      "minMs": 29.222,
+      "maxMs": 30.877,
+      "operationsPerSecond": 33.078
+    },
+    {
+      "name": "sample.jpg: verify embedded file (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 193.502,
+      "meanMs": 38.7,
+      "medianMs": 38.077,
+      "minMs": 33.82,
+      "maxMs": 42.047,
+      "operationsPerSecond": 25.84
+    },
+    {
+      "name": "sample.jpg: signature JSON encode (3-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.083,
+      "meanMs": 0.017,
+      "medianMs": 0.016,
+      "minMs": 0.015,
+      "maxMs": 0.019,
+      "operationsPerSecond": 60386.473
+    },
+    {
+      "name": "sample.jpg: signature Base64 encode (3-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.555,
+      "meanMs": 0.111,
+      "medianMs": 0.11,
+      "minMs": 0.108,
+      "maxMs": 0.117,
+      "operationsPerSecond": 9009.009
+    },
+    {
+      "name": "sample.jpg: signature CBOR encode (3-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.212,
+      "meanMs": 0.042,
+      "medianMs": 0.036,
+      "minMs": 0.034,
+      "maxMs": 0.071,
+      "operationsPerSecond": 23584.906
+    },
+    {
+      "name": "sample.jpg: signature JSON decode (3-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.052,
+      "meanMs": 0.01,
+      "medianMs": 0.01,
+      "minMs": 0.009,
+      "maxMs": 0.012,
+      "operationsPerSecond": 95785.441
+    },
+    {
+      "name": "sample.jpg: signature Base64 decode (3-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.181,
+      "meanMs": 0.036,
+      "medianMs": 0.034,
+      "minMs": 0.033,
+      "maxMs": 0.04,
+      "operationsPerSecond": 27639.58
+    },
+    {
+      "name": "sample.jpg: signature CBOR decode (3-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.425,
+      "meanMs": 0.085,
+      "medianMs": 0.085,
+      "minMs": 0.083,
+      "maxMs": 0.088,
+      "operationsPerSecond": 11778.563
+    },
+    {
+      "name": "sample.jpg: envelope JSON encode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.636,
+      "meanMs": 0.127,
+      "medianMs": 0.043,
+      "minMs": 0.042,
+      "maxMs": 0.454,
+      "operationsPerSecond": 7855.46
+    },
+    {
+      "name": "sample.jpg: envelope Base64 encode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 2.287,
+      "meanMs": 0.457,
+      "medianMs": 0.514,
+      "minMs": 0.33,
+      "maxMs": 0.566,
+      "operationsPerSecond": 2186.653
+    },
+    {
+      "name": "sample.jpg: envelope CBOR encode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.77,
+      "meanMs": 0.154,
+      "medianMs": 0.149,
+      "minMs": 0.146,
+      "maxMs": 0.174,
+      "operationsPerSecond": 6496.037
+    },
+    {
+      "name": "sample.jpg: MJKSIG v2 container encode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.772,
+      "meanMs": 0.154,
+      "medianMs": 0.153,
+      "minMs": 0.149,
+      "maxMs": 0.161,
+      "operationsPerSecond": 6475.845
+    },
+    {
+      "name": "sample.jpg: envelope JSON decode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.15,
+      "meanMs": 0.03,
+      "medianMs": 0.03,
+      "minMs": 0.029,
+      "maxMs": 0.032,
+      "operationsPerSecond": 33377.837
+    },
+    {
+      "name": "sample.jpg: envelope Base64 decode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.733,
+      "meanMs": 0.147,
+      "medianMs": 0.144,
+      "minMs": 0.141,
+      "maxMs": 0.158,
+      "operationsPerSecond": 6824.075
+    },
+    {
+      "name": "sample.jpg: envelope CBOR decode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.885,
+      "meanMs": 0.377,
+      "medianMs": 0.377,
+      "minMs": 0.368,
+      "maxMs": 0.385,
+      "operationsPerSecond": 2651.816
+    },
+    {
+      "name": "sample.jpg: MJKSIG v2 container decode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 2.073,
+      "meanMs": 0.415,
+      "medianMs": 0.263,
+      "minMs": 0.252,
+      "maxMs": 1.019,
+      "operationsPerSecond": 2411.614
+    },
+    {
+      "name": "sample.jpg: raw signature verification (signer 3)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 50.399,
+      "meanMs": 10.08,
+      "medianMs": 9.777,
+      "minMs": 9.568,
+      "maxMs": 11.198,
+      "operationsPerSecond": 99.209
+    },
+    {
+      "name": "sample.jpg: extract embedded envelope (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 5.91,
+      "meanMs": 1.182,
+      "medianMs": 1.153,
+      "minMs": 1.125,
+      "maxMs": 1.258,
+      "operationsPerSecond": 845.981
+    },
+    {
+      "name": "sample.jpg: strip embedded envelope (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.883,
+      "meanMs": 0.177,
+      "medianMs": 0.178,
+      "minMs": 0.117,
+      "maxMs": 0.248,
+      "operationsPerSecond": 5659.95
+    },
+    {
+      "name": "sample.jpg: verify detached envelope (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 213.817,
+      "meanMs": 42.763,
+      "medianMs": 41.327,
+      "minMs": 41.073,
+      "maxMs": 45.787,
+      "operationsPerSecond": 23.384
+    },
+    {
+      "name": "sample.jpg: verify embedded file (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 246.326,
+      "meanMs": 49.265,
+      "medianMs": 46.738,
+      "minMs": 46.638,
+      "maxMs": 54.409,
+      "operationsPerSecond": 20.298
+    },
+    {
+      "name": "sample.jpg: signature JSON encode (4-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.077,
+      "meanMs": 0.015,
+      "medianMs": 0.015,
+      "minMs": 0.014,
+      "maxMs": 0.017,
+      "operationsPerSecond": 64683.053
+    },
+    {
+      "name": "sample.jpg: signature Base64 encode (4-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.542,
+      "meanMs": 0.108,
+      "medianMs": 0.109,
+      "minMs": 0.107,
+      "maxMs": 0.11,
+      "operationsPerSecond": 9219.989
+    },
+    {
+      "name": "sample.jpg: signature CBOR encode (4-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.181,
+      "meanMs": 0.036,
+      "medianMs": 0.036,
+      "minMs": 0.035,
+      "maxMs": 0.04,
+      "operationsPerSecond": 27624.309
+    },
+    {
+      "name": "sample.jpg: signature JSON decode (4-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.049,
+      "meanMs": 0.01,
+      "medianMs": 0.01,
+      "minMs": 0.009,
+      "maxMs": 0.011,
+      "operationsPerSecond": 101214.575
+    },
+    {
+      "name": "sample.jpg: signature Base64 decode (4-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.173,
+      "meanMs": 0.035,
+      "medianMs": 0.034,
+      "minMs": 0.033,
+      "maxMs": 0.038,
+      "operationsPerSecond": 28868.36
+    },
+    {
+      "name": "sample.jpg: signature CBOR decode (4-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.85,
+      "meanMs": 0.17,
+      "medianMs": 0.089,
+      "minMs": 0.086,
+      "maxMs": 0.489,
+      "operationsPerSecond": 5879.586
+    },
+    {
+      "name": "sample.jpg: envelope JSON encode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.292,
+      "meanMs": 0.058,
+      "medianMs": 0.056,
+      "minMs": 0.056,
+      "maxMs": 0.064,
+      "operationsPerSecond": 17105.713
+    },
+    {
+      "name": "sample.jpg: envelope Base64 encode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 2.272,
+      "meanMs": 0.454,
+      "medianMs": 0.454,
+      "minMs": 0.424,
+      "maxMs": 0.474,
+      "operationsPerSecond": 2200.317
+    },
+    {
+      "name": "sample.jpg: envelope CBOR encode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.709,
+      "meanMs": 0.142,
+      "medianMs": 0.13,
+      "minMs": 0.125,
+      "maxMs": 0.186,
+      "operationsPerSecond": 7055.171
+    },
+    {
+      "name": "sample.jpg: MJKSIG v2 container encode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.739,
+      "meanMs": 0.148,
+      "medianMs": 0.134,
+      "minMs": 0.127,
+      "maxMs": 0.187,
+      "operationsPerSecond": 6762.24
+    },
+    {
+      "name": "sample.jpg: envelope JSON decode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.142,
+      "meanMs": 0.028,
+      "medianMs": 0.028,
+      "minMs": 0.027,
+      "maxMs": 0.03,
+      "operationsPerSecond": 35087.719
+    },
+    {
+      "name": "sample.jpg: envelope Base64 decode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.623,
+      "meanMs": 0.125,
+      "medianMs": 0.123,
+      "minMs": 0.121,
+      "maxMs": 0.131,
+      "operationsPerSecond": 8024.394
+    },
+    {
+      "name": "sample.jpg: envelope CBOR decode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 2.07,
+      "meanMs": 0.414,
+      "medianMs": 0.347,
+      "minMs": 0.31,
+      "maxMs": 0.739,
+      "operationsPerSecond": 2415.226
+    },
+    {
+      "name": "sample.jpg: MJKSIG v2 container decode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.818,
+      "meanMs": 0.364,
+      "medianMs": 0.351,
+      "minMs": 0.339,
+      "maxMs": 0.398,
+      "operationsPerSecond": 2749.821
+    },
+    {
+      "name": "sample.jpg: raw signature verification (signer 4)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 50.433,
+      "meanMs": 10.087,
+      "medianMs": 9.917,
+      "minMs": 9.541,
+      "maxMs": 11.323,
+      "operationsPerSecond": 99.141
+    },
+    {
+      "name": "sample.jpg: extract embedded envelope (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 7.655,
+      "meanMs": 1.531,
+      "medianMs": 1.412,
+      "minMs": 1.331,
+      "maxMs": 2.036,
+      "operationsPerSecond": 653.176
+    },
+    {
+      "name": "sample.jpg: strip embedded envelope (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.925,
+      "meanMs": 0.185,
+      "medianMs": 0.182,
+      "minMs": 0.17,
+      "maxMs": 0.215,
+      "operationsPerSecond": 5403.069
+    },
+    {
+      "name": "sample.jpg: verify detached envelope (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 250.671,
+      "meanMs": 50.134,
+      "medianMs": 49.945,
+      "minMs": 48.188,
+      "maxMs": 51.74,
+      "operationsPerSecond": 19.946
+    },
+    {
+      "name": "sample.jpg: verify embedded file (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 305.723,
+      "meanMs": 61.145,
+      "medianMs": 59.383,
+      "minMs": 57.815,
+      "maxMs": 68.349,
+      "operationsPerSecond": 16.355
+    },
+    {
+      "name": "sample.jpg: signature JSON encode (5-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.11,
+      "meanMs": 0.022,
+      "medianMs": 0.02,
+      "minMs": 0.018,
+      "maxMs": 0.029,
+      "operationsPerSecond": 45372.051
+    },
+    {
+      "name": "sample.jpg: signature Base64 encode (5-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.676,
+      "meanMs": 0.135,
+      "medianMs": 0.133,
+      "minMs": 0.133,
+      "maxMs": 0.141,
+      "operationsPerSecond": 7400.829
+    },
+    {
+      "name": "sample.jpg: signature CBOR encode (5-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.204,
+      "meanMs": 0.041,
+      "medianMs": 0.038,
+      "minMs": 0.036,
+      "maxMs": 0.054,
+      "operationsPerSecond": 24509.804
+    },
+    {
+      "name": "sample.jpg: signature JSON decode (5-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.047,
+      "meanMs": 0.009,
+      "medianMs": 0.009,
+      "minMs": 0.009,
+      "maxMs": 0.01,
+      "operationsPerSecond": 106609.808
+    },
+    {
+      "name": "sample.jpg: signature Base64 decode (5-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.171,
+      "meanMs": 0.034,
+      "medianMs": 0.034,
+      "minMs": 0.034,
+      "maxMs": 0.035,
+      "operationsPerSecond": 29325.513
+    },
+    {
+      "name": "sample.jpg: signature CBOR decode (5-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.456,
+      "meanMs": 0.091,
+      "medianMs": 0.091,
+      "minMs": 0.085,
+      "maxMs": 0.098,
+      "operationsPerSecond": 10955.302
+    },
+    {
+      "name": "sample.jpg: envelope JSON encode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.696,
+      "meanMs": 0.139,
+      "medianMs": 0.07,
+      "minMs": 0.07,
+      "maxMs": 0.412,
+      "operationsPerSecond": 7179.782
+    },
+    {
+      "name": "sample.jpg: envelope Base64 encode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 2.938,
+      "meanMs": 0.588,
+      "medianMs": 0.597,
+      "minMs": 0.56,
+      "maxMs": 0.606,
+      "operationsPerSecond": 1701.954
+    },
+    {
+      "name": "sample.jpg: envelope CBOR encode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.986,
+      "meanMs": 0.197,
+      "medianMs": 0.194,
+      "minMs": 0.163,
+      "maxMs": 0.226,
+      "operationsPerSecond": 5069.451
+    },
+    {
+      "name": "sample.jpg: MJKSIG v2 container encode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.959,
+      "meanMs": 0.192,
+      "medianMs": 0.192,
+      "minMs": 0.167,
+      "maxMs": 0.227,
+      "operationsPerSecond": 5215.94
+    },
+    {
+      "name": "sample.jpg: envelope JSON decode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.18,
+      "meanMs": 0.036,
+      "medianMs": 0.036,
+      "minMs": 0.034,
+      "maxMs": 0.038,
+      "operationsPerSecond": 27855.153
+    },
+    {
+      "name": "sample.jpg: envelope Base64 decode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.809,
+      "meanMs": 0.162,
+      "medianMs": 0.154,
+      "minMs": 0.153,
+      "maxMs": 0.189,
+      "operationsPerSecond": 6177.415
+    },
+    {
+      "name": "sample.jpg: envelope CBOR decode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 4.998,
+      "meanMs": 1,
+      "medianMs": 0.53,
+      "minMs": 0.404,
+      "maxMs": 2.644,
+      "operationsPerSecond": 1000.34
+    },
+    {
+      "name": "sample.jpg: MJKSIG v2 container decode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 2.309,
+      "meanMs": 0.462,
+      "medianMs": 0.464,
+      "minMs": 0.439,
+      "maxMs": 0.483,
+      "operationsPerSecond": 2165.533
+    },
+    {
+      "name": "sample.jpg: raw signature verification (signer 5)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 49.724,
+      "meanMs": 9.945,
+      "medianMs": 9.904,
+      "minMs": 9.716,
+      "maxMs": 10.265,
+      "operationsPerSecond": 100.555
+    },
+    {
+      "name": "sample.wav: detached signing (signer 1/5)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 147.642,
+      "meanMs": 29.528,
+      "medianMs": 30.109,
+      "minMs": 25.24,
+      "maxMs": 34.304,
+      "operationsPerSecond": 33.866
+    },
+    {
+      "name": "sample.wav: embedded signing (signer 1/5)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 213.492,
+      "meanMs": 42.698,
+      "medianMs": 41.23,
+      "minMs": 38.176,
+      "maxMs": 52.471,
+      "operationsPerSecond": 23.42
+    },
+    {
+      "name": "sample.wav: detached multi-sig add signer 2/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 150.033,
+      "meanMs": 30.007,
+      "medianMs": 29.54,
+      "minMs": 23.219,
+      "maxMs": 36.32,
+      "operationsPerSecond": 33.326
+    },
+    {
+      "name": "sample.wav: embedded multi-sig add signer 2/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 215.3,
+      "meanMs": 43.06,
+      "medianMs": 41.275,
+      "minMs": 36.98,
+      "maxMs": 54.693,
+      "operationsPerSecond": 23.223
+    },
+    {
+      "name": "sample.wav: detached multi-sig add signer 3/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 162.591,
+      "meanMs": 32.518,
+      "medianMs": 31.845,
+      "minMs": 25.683,
+      "maxMs": 42.48,
+      "operationsPerSecond": 30.752
+    },
+    {
+      "name": "sample.wav: embedded multi-sig add signer 3/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 239.491,
+      "meanMs": 47.898,
+      "medianMs": 49.385,
+      "minMs": 39.038,
+      "maxMs": 53.315,
+      "operationsPerSecond": 20.878
+    },
+    {
+      "name": "sample.wav: detached multi-sig add signer 4/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 123.294,
+      "meanMs": 24.659,
+      "medianMs": 24.083,
+      "minMs": 21.322,
+      "maxMs": 29.199,
+      "operationsPerSecond": 40.554
+    },
+    {
+      "name": "sample.wav: embedded multi-sig add signer 4/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 220.159,
+      "meanMs": 44.032,
+      "medianMs": 43.184,
+      "minMs": 40.382,
+      "maxMs": 51.42,
+      "operationsPerSecond": 22.711
+    },
+    {
+      "name": "sample.wav: detached multi-sig add signer 5/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 141.598,
+      "meanMs": 28.32,
+      "medianMs": 26.715,
+      "minMs": 21.102,
+      "maxMs": 38.523,
+      "operationsPerSecond": 35.311
+    },
+    {
+      "name": "sample.wav: embedded multi-sig add signer 5/5",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 217.608,
+      "meanMs": 43.522,
+      "medianMs": 42.374,
+      "minMs": 41.918,
+      "maxMs": 46.702,
+      "operationsPerSecond": 22.977
+    },
+    {
+      "name": "sample.wav: extract embedded envelope (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 14.963,
+      "meanMs": 2.993,
+      "medianMs": 2.004,
+      "minMs": 1.536,
+      "maxMs": 6.081,
+      "operationsPerSecond": 334.149
+    },
+    {
+      "name": "sample.wav: strip embedded envelope (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 15.097,
+      "meanMs": 3.019,
+      "medianMs": 2.368,
+      "minMs": 2.292,
+      "maxMs": 5.714,
+      "operationsPerSecond": 331.189
+    },
+    {
+      "name": "sample.wav: verify detached envelope (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 127.873,
+      "meanMs": 25.575,
+      "medianMs": 24.577,
+      "minMs": 22.253,
+      "maxMs": 30.301,
+      "operationsPerSecond": 39.101
+    },
+    {
+      "name": "sample.wav: verify embedded file (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 160.952,
+      "meanMs": 32.19,
+      "medianMs": 32.603,
+      "minMs": 27.447,
+      "maxMs": 37.676,
+      "operationsPerSecond": 31.065
+    },
+    {
+      "name": "sample.wav: signature JSON encode (1-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.096,
+      "meanMs": 0.019,
+      "medianMs": 0.019,
+      "minMs": 0.018,
+      "maxMs": 0.021,
+      "operationsPerSecond": 51813.472
+    },
+    {
+      "name": "sample.wav: signature Base64 encode (1-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.572,
+      "meanMs": 0.114,
+      "medianMs": 0.109,
+      "minMs": 0.108,
+      "maxMs": 0.134,
+      "operationsPerSecond": 8748.906
+    },
+    {
+      "name": "sample.wav: signature CBOR encode (1-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.163,
+      "meanMs": 0.033,
+      "medianMs": 0.032,
+      "minMs": 0.032,
+      "maxMs": 0.035,
+      "operationsPerSecond": 30731.407
+    },
+    {
+      "name": "sample.wav: signature JSON decode (1-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.05,
+      "meanMs": 0.01,
+      "medianMs": 0.009,
+      "minMs": 0.009,
+      "maxMs": 0.011,
+      "operationsPerSecond": 101010.101
+    },
+    {
+      "name": "sample.wav: signature Base64 decode (1-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.168,
+      "meanMs": 0.034,
+      "medianMs": 0.034,
+      "minMs": 0.033,
+      "maxMs": 0.035,
+      "operationsPerSecond": 29708.853
+    },
+    {
+      "name": "sample.wav: signature CBOR decode (1-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.484,
+      "meanMs": 0.097,
+      "medianMs": 0.085,
+      "minMs": 0.081,
+      "maxMs": 0.125,
+      "operationsPerSecond": 10334.849
+    },
+    {
+      "name": "sample.wav: envelope JSON encode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.076,
+      "meanMs": 0.015,
+      "medianMs": 0.015,
+      "minMs": 0.015,
+      "maxMs": 0.016,
+      "operationsPerSecond": 65616.798
+    },
+    {
+      "name": "sample.wav: envelope Base64 encode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.54,
+      "meanMs": 0.108,
+      "medianMs": 0.108,
+      "minMs": 0.107,
+      "maxMs": 0.109,
+      "operationsPerSecond": 9259.259
+    },
+    {
+      "name": "sample.wav: envelope CBOR encode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.175,
+      "meanMs": 0.035,
+      "medianMs": 0.034,
+      "minMs": 0.033,
+      "maxMs": 0.04,
+      "operationsPerSecond": 28604.119
+    },
+    {
+      "name": "sample.wav: MJKSIG v2 container encode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.189,
+      "meanMs": 0.038,
+      "medianMs": 0.037,
+      "minMs": 0.034,
+      "maxMs": 0.045,
+      "operationsPerSecond": 26511.135
+    },
+    {
+      "name": "sample.wav: envelope JSON decode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.055,
+      "meanMs": 0.011,
+      "medianMs": 0.009,
+      "minMs": 0.008,
+      "maxMs": 0.019,
+      "operationsPerSecond": 90909.091
+    },
+    {
+      "name": "sample.wav: envelope Base64 decode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.218,
+      "meanMs": 0.044,
+      "medianMs": 0.035,
+      "minMs": 0.033,
+      "maxMs": 0.067,
+      "operationsPerSecond": 22935.78
+    },
+    {
+      "name": "sample.wav: envelope CBOR decode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.418,
+      "meanMs": 0.084,
+      "medianMs": 0.084,
+      "minMs": 0.082,
+      "maxMs": 0.086,
+      "operationsPerSecond": 11956.002
+    },
+    {
+      "name": "sample.wav: MJKSIG v2 container decode (1 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.49,
+      "meanMs": 0.098,
+      "medianMs": 0.092,
+      "minMs": 0.088,
+      "maxMs": 0.123,
+      "operationsPerSecond": 10212.418
+    },
+    {
+      "name": "sample.wav: raw signature verification (signer 1)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 101.046,
+      "meanMs": 20.209,
+      "medianMs": 20.194,
+      "minMs": 19.937,
+      "maxMs": 20.735,
+      "operationsPerSecond": 49.482
+    },
+    {
+      "name": "sample.wav: extract embedded envelope (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 21.07,
+      "meanMs": 4.214,
+      "medianMs": 2.382,
+      "minMs": 1.933,
+      "maxMs": 10.278,
+      "operationsPerSecond": 237.309
+    },
+    {
+      "name": "sample.wav: strip embedded envelope (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 14.902,
+      "meanMs": 2.98,
+      "medianMs": 2.327,
+      "minMs": 2.129,
+      "maxMs": 5.767,
+      "operationsPerSecond": 335.525
+    },
+    {
+      "name": "sample.wav: verify detached envelope (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 253.158,
+      "meanMs": 50.632,
+      "medianMs": 53.469,
+      "minMs": 44.489,
+      "maxMs": 53.812,
+      "operationsPerSecond": 19.751
+    },
+    {
+      "name": "sample.wav: verify embedded file (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 309.807,
+      "meanMs": 61.961,
+      "medianMs": 62.067,
+      "minMs": 60.096,
+      "maxMs": 63.075,
+      "operationsPerSecond": 16.139
+    },
+    {
+      "name": "sample.wav: signature JSON encode (2-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.077,
+      "meanMs": 0.015,
+      "medianMs": 0.015,
+      "minMs": 0.015,
+      "maxMs": 0.017,
+      "operationsPerSecond": 65274.151
+    },
+    {
+      "name": "sample.wav: signature Base64 encode (2-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.537,
+      "meanMs": 0.107,
+      "medianMs": 0.107,
+      "minMs": 0.107,
+      "maxMs": 0.108,
+      "operationsPerSecond": 9314.456
+    },
+    {
+      "name": "sample.wav: signature CBOR encode (2-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.183,
+      "meanMs": 0.037,
+      "medianMs": 0.033,
+      "minMs": 0.032,
+      "maxMs": 0.049,
+      "operationsPerSecond": 27307.482
+    },
+    {
+      "name": "sample.wav: signature JSON decode (2-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.05,
+      "meanMs": 0.01,
+      "medianMs": 0.009,
+      "minMs": 0.009,
+      "maxMs": 0.012,
+      "operationsPerSecond": 101010.101
+    },
+    {
+      "name": "sample.wav: signature Base64 decode (2-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.168,
+      "meanMs": 0.034,
+      "medianMs": 0.033,
+      "minMs": 0.033,
+      "maxMs": 0.035,
+      "operationsPerSecond": 29779.631
+    },
+    {
+      "name": "sample.wav: signature CBOR decode (2-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.66,
+      "meanMs": 0.132,
+      "medianMs": 0.103,
+      "minMs": 0.087,
+      "maxMs": 0.204,
+      "operationsPerSecond": 7580.352
+    },
+    {
+      "name": "sample.wav: envelope JSON encode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.155,
+      "meanMs": 0.031,
+      "medianMs": 0.031,
+      "minMs": 0.029,
+      "maxMs": 0.033,
+      "operationsPerSecond": 32258.065
+    },
+    {
+      "name": "sample.wav: envelope Base64 encode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.131,
+      "meanMs": 0.226,
+      "medianMs": 0.227,
+      "minMs": 0.22,
+      "maxMs": 0.234,
+      "operationsPerSecond": 4420.476
+    },
+    {
+      "name": "sample.wav: envelope CBOR encode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.328,
+      "meanMs": 0.066,
+      "medianMs": 0.064,
+      "minMs": 0.06,
+      "maxMs": 0.076,
+      "operationsPerSecond": 15253.203
+    },
+    {
+      "name": "sample.wav: MJKSIG v2 container encode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.323,
+      "meanMs": 0.065,
+      "medianMs": 0.065,
+      "minMs": 0.064,
+      "maxMs": 0.066,
+      "operationsPerSecond": 15465.512
+    },
+    {
+      "name": "sample.wav: envelope JSON decode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.082,
+      "meanMs": 0.016,
+      "medianMs": 0.016,
+      "minMs": 0.014,
+      "maxMs": 0.02,
+      "operationsPerSecond": 60827.251
+    },
+    {
+      "name": "sample.wav: envelope Base64 decode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.362,
+      "meanMs": 0.072,
+      "medianMs": 0.065,
+      "minMs": 0.064,
+      "maxMs": 0.085,
+      "operationsPerSecond": 13815.971
+    },
+    {
+      "name": "sample.wav: envelope CBOR decode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.86,
+      "meanMs": 0.172,
+      "medianMs": 0.174,
+      "minMs": 0.161,
+      "maxMs": 0.18,
+      "operationsPerSecond": 5816.659
+    },
+    {
+      "name": "sample.wav: MJKSIG v2 container decode (2 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.461,
+      "meanMs": 0.292,
+      "medianMs": 0.17,
+      "minMs": 0.166,
+      "maxMs": 0.748,
+      "operationsPerSecond": 3421.143
+    },
+    {
+      "name": "sample.wav: raw signature verification (signer 2)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 102.226,
+      "meanMs": 20.445,
+      "medianMs": 20.525,
+      "minMs": 20.177,
+      "maxMs": 20.698,
+      "operationsPerSecond": 48.911
+    },
+    {
+      "name": "sample.wav: extract embedded envelope (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 27.194,
+      "meanMs": 5.439,
+      "medianMs": 3.213,
+      "minMs": 2.064,
+      "maxMs": 13.89,
+      "operationsPerSecond": 183.864
+    },
+    {
+      "name": "sample.wav: strip embedded envelope (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 20.064,
+      "meanMs": 4.013,
+      "medianMs": 2.525,
+      "minMs": 2.437,
+      "maxMs": 7.092,
+      "operationsPerSecond": 249.205
+    },
+    {
+      "name": "sample.wav: verify detached envelope (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 365.945,
+      "meanMs": 73.189,
+      "medianMs": 73.983,
+      "minMs": 68.209,
+      "maxMs": 78.603,
+      "operationsPerSecond": 13.663
+    },
+    {
+      "name": "sample.wav: verify embedded file (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 471.735,
+      "meanMs": 94.347,
+      "medianMs": 93.354,
+      "minMs": 88.164,
+      "maxMs": 101.338,
+      "operationsPerSecond": 10.599
+    },
+    {
+      "name": "sample.wav: signature JSON encode (3-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.096,
+      "meanMs": 0.019,
+      "medianMs": 0.017,
+      "minMs": 0.017,
+      "maxMs": 0.023,
+      "operationsPerSecond": 52246.604
+    },
+    {
+      "name": "sample.wav: signature Base64 encode (3-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.614,
+      "meanMs": 0.323,
+      "medianMs": 0.29,
+      "minMs": 0.215,
+      "maxMs": 0.434,
+      "operationsPerSecond": 3097.702
+    },
+    {
+      "name": "sample.wav: signature CBOR encode (3-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.186,
+      "meanMs": 0.037,
+      "medianMs": 0.036,
+      "minMs": 0.035,
+      "maxMs": 0.041,
+      "operationsPerSecond": 26939.655
+    },
+    {
+      "name": "sample.wav: signature JSON decode (3-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.059,
+      "meanMs": 0.012,
+      "medianMs": 0.012,
+      "minMs": 0.01,
+      "maxMs": 0.015,
+      "operationsPerSecond": 85324.232
+    },
+    {
+      "name": "sample.wav: signature Base64 decode (3-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.184,
+      "meanMs": 0.037,
+      "medianMs": 0.036,
+      "minMs": 0.035,
+      "maxMs": 0.041,
+      "operationsPerSecond": 27203.482
+    },
+    {
+      "name": "sample.wav: signature CBOR decode (3-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.966,
+      "meanMs": 0.193,
+      "medianMs": 0.169,
+      "minMs": 0.096,
+      "maxMs": 0.355,
+      "operationsPerSecond": 5174.912
+    },
+    {
+      "name": "sample.wav: envelope JSON encode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.22,
+      "meanMs": 0.044,
+      "medianMs": 0.043,
+      "minMs": 0.043,
+      "maxMs": 0.046,
+      "operationsPerSecond": 22706.63
+    },
+    {
+      "name": "sample.wav: envelope Base64 encode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 4.875,
+      "meanMs": 0.975,
+      "medianMs": 0.367,
+      "minMs": 0.337,
+      "maxMs": 3.409,
+      "operationsPerSecond": 1025.683
+    },
+    {
+      "name": "sample.wav: envelope CBOR encode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.611,
+      "meanMs": 0.122,
+      "medianMs": 0.112,
+      "minMs": 0.105,
+      "maxMs": 0.171,
+      "operationsPerSecond": 8185.986
+    },
+    {
+      "name": "sample.wav: MJKSIG v2 container encode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.609,
+      "meanMs": 0.122,
+      "medianMs": 0.121,
+      "minMs": 0.111,
+      "maxMs": 0.132,
+      "operationsPerSecond": 8204.792
+    },
+    {
+      "name": "sample.wav: envelope JSON decode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.132,
+      "meanMs": 0.026,
+      "medianMs": 0.027,
+      "minMs": 0.023,
+      "maxMs": 0.031,
+      "operationsPerSecond": 37993.921
+    },
+    {
+      "name": "sample.wav: envelope Base64 decode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.511,
+      "meanMs": 0.102,
+      "medianMs": 0.102,
+      "minMs": 0.099,
+      "maxMs": 0.104,
+      "operationsPerSecond": 9792.401
+    },
+    {
+      "name": "sample.wav: envelope CBOR decode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.204,
+      "meanMs": 0.241,
+      "medianMs": 0.239,
+      "minMs": 0.234,
+      "maxMs": 0.255,
+      "operationsPerSecond": 4151.789
+    },
+    {
+      "name": "sample.wav: MJKSIG v2 container decode (3 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.427,
+      "meanMs": 0.285,
+      "medianMs": 0.277,
+      "minMs": 0.275,
+      "maxMs": 0.31,
+      "operationsPerSecond": 3502.627
+    },
+    {
+      "name": "sample.wav: raw signature verification (signer 3)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 100.287,
+      "meanMs": 20.057,
+      "medianMs": 20.047,
+      "minMs": 19.845,
+      "maxMs": 20.314,
+      "operationsPerSecond": 49.857
+    },
+    {
+      "name": "sample.wav: extract embedded envelope (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 23.893,
+      "meanMs": 4.779,
+      "medianMs": 3.153,
+      "minMs": 2.237,
+      "maxMs": 11.413,
+      "operationsPerSecond": 209.263
+    },
+    {
+      "name": "sample.wav: strip embedded envelope (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 18.903,
+      "meanMs": 3.781,
+      "medianMs": 2.862,
+      "minMs": 2.203,
+      "maxMs": 6.139,
+      "operationsPerSecond": 264.514
+    },
+    {
+      "name": "sample.wav: verify detached envelope (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 465.142,
+      "meanMs": 93.028,
+      "medianMs": 91.499,
+      "minMs": 89.886,
+      "maxMs": 100.643,
+      "operationsPerSecond": 10.749
+    },
+    {
+      "name": "sample.wav: verify embedded file (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 582.84,
+      "meanMs": 116.568,
+      "medianMs": 116.475,
+      "minMs": 115.043,
+      "maxMs": 117.531,
+      "operationsPerSecond": 8.579
+    },
+    {
+      "name": "sample.wav: signature JSON encode (4-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.095,
+      "meanMs": 0.019,
+      "medianMs": 0.019,
+      "minMs": 0.015,
+      "maxMs": 0.025,
+      "operationsPerSecond": 52742.616
+    },
+    {
+      "name": "sample.wav: signature Base64 encode (4-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.537,
+      "meanMs": 0.107,
+      "medianMs": 0.107,
+      "minMs": 0.106,
+      "maxMs": 0.109,
+      "operationsPerSecond": 9317.928
+    },
+    {
+      "name": "sample.wav: signature CBOR encode (4-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.198,
+      "meanMs": 0.04,
+      "medianMs": 0.035,
+      "minMs": 0.032,
+      "maxMs": 0.062,
+      "operationsPerSecond": 25227.043
+    },
+    {
+      "name": "sample.wav: signature JSON decode (4-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.05,
+      "meanMs": 0.01,
+      "medianMs": 0.009,
+      "minMs": 0.009,
+      "maxMs": 0.011,
+      "operationsPerSecond": 101010.101
+    },
+    {
+      "name": "sample.wav: signature Base64 decode (4-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.167,
+      "meanMs": 0.033,
+      "medianMs": 0.033,
+      "minMs": 0.033,
+      "maxMs": 0.034,
+      "operationsPerSecond": 29940.12
+    },
+    {
+      "name": "sample.wav: signature CBOR decode (4-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.475,
+      "meanMs": 0.095,
+      "medianMs": 0.086,
+      "minMs": 0.084,
+      "maxMs": 0.129,
+      "operationsPerSecond": 10519.672
+    },
+    {
+      "name": "sample.wav: envelope JSON encode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.286,
+      "meanMs": 0.057,
+      "medianMs": 0.057,
+      "minMs": 0.056,
+      "maxMs": 0.059,
+      "operationsPerSecond": 17458.101
+    },
+    {
+      "name": "sample.wav: envelope Base64 encode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 2.208,
+      "meanMs": 0.442,
+      "medianMs": 0.442,
+      "minMs": 0.425,
+      "maxMs": 0.458,
+      "operationsPerSecond": 2264.8
+    },
+    {
+      "name": "sample.wav: envelope CBOR encode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.635,
+      "meanMs": 0.127,
+      "medianMs": 0.128,
+      "minMs": 0.121,
+      "maxMs": 0.133,
+      "operationsPerSecond": 7870.297
+    },
+    {
+      "name": "sample.wav: MJKSIG v2 container encode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.664,
+      "meanMs": 0.133,
+      "medianMs": 0.133,
+      "minMs": 0.131,
+      "maxMs": 0.136,
+      "operationsPerSecond": 7526.72
+    },
+    {
+      "name": "sample.wav: envelope JSON decode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.15,
+      "meanMs": 0.03,
+      "medianMs": 0.03,
+      "minMs": 0.029,
+      "maxMs": 0.032,
+      "operationsPerSecond": 33355.57
+    },
+    {
+      "name": "sample.wav: envelope Base64 decode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.015,
+      "meanMs": 0.203,
+      "medianMs": 0.132,
+      "minMs": 0.122,
+      "maxMs": 0.492,
+      "operationsPerSecond": 4925.623
+    },
+    {
+      "name": "sample.wav: envelope CBOR decode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.77,
+      "meanMs": 0.354,
+      "medianMs": 0.34,
+      "minMs": 0.327,
+      "maxMs": 0.409,
+      "operationsPerSecond": 2824.221
+    },
+    {
+      "name": "sample.wav: MJKSIG v2 container decode (4 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 1.638,
+      "meanMs": 0.328,
+      "medianMs": 0.33,
+      "minMs": 0.316,
+      "maxMs": 0.337,
+      "operationsPerSecond": 3051.572
+    },
+    {
+      "name": "sample.wav: raw signature verification (signer 4)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 100.629,
+      "meanMs": 20.126,
+      "medianMs": 20.112,
+      "minMs": 19.945,
+      "maxMs": 20.378,
+      "operationsPerSecond": 49.687
+    },
+    {
+      "name": "sample.wav: extract embedded envelope (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 15.497,
+      "meanMs": 3.099,
+      "medianMs": 2.846,
+      "minMs": 2.619,
+      "maxMs": 3.757,
+      "operationsPerSecond": 322.647
+    },
+    {
+      "name": "sample.wav: strip embedded envelope (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 14.259,
+      "meanMs": 2.852,
+      "medianMs": 2.912,
+      "minMs": 2.387,
+      "maxMs": 3.287,
+      "operationsPerSecond": 350.653
+    },
+    {
+      "name": "sample.wav: verify detached envelope (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 568.822,
+      "meanMs": 113.764,
+      "medianMs": 113.323,
+      "minMs": 112.668,
+      "maxMs": 115.029,
+      "operationsPerSecond": 8.79
+    },
+    {
+      "name": "sample.wav: verify embedded file (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 733.408,
+      "meanMs": 146.682,
+      "medianMs": 146.412,
+      "minMs": 144.769,
+      "maxMs": 148.915,
+      "operationsPerSecond": 6.817
+    },
+    {
+      "name": "sample.wav: signature JSON encode (5-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.076,
+      "meanMs": 0.015,
+      "medianMs": 0.015,
+      "minMs": 0.014,
+      "maxMs": 0.018,
+      "operationsPerSecond": 65616.798
+    },
+    {
+      "name": "sample.wav: signature Base64 encode (5-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.594,
+      "meanMs": 0.119,
+      "medianMs": 0.109,
+      "minMs": 0.108,
+      "maxMs": 0.147,
+      "operationsPerSecond": 8413.259
+    },
+    {
+      "name": "sample.wav: signature CBOR encode (5-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.189,
+      "meanMs": 0.038,
+      "medianMs": 0.033,
+      "minMs": 0.031,
+      "maxMs": 0.058,
+      "operationsPerSecond": 26497.085
+    },
+    {
+      "name": "sample.wav: signature JSON decode (5-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.046,
+      "meanMs": 0.009,
+      "medianMs": 0.009,
+      "minMs": 0.009,
+      "maxMs": 0.01,
+      "operationsPerSecond": 108695.652
+    },
+    {
+      "name": "sample.wav: signature Base64 decode (5-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.162,
+      "meanMs": 0.032,
+      "medianMs": 0.032,
+      "minMs": 0.032,
+      "maxMs": 0.033,
+      "operationsPerSecond": 30769.231
+    },
+    {
+      "name": "sample.wav: signature CBOR decode (5-signer snapshot)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.428,
+      "meanMs": 0.086,
+      "medianMs": 0.083,
+      "minMs": 0.081,
+      "maxMs": 0.097,
+      "operationsPerSecond": 11690.437
+    },
+    {
+      "name": "sample.wav: envelope JSON encode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.361,
+      "meanMs": 0.072,
+      "medianMs": 0.072,
+      "minMs": 0.068,
+      "maxMs": 0.076,
+      "operationsPerSecond": 13846.58
+    },
+    {
+      "name": "sample.wav: envelope Base64 encode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 4.083,
+      "meanMs": 0.817,
+      "medianMs": 0.588,
+      "minMs": 0.554,
+      "maxMs": 1.777,
+      "operationsPerSecond": 1224.62
+    },
+    {
+      "name": "sample.wav: envelope CBOR encode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.884,
+      "meanMs": 0.177,
+      "medianMs": 0.169,
+      "minMs": 0.162,
+      "maxMs": 0.198,
+      "operationsPerSecond": 5657.389
+    },
+    {
+      "name": "sample.wav: MJKSIG v2 container encode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.823,
+      "meanMs": 0.165,
+      "medianMs": 0.165,
+      "minMs": 0.162,
+      "maxMs": 0.169,
+      "operationsPerSecond": 6076.072
+    },
+    {
+      "name": "sample.wav: envelope JSON decode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.189,
+      "meanMs": 0.038,
+      "medianMs": 0.034,
+      "minMs": 0.032,
+      "maxMs": 0.052,
+      "operationsPerSecond": 26511.135
+    },
+    {
+      "name": "sample.wav: envelope Base64 decode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.75,
+      "meanMs": 0.15,
+      "medianMs": 0.146,
+      "minMs": 0.145,
+      "maxMs": 0.163,
+      "operationsPerSecond": 6664.889
+    },
+    {
+      "name": "sample.wav: envelope CBOR decode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 2.012,
+      "meanMs": 0.402,
+      "medianMs": 0.402,
+      "minMs": 0.39,
+      "maxMs": 0.414,
+      "operationsPerSecond": 2485.213
+    },
+    {
+      "name": "sample.wav: MJKSIG v2 container decode (5 signers)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 2.402,
+      "meanMs": 0.48,
+      "medianMs": 0.422,
+      "minMs": 0.405,
+      "maxMs": 0.737,
+      "operationsPerSecond": 2081.859
+    },
+    {
+      "name": "sample.wav: raw signature verification (signer 5)",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 99.546,
+      "meanMs": 19.909,
+      "medianMs": 19.852,
+      "minMs": 19.736,
+      "maxMs": 20.322,
+      "operationsPerSecond": 50.228
+    },
+    {
+      "name": "compat\\compat.pdf: legacy embedded signature extraction",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.665,
+      "meanMs": 0.133,
+      "medianMs": 0.129,
+      "minMs": 0.114,
+      "maxMs": 0.159,
+      "operationsPerSecond": 7521.059
+    },
+    {
+      "name": "compat\\compat.pdf: legacy embedded signature stripping",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.738,
+      "meanMs": 0.148,
+      "medianMs": 0.138,
+      "minMs": 0.132,
+      "maxMs": 0.172,
+      "operationsPerSecond": 6778.742
+    },
+    {
+      "name": "compat\\compat.jpg: legacy embedded signature extraction",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.514,
+      "meanMs": 0.103,
+      "medianMs": 0.103,
+      "minMs": 0.092,
+      "maxMs": 0.11,
+      "operationsPerSecond": 9721.952
+    },
+    {
+      "name": "compat\\compat.jpg: legacy embedded signature stripping",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 0.999,
+      "meanMs": 0.2,
+      "medianMs": 0.202,
+      "minMs": 0.176,
+      "maxMs": 0.234,
+      "operationsPerSecond": 5004.003
+    },
+    {
+      "name": "compat\\compat.wav: legacy embedded signature extraction",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 13.725,
+      "meanMs": 2.745,
+      "medianMs": 1.921,
+      "minMs": 1.491,
+      "maxMs": 6.258,
+      "operationsPerSecond": 364.307
+    },
+    {
+      "name": "compat\\compat.wav: legacy embedded signature stripping",
+      "iterations": 5,
+      "warmupIterations": 1,
+      "totalMs": 15.408,
+      "meanMs": 3.082,
+      "medianMs": 2.985,
+      "minMs": 2.456,
+      "maxMs": 4.031,
+      "operationsPerSecond": 324.511
+    }
+  ],
+  "sizes": [
+    {
+      "fixture": "sample.pdf",
+      "mimeType": "application/pdf",
+      "signerCount": 1,
+      "originalFileBytes": 95165,
+      "detachedCleanFileBytes": 95165,
+      "embeddedFileBytes": 105561,
+      "embeddedFileGrowthBytes": 10396,
+      "signatureJsonBytes": 10017,
+      "signatureBase64SerializedBytes": 13356,
+      "signatureCborBytes": 7540,
+      "envelopeJsonBytes": 10046,
+      "envelopeBase64SerializedBytes": 13396,
+      "envelopeCborBytes": 7564,
+      "mjksigContainerBytes": 7576,
+      "mjksigHeaderOverheadBytes": 12,
+      "embeddedPayloadUtf8Bytes": 10378,
+      "embeddedPayloadCharacters": 10378,
+      "embeddedPayloadLooksLikeVersionedText": true,
+      "cborReductionVsEnvelopeJsonPercent": 24.71,
+      "cborReductionVsEnvelopeBase64Percent": 43.54,
+      "embeddedPayloadReductionVsEnvelopeBase64Percent": 22.53
+    },
+    {
+      "fixture": "sample.pdf",
+      "mimeType": "application/pdf",
+      "signerCount": 2,
+      "originalFileBytes": 95165,
+      "detachedCleanFileBytes": 95165,
+      "embeddedFileBytes": 115949,
+      "embeddedFileGrowthBytes": 20784,
+      "signatureJsonBytes": 10017,
+      "signatureBase64SerializedBytes": 13356,
+      "signatureCborBytes": 7540,
+      "envelopeJsonBytes": 20064,
+      "envelopeBase64SerializedBytes": 26752,
+      "envelopeCborBytes": 15104,
+      "mjksigContainerBytes": 15116,
+      "mjksigHeaderOverheadBytes": 12,
+      "embeddedPayloadUtf8Bytes": 20766,
+      "embeddedPayloadCharacters": 20766,
+      "embeddedPayloadLooksLikeVersionedText": true,
+      "cborReductionVsEnvelopeJsonPercent": 24.72,
+      "cborReductionVsEnvelopeBase64Percent": 43.54,
+      "embeddedPayloadReductionVsEnvelopeBase64Percent": 22.38
+    },
+    {
+      "fixture": "sample.pdf",
+      "mimeType": "application/pdf",
+      "signerCount": 3,
+      "originalFileBytes": 95165,
+      "detachedCleanFileBytes": 95165,
+      "embeddedFileBytes": 126337,
+      "embeddedFileGrowthBytes": 31172,
+      "signatureJsonBytes": 10017,
+      "signatureBase64SerializedBytes": 13356,
+      "signatureCborBytes": 7540,
+      "envelopeJsonBytes": 30082,
+      "envelopeBase64SerializedBytes": 40112,
+      "envelopeCborBytes": 22644,
+      "mjksigContainerBytes": 22656,
+      "mjksigHeaderOverheadBytes": 12,
+      "embeddedPayloadUtf8Bytes": 31154,
+      "embeddedPayloadCharacters": 31154,
+      "embeddedPayloadLooksLikeVersionedText": true,
+      "cborReductionVsEnvelopeJsonPercent": 24.73,
+      "cborReductionVsEnvelopeBase64Percent": 43.55,
+      "embeddedPayloadReductionVsEnvelopeBase64Percent": 22.33
+    },
+    {
+      "fixture": "sample.pdf",
+      "mimeType": "application/pdf",
+      "signerCount": 4,
+      "originalFileBytes": 95165,
+      "detachedCleanFileBytes": 95165,
+      "embeddedFileBytes": 136725,
+      "embeddedFileGrowthBytes": 41560,
+      "signatureJsonBytes": 10017,
+      "signatureBase64SerializedBytes": 13356,
+      "signatureCborBytes": 7540,
+      "envelopeJsonBytes": 40100,
+      "envelopeBase64SerializedBytes": 53468,
+      "envelopeCborBytes": 30184,
+      "mjksigContainerBytes": 30196,
+      "mjksigHeaderOverheadBytes": 12,
+      "embeddedPayloadUtf8Bytes": 41542,
+      "embeddedPayloadCharacters": 41542,
+      "embeddedPayloadLooksLikeVersionedText": true,
+      "cborReductionVsEnvelopeJsonPercent": 24.73,
+      "cborReductionVsEnvelopeBase64Percent": 43.55,
+      "embeddedPayloadReductionVsEnvelopeBase64Percent": 22.3
+    },
+    {
+      "fixture": "sample.pdf",
+      "mimeType": "application/pdf",
+      "signerCount": 5,
+      "originalFileBytes": 95165,
+      "detachedCleanFileBytes": 95165,
+      "embeddedFileBytes": 147113,
+      "embeddedFileGrowthBytes": 51948,
+      "signatureJsonBytes": 10017,
+      "signatureBase64SerializedBytes": 13356,
+      "signatureCborBytes": 7540,
+      "envelopeJsonBytes": 50118,
+      "envelopeBase64SerializedBytes": 66824,
+      "envelopeCborBytes": 37724,
+      "mjksigContainerBytes": 37736,
+      "mjksigHeaderOverheadBytes": 12,
+      "embeddedPayloadUtf8Bytes": 51930,
+      "embeddedPayloadCharacters": 51930,
+      "embeddedPayloadLooksLikeVersionedText": true,
+      "cborReductionVsEnvelopeJsonPercent": 24.73,
+      "cborReductionVsEnvelopeBase64Percent": 43.55,
+      "embeddedPayloadReductionVsEnvelopeBase64Percent": 22.29
+    },
+    {
+      "fixture": "sample.jpg",
+      "mimeType": "image/jpeg",
+      "signerCount": 1,
+      "originalFileBytes": 114051,
+      "detachedCleanFileBytes": 114051,
+      "embeddedFileBytes": 124439,
+      "embeddedFileGrowthBytes": 10388,
+      "signatureJsonBytes": 10017,
+      "signatureBase64SerializedBytes": 13356,
+      "signatureCborBytes": 7540,
+      "envelopeJsonBytes": 10046,
+      "envelopeBase64SerializedBytes": 13396,
+      "envelopeCborBytes": 7564,
+      "mjksigContainerBytes": 7576,
+      "mjksigHeaderOverheadBytes": 12,
+      "embeddedPayloadUtf8Bytes": 10378,
+      "embeddedPayloadCharacters": 10378,
+      "embeddedPayloadLooksLikeVersionedText": true,
+      "cborReductionVsEnvelopeJsonPercent": 24.71,
+      "cborReductionVsEnvelopeBase64Percent": 43.54,
+      "embeddedPayloadReductionVsEnvelopeBase64Percent": 22.53
+    },
+    {
+      "fixture": "sample.jpg",
+      "mimeType": "image/jpeg",
+      "signerCount": 2,
+      "originalFileBytes": 114051,
+      "detachedCleanFileBytes": 114051,
+      "embeddedFileBytes": 134827,
+      "embeddedFileGrowthBytes": 20776,
+      "signatureJsonBytes": 10017,
+      "signatureBase64SerializedBytes": 13356,
+      "signatureCborBytes": 7540,
+      "envelopeJsonBytes": 20064,
+      "envelopeBase64SerializedBytes": 26752,
+      "envelopeCborBytes": 15104,
+      "mjksigContainerBytes": 15116,
+      "mjksigHeaderOverheadBytes": 12,
+      "embeddedPayloadUtf8Bytes": 20766,
+      "embeddedPayloadCharacters": 20766,
+      "embeddedPayloadLooksLikeVersionedText": true,
+      "cborReductionVsEnvelopeJsonPercent": 24.72,
+      "cborReductionVsEnvelopeBase64Percent": 43.54,
+      "embeddedPayloadReductionVsEnvelopeBase64Percent": 22.38
+    },
+    {
+      "fixture": "sample.jpg",
+      "mimeType": "image/jpeg",
+      "signerCount": 3,
+      "originalFileBytes": 114051,
+      "detachedCleanFileBytes": 114051,
+      "embeddedFileBytes": 145215,
+      "embeddedFileGrowthBytes": 31164,
+      "signatureJsonBytes": 10017,
+      "signatureBase64SerializedBytes": 13356,
+      "signatureCborBytes": 7540,
+      "envelopeJsonBytes": 30082,
+      "envelopeBase64SerializedBytes": 40112,
+      "envelopeCborBytes": 22644,
+      "mjksigContainerBytes": 22656,
+      "mjksigHeaderOverheadBytes": 12,
+      "embeddedPayloadUtf8Bytes": 31154,
+      "embeddedPayloadCharacters": 31154,
+      "embeddedPayloadLooksLikeVersionedText": true,
+      "cborReductionVsEnvelopeJsonPercent": 24.73,
+      "cborReductionVsEnvelopeBase64Percent": 43.55,
+      "embeddedPayloadReductionVsEnvelopeBase64Percent": 22.33
+    },
+    {
+      "fixture": "sample.jpg",
+      "mimeType": "image/jpeg",
+      "signerCount": 4,
+      "originalFileBytes": 114051,
+      "detachedCleanFileBytes": 114051,
+      "embeddedFileBytes": 155603,
+      "embeddedFileGrowthBytes": 41552,
+      "signatureJsonBytes": 10017,
+      "signatureBase64SerializedBytes": 13356,
+      "signatureCborBytes": 7540,
+      "envelopeJsonBytes": 40100,
+      "envelopeBase64SerializedBytes": 53468,
+      "envelopeCborBytes": 30184,
+      "mjksigContainerBytes": 30196,
+      "mjksigHeaderOverheadBytes": 12,
+      "embeddedPayloadUtf8Bytes": 41542,
+      "embeddedPayloadCharacters": 41542,
+      "embeddedPayloadLooksLikeVersionedText": true,
+      "cborReductionVsEnvelopeJsonPercent": 24.73,
+      "cborReductionVsEnvelopeBase64Percent": 43.55,
+      "embeddedPayloadReductionVsEnvelopeBase64Percent": 22.3
+    },
+    {
+      "fixture": "sample.jpg",
+      "mimeType": "image/jpeg",
+      "signerCount": 5,
+      "originalFileBytes": 114051,
+      "detachedCleanFileBytes": 114051,
+      "embeddedFileBytes": 165991,
+      "embeddedFileGrowthBytes": 51940,
+      "signatureJsonBytes": 10017,
+      "signatureBase64SerializedBytes": 13356,
+      "signatureCborBytes": 7540,
+      "envelopeJsonBytes": 50118,
+      "envelopeBase64SerializedBytes": 66824,
+      "envelopeCborBytes": 37724,
+      "mjksigContainerBytes": 37736,
+      "mjksigHeaderOverheadBytes": 12,
+      "embeddedPayloadUtf8Bytes": 51930,
+      "embeddedPayloadCharacters": 51930,
+      "embeddedPayloadLooksLikeVersionedText": true,
+      "cborReductionVsEnvelopeJsonPercent": 24.73,
+      "cborReductionVsEnvelopeBase64Percent": 43.55,
+      "embeddedPayloadReductionVsEnvelopeBase64Percent": 22.29
+    },
+    {
+      "fixture": "sample.wav",
+      "mimeType": "audio/wav",
+      "signerCount": 1,
+      "originalFileBytes": 1568798,
+      "detachedCleanFileBytes": 1568798,
+      "embeddedFileBytes": 1579196,
+      "embeddedFileGrowthBytes": 10398,
+      "signatureJsonBytes": 10017,
+      "signatureBase64SerializedBytes": 13356,
+      "signatureCborBytes": 7540,
+      "envelopeJsonBytes": 10046,
+      "envelopeBase64SerializedBytes": 13396,
+      "envelopeCborBytes": 7564,
+      "mjksigContainerBytes": 7576,
+      "mjksigHeaderOverheadBytes": 12,
+      "embeddedPayloadUtf8Bytes": 10378,
+      "embeddedPayloadCharacters": 10378,
+      "embeddedPayloadLooksLikeVersionedText": true,
+      "cborReductionVsEnvelopeJsonPercent": 24.71,
+      "cborReductionVsEnvelopeBase64Percent": 43.54,
+      "embeddedPayloadReductionVsEnvelopeBase64Percent": 22.53
+    },
+    {
+      "fixture": "sample.wav",
+      "mimeType": "audio/wav",
+      "signerCount": 2,
+      "originalFileBytes": 1568798,
+      "detachedCleanFileBytes": 1568798,
+      "embeddedFileBytes": 1589584,
+      "embeddedFileGrowthBytes": 20786,
+      "signatureJsonBytes": 10017,
+      "signatureBase64SerializedBytes": 13356,
+      "signatureCborBytes": 7540,
+      "envelopeJsonBytes": 20064,
+      "envelopeBase64SerializedBytes": 26752,
+      "envelopeCborBytes": 15104,
+      "mjksigContainerBytes": 15116,
+      "mjksigHeaderOverheadBytes": 12,
+      "embeddedPayloadUtf8Bytes": 20766,
+      "embeddedPayloadCharacters": 20766,
+      "embeddedPayloadLooksLikeVersionedText": true,
+      "cborReductionVsEnvelopeJsonPercent": 24.72,
+      "cborReductionVsEnvelopeBase64Percent": 43.54,
+      "embeddedPayloadReductionVsEnvelopeBase64Percent": 22.38
+    },
+    {
+      "fixture": "sample.wav",
+      "mimeType": "audio/wav",
+      "signerCount": 3,
+      "originalFileBytes": 1568798,
+      "detachedCleanFileBytes": 1568798,
+      "embeddedFileBytes": 1599972,
+      "embeddedFileGrowthBytes": 31174,
+      "signatureJsonBytes": 10017,
+      "signatureBase64SerializedBytes": 13356,
+      "signatureCborBytes": 7540,
+      "envelopeJsonBytes": 30082,
+      "envelopeBase64SerializedBytes": 40112,
+      "envelopeCborBytes": 22644,
+      "mjksigContainerBytes": 22656,
+      "mjksigHeaderOverheadBytes": 12,
+      "embeddedPayloadUtf8Bytes": 31154,
+      "embeddedPayloadCharacters": 31154,
+      "embeddedPayloadLooksLikeVersionedText": true,
+      "cborReductionVsEnvelopeJsonPercent": 24.73,
+      "cborReductionVsEnvelopeBase64Percent": 43.55,
+      "embeddedPayloadReductionVsEnvelopeBase64Percent": 22.33
+    },
+    {
+      "fixture": "sample.wav",
+      "mimeType": "audio/wav",
+      "signerCount": 4,
+      "originalFileBytes": 1568798,
+      "detachedCleanFileBytes": 1568798,
+      "embeddedFileBytes": 1610360,
+      "embeddedFileGrowthBytes": 41562,
+      "signatureJsonBytes": 10017,
+      "signatureBase64SerializedBytes": 13356,
+      "signatureCborBytes": 7540,
+      "envelopeJsonBytes": 40100,
+      "envelopeBase64SerializedBytes": 53468,
+      "envelopeCborBytes": 30184,
+      "mjksigContainerBytes": 30196,
+      "mjksigHeaderOverheadBytes": 12,
+      "embeddedPayloadUtf8Bytes": 41542,
+      "embeddedPayloadCharacters": 41542,
+      "embeddedPayloadLooksLikeVersionedText": true,
+      "cborReductionVsEnvelopeJsonPercent": 24.73,
+      "cborReductionVsEnvelopeBase64Percent": 43.55,
+      "embeddedPayloadReductionVsEnvelopeBase64Percent": 22.3
+    },
+    {
+      "fixture": "sample.wav",
+      "mimeType": "audio/wav",
+      "signerCount": 5,
+      "originalFileBytes": 1568798,
+      "detachedCleanFileBytes": 1568798,
+      "embeddedFileBytes": 1620748,
+      "embeddedFileGrowthBytes": 51950,
+      "signatureJsonBytes": 10017,
+      "signatureBase64SerializedBytes": 13356,
+      "signatureCborBytes": 7540,
+      "envelopeJsonBytes": 50118,
+      "envelopeBase64SerializedBytes": 66824,
+      "envelopeCborBytes": 37724,
+      "mjksigContainerBytes": 37736,
+      "mjksigHeaderOverheadBytes": 12,
+      "embeddedPayloadUtf8Bytes": 51930,
+      "embeddedPayloadCharacters": 51930,
+      "embeddedPayloadLooksLikeVersionedText": true,
+      "cborReductionVsEnvelopeJsonPercent": 24.73,
+      "cborReductionVsEnvelopeBase64Percent": 43.55,
+      "embeddedPayloadReductionVsEnvelopeBase64Percent": 22.29
+    }
+  ],
+  "sizeTrend": [
+    {
+      "signerCount": 1,
+      "fixtureCount": 3,
+      "averageEnvelopeJsonBytes": 10046,
+      "averageEnvelopeBase64SerializedBytes": 13396,
+      "averageEnvelopeCborBytes": 7564,
+      "averageMjksigContainerBytes": 7576,
+      "averageEmbeddedPayloadBytes": 10378,
+      "averageEmbeddedFileGrowthBytes": 10394
+    },
+    {
+      "signerCount": 2,
+      "fixtureCount": 3,
+      "averageEnvelopeJsonBytes": 20064,
+      "averageEnvelopeBase64SerializedBytes": 26752,
+      "averageEnvelopeCborBytes": 15104,
+      "averageMjksigContainerBytes": 15116,
+      "averageEmbeddedPayloadBytes": 20766,
+      "averageEmbeddedFileGrowthBytes": 20782
+    },
+    {
+      "signerCount": 3,
+      "fixtureCount": 3,
+      "averageEnvelopeJsonBytes": 30082,
+      "averageEnvelopeBase64SerializedBytes": 40112,
+      "averageEnvelopeCborBytes": 22644,
+      "averageMjksigContainerBytes": 22656,
+      "averageEmbeddedPayloadBytes": 31154,
+      "averageEmbeddedFileGrowthBytes": 31170
+    },
+    {
+      "signerCount": 4,
+      "fixtureCount": 3,
+      "averageEnvelopeJsonBytes": 40100,
+      "averageEnvelopeBase64SerializedBytes": 53468,
+      "averageEnvelopeCborBytes": 30184,
+      "averageMjksigContainerBytes": 30196,
+      "averageEmbeddedPayloadBytes": 41542,
+      "averageEmbeddedFileGrowthBytes": 41558
+    },
+    {
+      "signerCount": 5,
+      "fixtureCount": 3,
+      "averageEnvelopeJsonBytes": 50118,
+      "averageEnvelopeBase64SerializedBytes": 66824,
+      "averageEnvelopeCborBytes": 37724,
+      "averageMjksigContainerBytes": 37736,
+      "averageEmbeddedPayloadBytes": 51930,
+      "averageEmbeddedFileGrowthBytes": 51946
+    }
+  ],
+  "timingTrend": [
+    {
+      "signerCount": 1,
+      "fixtureCount": 3,
+      "averageOperationMeanMs": 18.888
+    },
+    {
+      "signerCount": 2,
+      "fixtureCount": 3,
+      "averageOperationMeanMs": 18.205
+    },
+    {
+      "signerCount": 3,
+      "fixtureCount": 3,
+      "averageOperationMeanMs": 22.483
+    },
+    {
+      "signerCount": 4,
+      "fixtureCount": 3,
+      "averageOperationMeanMs": 15.223
+    },
+    {
+      "signerCount": 5,
+      "fixtureCount": 3,
+      "averageOperationMeanMs": 19.044
+    }
+  ],
+  "legacyCompatibility": [
+    {
+      "fixture": "compat\\compat.pdf",
+      "mimeType": "application/pdf",
+      "fileBytes": 105485,
+      "legacyPayloadBytes": 10302,
+      "extractedSignatures": 1,
+      "strippedBytes": 95165,
+      "payloadLooksLikeLegacyJson": true,
+      "passed": true
+    },
+    {
+      "fixture": "compat\\compat.jpg",
+      "mimeType": "image/jpeg",
+      "fileBytes": 124363,
+      "legacyPayloadBytes": 10302,
+      "extractedSignatures": 1,
+      "strippedBytes": 114051,
+      "payloadLooksLikeLegacyJson": true,
+      "passed": true
+    },
+    {
+      "fixture": "compat\\compat.wav",
+      "mimeType": "audio/wav",
+      "fileBytes": 1579120,
+      "legacyPayloadBytes": 10302,
+      "extractedSignatures": 1,
+      "strippedBytes": 1568798,
+      "payloadLooksLikeLegacyJson": true,
+      "passed": true
+    }
+  ],
+  "checks": [
+    {
+      "name": "sample.pdf: fixture loaded",
+      "passed": true,
+      "details": "95165 bytes; read + Blob preparation 0.821 ms"
+    },
+    {
+      "name": "sample.pdf: 1-signer envelope contains expected signer count",
+      "passed": true,
+      "details": "expected 1; received 1"
+    },
+    {
+      "name": "sample.pdf: 1-signer .mjksig v2 payload/framing matches direct CBOR",
+      "passed": true,
+      "details": "container 7576 bytes; CBOR payload 7564 bytes; framing 12 bytes"
+    },
+    {
+      "name": "sample.pdf: 1-signer embedded payload uses versioned representation",
+      "passed": true,
+      "details": "10378 UTF-8 bytes including codec prefix/wrapper"
+    },
+    {
+      "name": "sample.pdf: 1-signer embedded envelope extracts all signatures",
+      "passed": true,
+      "details": "1/1 signature(s) extracted"
+    },
+    {
+      "name": "sample.pdf: 1-signer embedding/stripping preserves original bytes",
+      "passed": true,
+      "details": "stripped 95165 bytes; original 95165 bytes"
+    },
+    {
+      "name": "sample.pdf: 1-signer signature JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 1-signer signature Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 1-signer signature CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 1-signer envelope JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 1-signer envelope Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 1-signer envelope CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 1-signer .mjksig round trip and v2 header",
+      "passed": true,
+      "details": "reported container version: 2"
+    },
+    {
+      "name": "sample.pdf: 1-signer detached file is canonical clean content",
+      "passed": true,
+      "details": "95165 bytes"
+    },
+    {
+      "name": "sample.pdf: all 1 detached signatures verify",
+      "passed": true,
+      "details": "1/1 signer result(s) valid"
+    },
+    {
+      "name": "sample.pdf: all 1 embedded signatures verify",
+      "passed": true,
+      "details": "1/1 signer result(s) valid"
+    },
+    {
+      "name": "sample.pdf: CBOR-restored signature verifies (signer 1)",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 2-signer envelope contains expected signer count",
+      "passed": true,
+      "details": "expected 2; received 2"
+    },
+    {
+      "name": "sample.pdf: 2-signer .mjksig v2 payload/framing matches direct CBOR",
+      "passed": true,
+      "details": "container 15116 bytes; CBOR payload 15104 bytes; framing 12 bytes"
+    },
+    {
+      "name": "sample.pdf: 2-signer embedded payload uses versioned representation",
+      "passed": true,
+      "details": "20766 UTF-8 bytes including codec prefix/wrapper"
+    },
+    {
+      "name": "sample.pdf: 2-signer embedded envelope extracts all signatures",
+      "passed": true,
+      "details": "2/2 signature(s) extracted"
+    },
+    {
+      "name": "sample.pdf: 2-signer embedding/stripping preserves original bytes",
+      "passed": true,
+      "details": "stripped 95165 bytes; original 95165 bytes"
+    },
+    {
+      "name": "sample.pdf: 2-signer signature JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 2-signer signature Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 2-signer signature CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 2-signer envelope JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 2-signer envelope Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 2-signer envelope CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 2-signer .mjksig round trip and v2 header",
+      "passed": true,
+      "details": "reported container version: 2"
+    },
+    {
+      "name": "sample.pdf: 2-signer detached file is canonical clean content",
+      "passed": true,
+      "details": "95165 bytes"
+    },
+    {
+      "name": "sample.pdf: all 2 detached signatures verify",
+      "passed": true,
+      "details": "2/2 signer result(s) valid"
+    },
+    {
+      "name": "sample.pdf: all 2 embedded signatures verify",
+      "passed": true,
+      "details": "2/2 signer result(s) valid"
+    },
+    {
+      "name": "sample.pdf: CBOR-restored signature verifies (signer 2)",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 3-signer envelope contains expected signer count",
+      "passed": true,
+      "details": "expected 3; received 3"
+    },
+    {
+      "name": "sample.pdf: 3-signer .mjksig v2 payload/framing matches direct CBOR",
+      "passed": true,
+      "details": "container 22656 bytes; CBOR payload 22644 bytes; framing 12 bytes"
+    },
+    {
+      "name": "sample.pdf: 3-signer embedded payload uses versioned representation",
+      "passed": true,
+      "details": "31154 UTF-8 bytes including codec prefix/wrapper"
+    },
+    {
+      "name": "sample.pdf: 3-signer embedded envelope extracts all signatures",
+      "passed": true,
+      "details": "3/3 signature(s) extracted"
+    },
+    {
+      "name": "sample.pdf: 3-signer embedding/stripping preserves original bytes",
+      "passed": true,
+      "details": "stripped 95165 bytes; original 95165 bytes"
+    },
+    {
+      "name": "sample.pdf: 3-signer signature JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 3-signer signature Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 3-signer signature CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 3-signer envelope JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 3-signer envelope Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 3-signer envelope CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 3-signer .mjksig round trip and v2 header",
+      "passed": true,
+      "details": "reported container version: 2"
+    },
+    {
+      "name": "sample.pdf: 3-signer detached file is canonical clean content",
+      "passed": true,
+      "details": "95165 bytes"
+    },
+    {
+      "name": "sample.pdf: all 3 detached signatures verify",
+      "passed": true,
+      "details": "3/3 signer result(s) valid"
+    },
+    {
+      "name": "sample.pdf: all 3 embedded signatures verify",
+      "passed": true,
+      "details": "3/3 signer result(s) valid"
+    },
+    {
+      "name": "sample.pdf: CBOR-restored signature verifies (signer 3)",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 4-signer envelope contains expected signer count",
+      "passed": true,
+      "details": "expected 4; received 4"
+    },
+    {
+      "name": "sample.pdf: 4-signer .mjksig v2 payload/framing matches direct CBOR",
+      "passed": true,
+      "details": "container 30196 bytes; CBOR payload 30184 bytes; framing 12 bytes"
+    },
+    {
+      "name": "sample.pdf: 4-signer embedded payload uses versioned representation",
+      "passed": true,
+      "details": "41542 UTF-8 bytes including codec prefix/wrapper"
+    },
+    {
+      "name": "sample.pdf: 4-signer embedded envelope extracts all signatures",
+      "passed": true,
+      "details": "4/4 signature(s) extracted"
+    },
+    {
+      "name": "sample.pdf: 4-signer embedding/stripping preserves original bytes",
+      "passed": true,
+      "details": "stripped 95165 bytes; original 95165 bytes"
+    },
+    {
+      "name": "sample.pdf: 4-signer signature JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 4-signer signature Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 4-signer signature CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 4-signer envelope JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 4-signer envelope Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 4-signer envelope CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 4-signer .mjksig round trip and v2 header",
+      "passed": true,
+      "details": "reported container version: 2"
+    },
+    {
+      "name": "sample.pdf: 4-signer detached file is canonical clean content",
+      "passed": true,
+      "details": "95165 bytes"
+    },
+    {
+      "name": "sample.pdf: all 4 detached signatures verify",
+      "passed": true,
+      "details": "4/4 signer result(s) valid"
+    },
+    {
+      "name": "sample.pdf: all 4 embedded signatures verify",
+      "passed": true,
+      "details": "4/4 signer result(s) valid"
+    },
+    {
+      "name": "sample.pdf: CBOR-restored signature verifies (signer 4)",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 5-signer envelope contains expected signer count",
+      "passed": true,
+      "details": "expected 5; received 5"
+    },
+    {
+      "name": "sample.pdf: 5-signer .mjksig v2 payload/framing matches direct CBOR",
+      "passed": true,
+      "details": "container 37736 bytes; CBOR payload 37724 bytes; framing 12 bytes"
+    },
+    {
+      "name": "sample.pdf: 5-signer embedded payload uses versioned representation",
+      "passed": true,
+      "details": "51930 UTF-8 bytes including codec prefix/wrapper"
+    },
+    {
+      "name": "sample.pdf: 5-signer embedded envelope extracts all signatures",
+      "passed": true,
+      "details": "5/5 signature(s) extracted"
+    },
+    {
+      "name": "sample.pdf: 5-signer embedding/stripping preserves original bytes",
+      "passed": true,
+      "details": "stripped 95165 bytes; original 95165 bytes"
+    },
+    {
+      "name": "sample.pdf: 5-signer signature JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 5-signer signature Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 5-signer signature CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 5-signer envelope JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 5-signer envelope Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 5-signer envelope CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.pdf: 5-signer .mjksig round trip and v2 header",
+      "passed": true,
+      "details": "reported container version: 2"
+    },
+    {
+      "name": "sample.pdf: 5-signer detached file is canonical clean content",
+      "passed": true,
+      "details": "95165 bytes"
+    },
+    {
+      "name": "sample.pdf: all 5 detached signatures verify",
+      "passed": true,
+      "details": "5/5 signer result(s) valid"
+    },
+    {
+      "name": "sample.pdf: all 5 embedded signatures verify",
+      "passed": true,
+      "details": "5/5 signer result(s) valid"
+    },
+    {
+      "name": "sample.pdf: CBOR-restored signature verifies (signer 5)",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: fixture loaded",
+      "passed": true,
+      "details": "114051 bytes; read + Blob preparation 0.446 ms"
+    },
+    {
+      "name": "sample.jpg: 1-signer envelope contains expected signer count",
+      "passed": true,
+      "details": "expected 1; received 1"
+    },
+    {
+      "name": "sample.jpg: 1-signer .mjksig v2 payload/framing matches direct CBOR",
+      "passed": true,
+      "details": "container 7576 bytes; CBOR payload 7564 bytes; framing 12 bytes"
+    },
+    {
+      "name": "sample.jpg: 1-signer embedded payload uses versioned representation",
+      "passed": true,
+      "details": "10378 UTF-8 bytes including codec prefix/wrapper"
+    },
+    {
+      "name": "sample.jpg: 1-signer embedded envelope extracts all signatures",
+      "passed": true,
+      "details": "1/1 signature(s) extracted"
+    },
+    {
+      "name": "sample.jpg: 1-signer embedding/stripping preserves original bytes",
+      "passed": true,
+      "details": "stripped 114051 bytes; original 114051 bytes"
+    },
+    {
+      "name": "sample.jpg: 1-signer signature JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 1-signer signature Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 1-signer signature CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 1-signer envelope JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 1-signer envelope Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 1-signer envelope CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 1-signer .mjksig round trip and v2 header",
+      "passed": true,
+      "details": "reported container version: 2"
+    },
+    {
+      "name": "sample.jpg: 1-signer detached file is canonical clean content",
+      "passed": true,
+      "details": "114051 bytes"
+    },
+    {
+      "name": "sample.jpg: all 1 detached signatures verify",
+      "passed": true,
+      "details": "1/1 signer result(s) valid"
+    },
+    {
+      "name": "sample.jpg: all 1 embedded signatures verify",
+      "passed": true,
+      "details": "1/1 signer result(s) valid"
+    },
+    {
+      "name": "sample.jpg: CBOR-restored signature verifies (signer 1)",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 2-signer envelope contains expected signer count",
+      "passed": true,
+      "details": "expected 2; received 2"
+    },
+    {
+      "name": "sample.jpg: 2-signer .mjksig v2 payload/framing matches direct CBOR",
+      "passed": true,
+      "details": "container 15116 bytes; CBOR payload 15104 bytes; framing 12 bytes"
+    },
+    {
+      "name": "sample.jpg: 2-signer embedded payload uses versioned representation",
+      "passed": true,
+      "details": "20766 UTF-8 bytes including codec prefix/wrapper"
+    },
+    {
+      "name": "sample.jpg: 2-signer embedded envelope extracts all signatures",
+      "passed": true,
+      "details": "2/2 signature(s) extracted"
+    },
+    {
+      "name": "sample.jpg: 2-signer embedding/stripping preserves original bytes",
+      "passed": true,
+      "details": "stripped 114051 bytes; original 114051 bytes"
+    },
+    {
+      "name": "sample.jpg: 2-signer signature JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 2-signer signature Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 2-signer signature CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 2-signer envelope JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 2-signer envelope Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 2-signer envelope CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 2-signer .mjksig round trip and v2 header",
+      "passed": true,
+      "details": "reported container version: 2"
+    },
+    {
+      "name": "sample.jpg: 2-signer detached file is canonical clean content",
+      "passed": true,
+      "details": "114051 bytes"
+    },
+    {
+      "name": "sample.jpg: all 2 detached signatures verify",
+      "passed": true,
+      "details": "2/2 signer result(s) valid"
+    },
+    {
+      "name": "sample.jpg: all 2 embedded signatures verify",
+      "passed": true,
+      "details": "2/2 signer result(s) valid"
+    },
+    {
+      "name": "sample.jpg: CBOR-restored signature verifies (signer 2)",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 3-signer envelope contains expected signer count",
+      "passed": true,
+      "details": "expected 3; received 3"
+    },
+    {
+      "name": "sample.jpg: 3-signer .mjksig v2 payload/framing matches direct CBOR",
+      "passed": true,
+      "details": "container 22656 bytes; CBOR payload 22644 bytes; framing 12 bytes"
+    },
+    {
+      "name": "sample.jpg: 3-signer embedded payload uses versioned representation",
+      "passed": true,
+      "details": "31154 UTF-8 bytes including codec prefix/wrapper"
+    },
+    {
+      "name": "sample.jpg: 3-signer embedded envelope extracts all signatures",
+      "passed": true,
+      "details": "3/3 signature(s) extracted"
+    },
+    {
+      "name": "sample.jpg: 3-signer embedding/stripping preserves original bytes",
+      "passed": true,
+      "details": "stripped 114051 bytes; original 114051 bytes"
+    },
+    {
+      "name": "sample.jpg: 3-signer signature JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 3-signer signature Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 3-signer signature CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 3-signer envelope JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 3-signer envelope Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 3-signer envelope CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 3-signer .mjksig round trip and v2 header",
+      "passed": true,
+      "details": "reported container version: 2"
+    },
+    {
+      "name": "sample.jpg: 3-signer detached file is canonical clean content",
+      "passed": true,
+      "details": "114051 bytes"
+    },
+    {
+      "name": "sample.jpg: all 3 detached signatures verify",
+      "passed": true,
+      "details": "3/3 signer result(s) valid"
+    },
+    {
+      "name": "sample.jpg: all 3 embedded signatures verify",
+      "passed": true,
+      "details": "3/3 signer result(s) valid"
+    },
+    {
+      "name": "sample.jpg: CBOR-restored signature verifies (signer 3)",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 4-signer envelope contains expected signer count",
+      "passed": true,
+      "details": "expected 4; received 4"
+    },
+    {
+      "name": "sample.jpg: 4-signer .mjksig v2 payload/framing matches direct CBOR",
+      "passed": true,
+      "details": "container 30196 bytes; CBOR payload 30184 bytes; framing 12 bytes"
+    },
+    {
+      "name": "sample.jpg: 4-signer embedded payload uses versioned representation",
+      "passed": true,
+      "details": "41542 UTF-8 bytes including codec prefix/wrapper"
+    },
+    {
+      "name": "sample.jpg: 4-signer embedded envelope extracts all signatures",
+      "passed": true,
+      "details": "4/4 signature(s) extracted"
+    },
+    {
+      "name": "sample.jpg: 4-signer embedding/stripping preserves original bytes",
+      "passed": true,
+      "details": "stripped 114051 bytes; original 114051 bytes"
+    },
+    {
+      "name": "sample.jpg: 4-signer signature JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 4-signer signature Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 4-signer signature CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 4-signer envelope JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 4-signer envelope Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 4-signer envelope CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 4-signer .mjksig round trip and v2 header",
+      "passed": true,
+      "details": "reported container version: 2"
+    },
+    {
+      "name": "sample.jpg: 4-signer detached file is canonical clean content",
+      "passed": true,
+      "details": "114051 bytes"
+    },
+    {
+      "name": "sample.jpg: all 4 detached signatures verify",
+      "passed": true,
+      "details": "4/4 signer result(s) valid"
+    },
+    {
+      "name": "sample.jpg: all 4 embedded signatures verify",
+      "passed": true,
+      "details": "4/4 signer result(s) valid"
+    },
+    {
+      "name": "sample.jpg: CBOR-restored signature verifies (signer 4)",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 5-signer envelope contains expected signer count",
+      "passed": true,
+      "details": "expected 5; received 5"
+    },
+    {
+      "name": "sample.jpg: 5-signer .mjksig v2 payload/framing matches direct CBOR",
+      "passed": true,
+      "details": "container 37736 bytes; CBOR payload 37724 bytes; framing 12 bytes"
+    },
+    {
+      "name": "sample.jpg: 5-signer embedded payload uses versioned representation",
+      "passed": true,
+      "details": "51930 UTF-8 bytes including codec prefix/wrapper"
+    },
+    {
+      "name": "sample.jpg: 5-signer embedded envelope extracts all signatures",
+      "passed": true,
+      "details": "5/5 signature(s) extracted"
+    },
+    {
+      "name": "sample.jpg: 5-signer embedding/stripping preserves original bytes",
+      "passed": true,
+      "details": "stripped 114051 bytes; original 114051 bytes"
+    },
+    {
+      "name": "sample.jpg: 5-signer signature JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 5-signer signature Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 5-signer signature CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 5-signer envelope JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 5-signer envelope Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 5-signer envelope CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.jpg: 5-signer .mjksig round trip and v2 header",
+      "passed": true,
+      "details": "reported container version: 2"
+    },
+    {
+      "name": "sample.jpg: 5-signer detached file is canonical clean content",
+      "passed": true,
+      "details": "114051 bytes"
+    },
+    {
+      "name": "sample.jpg: all 5 detached signatures verify",
+      "passed": true,
+      "details": "5/5 signer result(s) valid"
+    },
+    {
+      "name": "sample.jpg: all 5 embedded signatures verify",
+      "passed": true,
+      "details": "5/5 signer result(s) valid"
+    },
+    {
+      "name": "sample.jpg: CBOR-restored signature verifies (signer 5)",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: fixture loaded",
+      "passed": true,
+      "details": "1568798 bytes; read + Blob preparation 3.521 ms"
+    },
+    {
+      "name": "sample.wav: 1-signer envelope contains expected signer count",
+      "passed": true,
+      "details": "expected 1; received 1"
+    },
+    {
+      "name": "sample.wav: 1-signer .mjksig v2 payload/framing matches direct CBOR",
+      "passed": true,
+      "details": "container 7576 bytes; CBOR payload 7564 bytes; framing 12 bytes"
+    },
+    {
+      "name": "sample.wav: 1-signer embedded payload uses versioned representation",
+      "passed": true,
+      "details": "10378 UTF-8 bytes including codec prefix/wrapper"
+    },
+    {
+      "name": "sample.wav: 1-signer embedded envelope extracts all signatures",
+      "passed": true,
+      "details": "1/1 signature(s) extracted"
+    },
+    {
+      "name": "sample.wav: 1-signer embedding/stripping preserves original bytes",
+      "passed": true,
+      "details": "stripped 1568798 bytes; original 1568798 bytes"
+    },
+    {
+      "name": "sample.wav: 1-signer signature JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 1-signer signature Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 1-signer signature CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 1-signer envelope JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 1-signer envelope Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 1-signer envelope CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 1-signer .mjksig round trip and v2 header",
+      "passed": true,
+      "details": "reported container version: 2"
+    },
+    {
+      "name": "sample.wav: 1-signer detached file is canonical clean content",
+      "passed": true,
+      "details": "1568798 bytes"
+    },
+    {
+      "name": "sample.wav: all 1 detached signatures verify",
+      "passed": true,
+      "details": "1/1 signer result(s) valid"
+    },
+    {
+      "name": "sample.wav: all 1 embedded signatures verify",
+      "passed": true,
+      "details": "1/1 signer result(s) valid"
+    },
+    {
+      "name": "sample.wav: CBOR-restored signature verifies (signer 1)",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 2-signer envelope contains expected signer count",
+      "passed": true,
+      "details": "expected 2; received 2"
+    },
+    {
+      "name": "sample.wav: 2-signer .mjksig v2 payload/framing matches direct CBOR",
+      "passed": true,
+      "details": "container 15116 bytes; CBOR payload 15104 bytes; framing 12 bytes"
+    },
+    {
+      "name": "sample.wav: 2-signer embedded payload uses versioned representation",
+      "passed": true,
+      "details": "20766 UTF-8 bytes including codec prefix/wrapper"
+    },
+    {
+      "name": "sample.wav: 2-signer embedded envelope extracts all signatures",
+      "passed": true,
+      "details": "2/2 signature(s) extracted"
+    },
+    {
+      "name": "sample.wav: 2-signer embedding/stripping preserves original bytes",
+      "passed": true,
+      "details": "stripped 1568798 bytes; original 1568798 bytes"
+    },
+    {
+      "name": "sample.wav: 2-signer signature JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 2-signer signature Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 2-signer signature CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 2-signer envelope JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 2-signer envelope Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 2-signer envelope CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 2-signer .mjksig round trip and v2 header",
+      "passed": true,
+      "details": "reported container version: 2"
+    },
+    {
+      "name": "sample.wav: 2-signer detached file is canonical clean content",
+      "passed": true,
+      "details": "1568798 bytes"
+    },
+    {
+      "name": "sample.wav: all 2 detached signatures verify",
+      "passed": true,
+      "details": "2/2 signer result(s) valid"
+    },
+    {
+      "name": "sample.wav: all 2 embedded signatures verify",
+      "passed": true,
+      "details": "2/2 signer result(s) valid"
+    },
+    {
+      "name": "sample.wav: CBOR-restored signature verifies (signer 2)",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 3-signer envelope contains expected signer count",
+      "passed": true,
+      "details": "expected 3; received 3"
+    },
+    {
+      "name": "sample.wav: 3-signer .mjksig v2 payload/framing matches direct CBOR",
+      "passed": true,
+      "details": "container 22656 bytes; CBOR payload 22644 bytes; framing 12 bytes"
+    },
+    {
+      "name": "sample.wav: 3-signer embedded payload uses versioned representation",
+      "passed": true,
+      "details": "31154 UTF-8 bytes including codec prefix/wrapper"
+    },
+    {
+      "name": "sample.wav: 3-signer embedded envelope extracts all signatures",
+      "passed": true,
+      "details": "3/3 signature(s) extracted"
+    },
+    {
+      "name": "sample.wav: 3-signer embedding/stripping preserves original bytes",
+      "passed": true,
+      "details": "stripped 1568798 bytes; original 1568798 bytes"
+    },
+    {
+      "name": "sample.wav: 3-signer signature JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 3-signer signature Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 3-signer signature CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 3-signer envelope JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 3-signer envelope Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 3-signer envelope CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 3-signer .mjksig round trip and v2 header",
+      "passed": true,
+      "details": "reported container version: 2"
+    },
+    {
+      "name": "sample.wav: 3-signer detached file is canonical clean content",
+      "passed": true,
+      "details": "1568798 bytes"
+    },
+    {
+      "name": "sample.wav: all 3 detached signatures verify",
+      "passed": true,
+      "details": "3/3 signer result(s) valid"
+    },
+    {
+      "name": "sample.wav: all 3 embedded signatures verify",
+      "passed": true,
+      "details": "3/3 signer result(s) valid"
+    },
+    {
+      "name": "sample.wav: CBOR-restored signature verifies (signer 3)",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 4-signer envelope contains expected signer count",
+      "passed": true,
+      "details": "expected 4; received 4"
+    },
+    {
+      "name": "sample.wav: 4-signer .mjksig v2 payload/framing matches direct CBOR",
+      "passed": true,
+      "details": "container 30196 bytes; CBOR payload 30184 bytes; framing 12 bytes"
+    },
+    {
+      "name": "sample.wav: 4-signer embedded payload uses versioned representation",
+      "passed": true,
+      "details": "41542 UTF-8 bytes including codec prefix/wrapper"
+    },
+    {
+      "name": "sample.wav: 4-signer embedded envelope extracts all signatures",
+      "passed": true,
+      "details": "4/4 signature(s) extracted"
+    },
+    {
+      "name": "sample.wav: 4-signer embedding/stripping preserves original bytes",
+      "passed": true,
+      "details": "stripped 1568798 bytes; original 1568798 bytes"
+    },
+    {
+      "name": "sample.wav: 4-signer signature JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 4-signer signature Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 4-signer signature CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 4-signer envelope JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 4-signer envelope Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 4-signer envelope CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 4-signer .mjksig round trip and v2 header",
+      "passed": true,
+      "details": "reported container version: 2"
+    },
+    {
+      "name": "sample.wav: 4-signer detached file is canonical clean content",
+      "passed": true,
+      "details": "1568798 bytes"
+    },
+    {
+      "name": "sample.wav: all 4 detached signatures verify",
+      "passed": true,
+      "details": "4/4 signer result(s) valid"
+    },
+    {
+      "name": "sample.wav: all 4 embedded signatures verify",
+      "passed": true,
+      "details": "4/4 signer result(s) valid"
+    },
+    {
+      "name": "sample.wav: CBOR-restored signature verifies (signer 4)",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 5-signer envelope contains expected signer count",
+      "passed": true,
+      "details": "expected 5; received 5"
+    },
+    {
+      "name": "sample.wav: 5-signer .mjksig v2 payload/framing matches direct CBOR",
+      "passed": true,
+      "details": "container 37736 bytes; CBOR payload 37724 bytes; framing 12 bytes"
+    },
+    {
+      "name": "sample.wav: 5-signer embedded payload uses versioned representation",
+      "passed": true,
+      "details": "51930 UTF-8 bytes including codec prefix/wrapper"
+    },
+    {
+      "name": "sample.wav: 5-signer embedded envelope extracts all signatures",
+      "passed": true,
+      "details": "5/5 signature(s) extracted"
+    },
+    {
+      "name": "sample.wav: 5-signer embedding/stripping preserves original bytes",
+      "passed": true,
+      "details": "stripped 1568798 bytes; original 1568798 bytes"
+    },
+    {
+      "name": "sample.wav: 5-signer signature JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 5-signer signature Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 5-signer signature CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 5-signer envelope JSON round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 5-signer envelope Base64 round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 5-signer envelope CBOR round trip",
+      "passed": true
+    },
+    {
+      "name": "sample.wav: 5-signer .mjksig round trip and v2 header",
+      "passed": true,
+      "details": "reported container version: 2"
+    },
+    {
+      "name": "sample.wav: 5-signer detached file is canonical clean content",
+      "passed": true,
+      "details": "1568798 bytes"
+    },
+    {
+      "name": "sample.wav: all 5 detached signatures verify",
+      "passed": true,
+      "details": "5/5 signer result(s) valid"
+    },
+    {
+      "name": "sample.wav: all 5 embedded signatures verify",
+      "passed": true,
+      "details": "5/5 signer result(s) valid"
+    },
+    {
+      "name": "sample.wav: CBOR-restored signature verifies (signer 5)",
+      "passed": true
+    },
+    {
+      "name": "compat\\compat.pdf: legacy JSON embedded envelope remains readable",
+      "passed": true,
+      "details": "1 signature(s); payload 10302 bytes; stripped file 95165/105485 bytes"
+    },
+    {
+      "name": "compat\\compat.jpg: legacy JSON embedded envelope remains readable",
+      "passed": true,
+      "details": "1 signature(s); payload 10302 bytes; stripped file 114051/124363 bytes"
+    },
+    {
+      "name": "compat\\compat.wav: legacy JSON embedded envelope remains readable",
+      "passed": true,
+      "details": "1 signature(s); payload 10302 bytes; stripped file 1568798/1579120 bytes"
+    }
+  ],
+  "summary": {
+    "fixtureCount": 3,
+    "sizeSampleCount": 15,
+    "maxSigners": 5,
+    "legacyFixtureCount": 3,
+    "checksPassed": 246,
+    "checksFailed": 0,
+    "averageEnvelopeJsonBytes": 30082,
+    "averageEnvelopeCborBytes": 22644,
+    "averageCborReductionVsJsonPercent": 24.73,
+    "averageEnvelopeBase64Bytes": 40110,
+    "averageEmbeddedPayloadBytes": 31154,
+    "averageEmbeddedFileGrowthBytes": 31170,
+    "fastestMeasuredOperation": {
+      "name": "sample.pdf: signature JSON decode (4-signer snapshot)",
+      "meanMs": 0.009
+    },
+    "slowestMeasuredOperation": {
+      "name": "sample.wav: verify embedded file (5 signers)",
+      "meanMs": 146.682
+    },
+    "analysis": [
+      "Across 15 measured fixture-by-signer-count sample(s) spanning 3 actual fixture(s), the average envelope representation is 30082 bytes as minified JSON, 22644 bytes as raw CBOR, and 40110 bytes using the existing Base64 serializer. Across these samples, raw CBOR is 24.73% smaller than minified JSON on average.",
+      "From 1 signer to 5 signer(s), average minified JSON size changes by +40072 bytes (+398.89%); raw CBOR changes by +30160 bytes (+398.73%); existing Base64 serialization changes by +53428 bytes (+398.84%). The trend is measured from actual SDK envelopes at every signer count, not linearly extrapolated.",
+      "The embedded payload, including its version marker and Base64 wrapper, averages 31154 bytes across all measured samples. Compared with the existing Base64 envelope serialization, it is 22.33% smaller on average; this is a representation comparison, not a claim that the embedded payload is raw CBOR.",
+      "The complete embedded file grows by an average of 31170 bytes. This includes the handler's metadata/trailer overhead and can differ from the payload size.",
+      "Raw CBOR is the best fit when a consumer accepts binary data directly. The versioned .mjksig container adds a small header for identification and version dispatch; embedded payloads add their text prefix and Base64 overhead because the existing format handlers accept string payloads.",
+      "JSON remains useful for inspection and JSON-native integrations. The existing Base64 serializer is appropriate for text-only transport. Use .mjksig when a detached envelope needs to be self-identifying and versioned."
+    ]
+  },
+  "reportPersistenceMs": 11.51,
+  "approximateTotalRunMs": 24148.78
+}

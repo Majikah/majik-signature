@@ -1,11 +1,12 @@
 /**
  * Majik Signature serialization benchmark.
  *
- * Place this file at test/serialization.ts, then run:
- *   npx vite-node test/serialization.ts
+ * Place this file at test/benchmark/serialization.ts, then run:
+ *   npx vite-node test/benchmark/serialization.ts
  *
  * Optional environment variables:
  *   SERIALIZATION_BENCH_ITERATIONS=5
+ *   SERIALIZATION_BENCH_SIGNERS=5 (must be 1 through 5)
  *   SERIALIZATION_BENCH_OUT=test/results/serialization
  *
  * This benchmark uses the repository's real getTestKey() helper and on-disk
@@ -31,22 +32,28 @@ import {
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const TEST_DIR = dirname(SCRIPT_PATH);
-const PROJECT_ROOT = resolve(TEST_DIR, "..");
-const FIXTURES_DIR = join(TEST_DIR, "fixtures");
+const PROJECT_ROOT = resolve(TEST_DIR, "..", "..");
+const FIXTURES_DIR = join(PROJECT_ROOT, "test", "fixtures");
 const REPORT_DIR_SETTING = process.env.SERIALIZATION_BENCH_OUT;
 const REPORT_DIR = REPORT_DIR_SETTING
   ? isAbsolute(REPORT_DIR_SETTING)
     ? REPORT_DIR_SETTING
     : resolve(PROJECT_ROOT, REPORT_DIR_SETTING)
-  : join(TEST_DIR, "results", "serialization");
+  : join(PROJECT_ROOT, "test", "results", "serialization");
 
 const ITERATIONS = parsePositiveInteger(
   process.env.SERIALIZATION_BENCH_ITERATIONS,
   5,
 );
+const MAX_SIGNERS = parsePositiveInteger(
+  process.env.SERIALIZATION_BENCH_SIGNERS,
+  5,
+);
+if (MAX_SIGNERS > 5) {
+  throw new Error("SERIALIZATION_BENCH_SIGNERS must be between 1 and 5.");
+}
 const WARMUP_ITERATIONS = 1;
 const BENCHMARK_TIMESTAMP = "2026-10-14T00:00:00.000Z";
-const UTF8 = new TextEncoder();
 
 const FIXTURE_DEFINITIONS = [
   {
@@ -111,11 +118,11 @@ type CheckResult = {
 type SizeMeasurement = {
   fixture: string;
   mimeType: string;
+  signerCount: number;
   originalFileBytes: number;
   detachedCleanFileBytes: number;
   embeddedFileBytes: number;
   embeddedFileGrowthBytes: number;
-  signatureCount: number;
   signatureJsonBytes: number;
   signatureBase64SerializedBytes: number;
   signatureCborBytes: number;
@@ -130,6 +137,23 @@ type SizeMeasurement = {
   cborReductionVsEnvelopeJsonPercent: number;
   cborReductionVsEnvelopeBase64Percent: number;
   embeddedPayloadReductionVsEnvelopeBase64Percent: number;
+};
+
+type SizeTrendMeasurement = {
+  signerCount: number;
+  fixtureCount: number;
+  averageEnvelopeJsonBytes: number;
+  averageEnvelopeBase64SerializedBytes: number;
+  averageEnvelopeCborBytes: number;
+  averageMjksigContainerBytes: number;
+  averageEmbeddedPayloadBytes: number;
+  averageEmbeddedFileGrowthBytes: number;
+};
+
+type TimingTrendMeasurement = {
+  signerCount: number;
+  fixtureCount: number;
+  averageOperationMeanMs: number;
 };
 
 type LegacyFixtureResult = {
@@ -162,7 +186,9 @@ type Report = {
   };
   keySetup: {
     helper: string;
+    keyCount: number;
     generationMs: number;
+    perKeyGenerationMs: number[];
     keyType: string;
     secretMaterialWrittenToReport: false;
   };
@@ -170,13 +196,18 @@ type Report = {
     fixtureDirectory: string;
     included: string[];
     skipped: string[];
+    signerCount: number;
   };
   timings: TimingResult[];
   sizes: SizeMeasurement[];
+  sizeTrend: SizeTrendMeasurement[];
+  timingTrend: TimingTrendMeasurement[];
   legacyCompatibility: LegacyFixtureResult[];
   checks: CheckResult[];
   summary: {
     fixtureCount: number;
+    sizeSampleCount: number;
+    maxSigners: number;
     legacyFixtureCount: number;
     checksPassed: number;
     checksFailed: number;
@@ -213,10 +244,6 @@ function parsePositiveInteger(value: string | undefined, fallback: number): numb
 function bytesToBlob(bytes: Uint8Array, mimeType: string): Blob {
   // Buffer's backing store has an ArrayBuffer type accepted by the DOM Blob API.
   return new Blob([Buffer.from(bytes)], { type: mimeType });
-}
-
-function jsonByteLength(value: unknown): number {
-  return Buffer.byteLength(JSON.stringify(value), "utf8");
 }
 
 function textByteLength(value: string): number {
@@ -311,9 +338,22 @@ function getPackageMetadata(): { name: string; version: string } {
   }
 }
 
+type TestKey = Awaited<ReturnType<typeof getTestKey>>;
+type DetachedSignResult = Awaited<ReturnType<typeof MajikSignature.signFileDetached>>;
+type EmbeddedSignResult = Awaited<ReturnType<typeof MajikSignature.signFile>>;
+type SigningSnapshot = {
+  signerCount: number;
+  detached: DetachedSignResult;
+  embedded: EmbeddedSignResult;
+};
+
+function timestampForSigner(index: number): string {
+  return new Date(Date.parse(BENCHMARK_TIMESTAMP) + index * 1_000).toISOString();
+}
+
 async function benchmarkFixture(
   definition: (typeof FIXTURE_DEFINITIONS)[number],
-  key: Awaited<ReturnType<typeof getTestKey>>,
+  keys: TestKey[],
 ): Promise<void> {
   const fixturePath = join(FIXTURES_DIR, definition.file);
   if (!existsSync(fixturePath)) {
@@ -333,246 +373,312 @@ async function benchmarkFixture(
     `${originalBytes.byteLength} bytes; read + Blob preparation ${fixtureReadMs} ms`,
   );
 
-  const signOptions = {
+  const states: SigningSnapshot[] = [];
+  const firstOptions = {
     mimeType: definition.mimeType,
-    timestamp: BENCHMARK_TIMESTAMP,
+    timestamp: timestampForSigner(0),
   };
 
-  const detached = await measure(
-    `${definition.file}: detached signing (signFileDetached)`,
-    () => MajikSignature.signFileDetached(sourceBlob, key, signOptions),
+  const firstDetached = await measure(
+    `${definition.file}: detached signing (signer 1/${keys.length})`,
+    () => MajikSignature.signFileDetached(sourceBlob, keys[0], firstOptions),
   );
-  const embedded = await measure(
-    `${definition.file}: embedded signing (signFile)`,
-    () => MajikSignature.signFile(sourceBlob, key, signOptions),
+  const firstEmbedded = await measure(
+    `${definition.file}: embedded signing (signer 1/${keys.length})`,
+    () => MajikSignature.signFile(sourceBlob, keys[0], firstOptions),
   );
+  states.push({ signerCount: 1, detached: firstDetached, embedded: firstEmbedded });
 
-  const signature = detached.signature;
-  const envelope = detached.envelope;
-  const signatureJson = JSON.stringify(signature.toJSON());
-  const envelopeJson = JSON.stringify(envelope.toJSON());
-  const signatureBase64 = signature.serialize();
-  const envelopeBase64 = envelope.serialize();
-  const signatureCbor = signature.toCBOR();
-  const envelopeCbor = envelope.toCBOR();
-  const signatureMjksig = envelope.toMJKSIGBytes();
+  // Each step starts from the immutable previous envelope/file and adds exactly
+  // one new signer. The same prior input is reused for every measured iteration.
+  for (let index = 1; index < keys.length; index++) {
+    const signerCount = index + 1;
+    const previous = states[index - 1];
+    const options = {
+      mimeType: definition.mimeType,
+      timestamp: timestampForSigner(index),
+    };
 
-  const signatureJsonBytes = textByteLength(signatureJson);
-  const signatureBase64Bytes = textByteLength(signatureBase64);
-  const signatureCborBytes = signatureCbor.byteLength;
-  const envelopeJsonBytes = textByteLength(envelopeJson);
-  const envelopeBase64Bytes = textByteLength(envelopeBase64);
-  const envelopeCborBytes = envelopeCbor.byteLength;
-  const mjksigBytes = signatureMjksig.byteLength;
-  const mjksigHeaderOverhead = mjksigBytes - envelopeCborBytes;
+    const detached = await measure(
+      `${definition.file}: detached multi-sig add signer ${signerCount}/${keys.length}`,
+      () =>
+        MajikSignature.signFileDetached(sourceBlob, keys[index], {
+          ...options,
+          existingEnvelope: previous.detached.envelope,
+        }),
+    );
+    const embedded = await measure(
+      `${definition.file}: embedded multi-sig add signer ${signerCount}/${keys.length}`,
+      () => MajikSignature.signFile(previous.embedded.blob, keys[index], options),
+    );
+    states.push({ signerCount, detached, embedded });
+  }
 
-  check(
-    `${definition.file}: .mjksig v2 payload/framing matches direct CBOR`,
-    mjksigHeaderOverhead === MJKSIG_HEADER_LEN && containerVersionMatchesVersion2(signatureMjksig),
-    `container ${mjksigBytes} bytes; CBOR payload ${envelopeCborBytes} bytes; framing ${mjksigHeaderOverhead} bytes`,
-  );
+  // Snapshot and benchmark every envelope size from one signer through N
+  // signers. This makes the growth curve come from real SDK output, not a
+  // linear extrapolation from a single signature.
+  for (const state of states) {
+    const signerCount = state.signerCount;
+    const { detached, embedded } = state;
+    const signature = detached.signature;
+    const envelope = detached.envelope;
+    const signatureJson = JSON.stringify(signature.toJSON());
+    const envelopeJson = JSON.stringify(envelope.toJSON());
+    const signatureBase64 = signature.serialize();
+    const envelopeBase64 = envelope.serialize();
+    const signatureCbor = signature.toCBOR();
+    const envelopeCbor = envelope.toCBOR();
+    const mjksigContainer = envelope.toMJKSIGBytes();
 
-  const embeddedBytes = new Uint8Array(await embedded.blob.arrayBuffer());
-  const handler = new definition.Handler();
-  const embeddedPayload = await handler.extract(embeddedBytes);
-  assert.ok(
-    embeddedPayload,
-    `${definition.file}: handler could not extract the payload it just embedded`,
-  );
-  const embeddedPayloadBytes = textByteLength(embeddedPayload);
-  const embeddedVersionedText = !embeddedPayload.trimStart().startsWith("{");
+    const signatureJsonBytes = textByteLength(signatureJson);
+    const signatureBase64Bytes = textByteLength(signatureBase64);
+    const signatureCborBytes = signatureCbor.byteLength;
+    const envelopeJsonBytes = textByteLength(envelopeJson);
+    const envelopeBase64Bytes = textByteLength(envelopeBase64);
+    const envelopeCborBytes = envelopeCbor.byteLength;
+    const mjksigBytes = mjksigContainer.byteLength;
+    const mjksigHeaderOverhead = mjksigBytes - envelopeCborBytes;
 
-  check(
-    `${definition.file}: new embedded payload uses non-JSON versioned representation`,
-    embeddedVersionedText,
-    `${embeddedPayloadBytes} UTF-8 bytes including codec prefix/framing text`,
-  );
+    check(
+      `${definition.file}: ${signerCount}-signer envelope contains expected signer count`,
+      envelope.signatures.length === signerCount,
+      `expected ${signerCount}; received ${envelope.signatures.length}`,
+    );
+    check(
+      `${definition.file}: ${signerCount}-signer .mjksig v2 payload/framing matches direct CBOR`,
+      mjksigHeaderOverhead === MJKSIG_HEADER_LEN &&
+        containerVersionMatchesVersion2(mjksigContainer),
+      `container ${mjksigBytes} bytes; CBOR payload ${envelopeCborBytes} bytes; framing ${mjksigHeaderOverhead} bytes`,
+    );
 
-  const extractedEmbeddedSignatures = await measure(
-    `${definition.file}: extract newly embedded envelope`,
-    () => MajikSignature.extractFrom(embedded.blob, { mimeType: definition.mimeType }),
-  );
-  check(
-    `${definition.file}: newly embedded envelope can be parsed`,
-    extractedEmbeddedSignatures.length > 0,
-    `${extractedEmbeddedSignatures.length} signer signature(s) extracted`,
-  );
+    const embeddedBytes = new Uint8Array(await embedded.blob.arrayBuffer());
+    const handler = new definition.Handler();
+    const embeddedPayload = await handler.extract(embeddedBytes);
+    assert.ok(
+      embeddedPayload,
+      `${definition.file}: handler could not extract the ${signerCount}-signer payload it just embedded`,
+    );
+    const embeddedPayloadBytes = textByteLength(embeddedPayload);
+    const embeddedVersionedText = !embeddedPayload.trimStart().startsWith("{");
 
-  const strippedEmbeddedBlob = await measure(
-    `${definition.file}: strip newly embedded envelope`,
-    () => MajikSignature.stripFrom(embedded.blob, { mimeType: definition.mimeType }),
-  );
-  const strippedEmbeddedBytes = new Uint8Array(await strippedEmbeddedBlob.arrayBuffer());
-  check(
-    `${definition.file}: embedding/stripping preserves original bytes`,
-    Buffer.compare(Buffer.from(strippedEmbeddedBytes), Buffer.from(originalBytes)) === 0,
-    `stripped ${strippedEmbeddedBytes.byteLength} bytes; original ${originalBytes.byteLength} bytes`,
-  );
+    check(
+      `${definition.file}: ${signerCount}-signer embedded payload uses versioned representation`,
+      embeddedVersionedText,
+      `${embeddedPayloadBytes} UTF-8 bytes including codec prefix/wrapper`,
+    );
 
-  const restoredSignatureFromJson = MajikSignature.fromJSON(
-    JSON.parse(signatureJson) as ReturnType<MajikSignature["toJSON"]>,
-  );
-  const restoredSignatureFromBase64 = MajikSignature.deserialize(signatureBase64);
-  const restoredSignatureFromCbor = MajikSignature.fromCBOR(signatureCbor);
+    const extractedEmbeddedSignatures = await measure(
+      `${definition.file}: extract embedded envelope (${signerCount} signers)`,
+      () => MajikSignature.extractFrom(embedded.blob, { mimeType: definition.mimeType }),
+    );
+    check(
+      `${definition.file}: ${signerCount}-signer embedded envelope extracts all signatures`,
+      extractedEmbeddedSignatures.length === signerCount,
+      `${extractedEmbeddedSignatures.length}/${signerCount} signature(s) extracted`,
+    );
 
-  const restoredEnvelopeFromJson = MajikSignatureEnvelope.fromJSON(
-    JSON.parse(envelopeJson),
-  );
-  const restoredEnvelopeFromBase64 = MajikSignatureEnvelope.deserialize(envelopeBase64);
-  const restoredEnvelopeFromCbor = MajikSignatureEnvelope.fromCBOR(envelopeCbor);
-  const restoredEnvelopeFromMjksig = await MajikSignatureEnvelope.fromMJKSIG(
-    signatureMjksig,
-  );
-  const containerVersion = await MajikSignatureEnvelope.getMJKSIGVersion(
-    signatureMjksig,
-  );
+    const strippedEmbeddedBlob = await measure(
+      `${definition.file}: strip embedded envelope (${signerCount} signers)`,
+      () => MajikSignature.stripFrom(embedded.blob, { mimeType: definition.mimeType }),
+    );
+    const strippedEmbeddedBytes = new Uint8Array(await strippedEmbeddedBlob.arrayBuffer());
+    check(
+      `${definition.file}: ${signerCount}-signer embedding/stripping preserves original bytes`,
+      Buffer.compare(Buffer.from(strippedEmbeddedBytes), Buffer.from(originalBytes)) === 0,
+      `stripped ${strippedEmbeddedBytes.byteLength} bytes; original ${originalBytes.byteLength} bytes`,
+    );
 
-  check(
-    `${definition.file}: signature JSON round trip`,
-    isDeepStrictEqual(restoredSignatureFromJson.toJSON(), signature.toJSON()),
-  );
-  check(
-    `${definition.file}: signature Base64 round trip`,
-    isDeepStrictEqual(restoredSignatureFromBase64.toJSON(), signature.toJSON()),
-  );
-  check(
-    `${definition.file}: signature CBOR round trip`,
-    isDeepStrictEqual(restoredSignatureFromCbor.toJSON(), signature.toJSON()),
-  );
-  check(
-    `${definition.file}: envelope JSON round trip`,
-    isDeepStrictEqual(restoredEnvelopeFromJson.toJSON(), envelope.toJSON()),
-  );
-  check(
-    `${definition.file}: envelope Base64 round trip`,
-    isDeepStrictEqual(restoredEnvelopeFromBase64.toJSON(), envelope.toJSON()),
-  );
-  check(
-    `${definition.file}: envelope CBOR round trip`,
-    isDeepStrictEqual(restoredEnvelopeFromCbor.toJSON(), envelope.toJSON()),
-  );
-  check(
-    `${definition.file}: .mjksig round trip and v2 header`,
-    isDeepStrictEqual(restoredEnvelopeFromMjksig.toJSON(), envelope.toJSON()) &&
-      containerVersion === 2,
-    `reported container version: ${String(containerVersion)}`,
-  );
+    const restoredSignatureFromJson = MajikSignature.fromJSON(
+      JSON.parse(signatureJson) as ReturnType<MajikSignature["toJSON"]>,
+    );
+    const restoredSignatureFromBase64 = MajikSignature.deserialize(signatureBase64);
+    const restoredSignatureFromCbor = MajikSignature.fromCBOR(signatureCbor);
+    const restoredEnvelopeFromJson = MajikSignatureEnvelope.fromJSON(JSON.parse(envelopeJson));
+    const restoredEnvelopeFromBase64 = MajikSignatureEnvelope.deserialize(envelopeBase64);
+    const restoredEnvelopeFromCbor = MajikSignatureEnvelope.fromCBOR(envelopeCbor);
+    const restoredEnvelopeFromMjksig = await MajikSignatureEnvelope.fromMJKSIG(mjksigContainer);
+    const containerVersion = await MajikSignatureEnvelope.getMJKSIGVersion(mjksigContainer);
 
-  const cleanBytes = new Uint8Array(await detached.blob.arrayBuffer());
-  const publicKeys = MajikSignature.publicKeysFromMajikKey(key);
-  const verificationResults = await measure(
-    `${definition.file}: detached file verification`,
-    () => MajikSignature.verifyFileDetached(detached.blob, envelope, publicKeys),
-  );
-  check(
-    `${definition.file}: detached signature verifies`,
-    verificationResults.length > 0 && verificationResults.every((result) => result.valid),
-    `${verificationResults.filter((result) => result.valid).length}/${verificationResults.length} signer result(s) valid`,
-  );
+    check(
+      `${definition.file}: ${signerCount}-signer signature JSON round trip`,
+      isDeepStrictEqual(restoredSignatureFromJson.toJSON(), signature.toJSON()),
+    );
+    check(
+      `${definition.file}: ${signerCount}-signer signature Base64 round trip`,
+      isDeepStrictEqual(restoredSignatureFromBase64.toJSON(), signature.toJSON()),
+    );
+    check(
+      `${definition.file}: ${signerCount}-signer signature CBOR round trip`,
+      isDeepStrictEqual(restoredSignatureFromCbor.toJSON(), signature.toJSON()),
+    );
+    check(
+      `${definition.file}: ${signerCount}-signer envelope JSON round trip`,
+      isDeepStrictEqual(restoredEnvelopeFromJson.toJSON(), envelope.toJSON()),
+    );
+    check(
+      `${definition.file}: ${signerCount}-signer envelope Base64 round trip`,
+      isDeepStrictEqual(restoredEnvelopeFromBase64.toJSON(), envelope.toJSON()),
+    );
+    check(
+      `${definition.file}: ${signerCount}-signer envelope CBOR round trip`,
+      isDeepStrictEqual(restoredEnvelopeFromCbor.toJSON(), envelope.toJSON()),
+    );
+    check(
+      `${definition.file}: ${signerCount}-signer .mjksig round trip and v2 header`,
+      isDeepStrictEqual(restoredEnvelopeFromMjksig.toJSON(), envelope.toJSON()) &&
+        containerVersion === MJKSIG_CBOR_VERSION,
+      `reported container version: ${String(containerVersion)}`,
+    );
 
-  await measure(
-    `${definition.file}: JSON signature encode`,
-    () => JSON.stringify(signature.toJSON()),
-  );
-  await measure(
-    `${definition.file}: Base64 signature encode`,
-    () => signature.serialize(),
-  );
-  await measure(
-    `${definition.file}: CBOR signature encode`,
-    () => signature.toCBOR(),
-  );
-  await measure(
-    `${definition.file}: JSON signature decode`,
-    () => MajikSignature.fromJSON(JSON.parse(signatureJson)),
-  );
-  await measure(
-    `${definition.file}: Base64 signature decode`,
-    () => MajikSignature.deserialize(signatureBase64),
-  );
-  await measure(
-    `${definition.file}: CBOR signature decode`,
-    () => MajikSignature.fromCBOR(signatureCbor),
-  );
-  await measure(
-    `${definition.file}: JSON envelope encode`,
-    () => JSON.stringify(envelope.toJSON()),
-  );
-  await measure(
-    `${definition.file}: Base64 envelope encode`,
-    () => envelope.serialize(),
-  );
-  await measure(
-    `${definition.file}: CBOR envelope encode`,
-    () => envelope.toCBOR(),
-  );
-  await measure(
-    `${definition.file}: MJKSIG v2 container encode`,
-    () => envelope.toMJKSIGBytes(),
-  );
-  await measure(
-    `${definition.file}: JSON envelope decode`,
-    () => MajikSignatureEnvelope.fromJSON(JSON.parse(envelopeJson)),
-  );
-  await measure(
-    `${definition.file}: Base64 envelope decode`,
-    () => MajikSignatureEnvelope.deserialize(envelopeBase64),
-  );
-  await measure(
-    `${definition.file}: CBOR envelope decode`,
-    () => MajikSignatureEnvelope.fromCBOR(envelopeCbor),
-  );
-  await measure(
-    `${definition.file}: MJKSIG v2 container decode`,
-    () => MajikSignatureEnvelope.fromMJKSIG(signatureMjksig),
-  );
-  const rawVerification = await measure(
-    `${definition.file}: raw-signature verification`,
-    () => MajikSignature.verify(cleanBytes, restoredSignatureFromCbor, publicKeys),
-  );
-  check(
-    `${definition.file}: CBOR-restored signature verifies`,
-    rawVerification.valid,
-    rawVerification.reason,
-  );
+    const cleanBytes = new Uint8Array(await detached.blob.arrayBuffer());
+    check(
+      `${definition.file}: ${signerCount}-signer detached file is canonical clean content`,
+      Buffer.compare(Buffer.from(cleanBytes), Buffer.from(originalBytes)) === 0,
+      `${cleanBytes.byteLength} bytes`,
+    );
 
-  const embeddedFileGrowthBytes = embeddedBytes.byteLength - originalBytes.byteLength;
-  sizeResults.push({
-    fixture: definition.file,
-    mimeType: definition.mimeType,
-    originalFileBytes: originalBytes.byteLength,
-    detachedCleanFileBytes: cleanBytes.byteLength,
-    embeddedFileBytes: embeddedBytes.byteLength,
-    embeddedFileGrowthBytes,
-    signatureCount: envelope.signatures.length,
-    signatureJsonBytes: signatureJsonBytes,
-    signatureBase64SerializedBytes: signatureBase64Bytes,
-    signatureCborBytes,
-    envelopeJsonBytes,
-    envelopeBase64SerializedBytes: envelopeBase64Bytes,
-    envelopeCborBytes,
-    mjksigContainerBytes: mjksigBytes,
-    mjksigHeaderOverheadBytes: mjksigHeaderOverhead,
-    embeddedPayloadUtf8Bytes: embeddedPayloadBytes,
-    embeddedPayloadCharacters: embeddedPayload.length,
-    embeddedPayloadLooksLikeVersionedText: embeddedVersionedText,
-    cborReductionVsEnvelopeJsonPercent: percentReduction(
+    const allSignerVerification = await measure(
+      `${definition.file}: verify detached envelope (${signerCount} signers)`,
+      async () => {
+        const perSignerResults = [];
+        for (const signerKey of keys.slice(0, signerCount)) {
+          const signerPublicKeys = MajikSignature.publicKeysFromMajikKey(signerKey);
+          const results = await MajikSignature.verifyFileDetached(
+            detached.blob,
+            envelope,
+            signerPublicKeys,
+            { expectedSignerId: signerPublicKeys.signerId, mimeType: definition.mimeType },
+          );
+          perSignerResults.push(...results);
+        }
+        return perSignerResults;
+      },
+    );
+    check(
+      `${definition.file}: all ${signerCount} detached signatures verify`,
+      allSignerVerification.length === signerCount && allSignerVerification.every((result) => result.valid),
+      `${allSignerVerification.filter((result) => result.valid).length}/${signerCount} signer result(s) valid`,
+    );
+
+    const allEmbeddedVerification = await measure(
+      `${definition.file}: verify embedded file (${signerCount} signers)`,
+      async () => {
+        const perSignerResults = [];
+        for (const signerKey of keys.slice(0, signerCount)) {
+          const signerPublicKeys = MajikSignature.publicKeysFromMajikKey(signerKey);
+          const results = await MajikSignature.verifyFile(
+            embedded.blob,
+            signerPublicKeys,
+            { expectedSignerId: signerPublicKeys.signerId, mimeType: definition.mimeType },
+          );
+          perSignerResults.push(...results);
+        }
+        return perSignerResults;
+      },
+    );
+    check(
+      `${definition.file}: all ${signerCount} embedded signatures verify`,
+      allEmbeddedVerification.length === signerCount && allEmbeddedVerification.every((result) => result.valid),
+      `${allEmbeddedVerification.filter((result) => result.valid).length}/${signerCount} signer result(s) valid`,
+    );
+
+    await measure(
+      `${definition.file}: signature JSON encode (${signerCount}-signer snapshot)`,
+      () => JSON.stringify(signature.toJSON()),
+    );
+    await measure(
+      `${definition.file}: signature Base64 encode (${signerCount}-signer snapshot)`,
+      () => signature.serialize(),
+    );
+    await measure(
+      `${definition.file}: signature CBOR encode (${signerCount}-signer snapshot)`,
+      () => signature.toCBOR(),
+    );
+    await measure(
+      `${definition.file}: signature JSON decode (${signerCount}-signer snapshot)`,
+      () => MajikSignature.fromJSON(JSON.parse(signatureJson)),
+    );
+    await measure(
+      `${definition.file}: signature Base64 decode (${signerCount}-signer snapshot)`,
+      () => MajikSignature.deserialize(signatureBase64),
+    );
+    await measure(
+      `${definition.file}: signature CBOR decode (${signerCount}-signer snapshot)`,
+      () => MajikSignature.fromCBOR(signatureCbor),
+    );
+    await measure(
+      `${definition.file}: envelope JSON encode (${signerCount} signers)`,
+      () => JSON.stringify(envelope.toJSON()),
+    );
+    await measure(
+      `${definition.file}: envelope Base64 encode (${signerCount} signers)`,
+      () => envelope.serialize(),
+    );
+    await measure(
+      `${definition.file}: envelope CBOR encode (${signerCount} signers)`,
+      () => envelope.toCBOR(),
+    );
+    await measure(
+      `${definition.file}: MJKSIG v2 container encode (${signerCount} signers)`,
+      () => envelope.toMJKSIGBytes(),
+    );
+    await measure(
+      `${definition.file}: envelope JSON decode (${signerCount} signers)`,
+      () => MajikSignatureEnvelope.fromJSON(JSON.parse(envelopeJson)),
+    );
+    await measure(
+      `${definition.file}: envelope Base64 decode (${signerCount} signers)`,
+      () => MajikSignatureEnvelope.deserialize(envelopeBase64),
+    );
+    await measure(
+      `${definition.file}: envelope CBOR decode (${signerCount} signers)`,
+      () => MajikSignatureEnvelope.fromCBOR(envelopeCbor),
+    );
+    await measure(
+      `${definition.file}: MJKSIG v2 container decode (${signerCount} signers)`,
+      () => MajikSignatureEnvelope.fromMJKSIG(mjksigContainer),
+    );
+
+    const publicKeysForLastSigner = MajikSignature.publicKeysFromMajikKey(keys[signerCount - 1]);
+    const rawVerification = await measure(
+      `${definition.file}: raw signature verification (signer ${signerCount})`,
+      () => MajikSignature.verify(cleanBytes, restoredSignatureFromCbor, publicKeysForLastSigner),
+    );
+    check(
+      `${definition.file}: CBOR-restored signature verifies (signer ${signerCount})`,
+      rawVerification.valid,
+      rawVerification.reason,
+    );
+
+    const embeddedFileGrowthBytes = embeddedBytes.byteLength - originalBytes.byteLength;
+    sizeResults.push({
+      fixture: definition.file,
+      mimeType: definition.mimeType,
+      signerCount,
+      originalFileBytes: originalBytes.byteLength,
+      detachedCleanFileBytes: cleanBytes.byteLength,
+      embeddedFileBytes: embeddedBytes.byteLength,
+      embeddedFileGrowthBytes,
+      signatureJsonBytes,
+      signatureBase64SerializedBytes: signatureBase64Bytes,
+      signatureCborBytes,
       envelopeJsonBytes,
+      envelopeBase64SerializedBytes: envelopeBase64Bytes,
       envelopeCborBytes,
-    ),
-    cborReductionVsEnvelopeBase64Percent: percentReduction(
-      envelopeBase64Bytes,
-      envelopeCborBytes,
-    ),
-    embeddedPayloadReductionVsEnvelopeBase64Percent: percentReduction(
-      envelopeBase64Bytes,
-      embeddedPayloadBytes,
-    ),
-  });
+      mjksigContainerBytes: mjksigBytes,
+      mjksigHeaderOverheadBytes: mjksigHeaderOverhead,
+      embeddedPayloadUtf8Bytes: embeddedPayloadBytes,
+      embeddedPayloadCharacters: embeddedPayload.length,
+      embeddedPayloadLooksLikeVersionedText: embeddedVersionedText,
+      cborReductionVsEnvelopeJsonPercent: percentReduction(envelopeJsonBytes, envelopeCborBytes),
+      cborReductionVsEnvelopeBase64Percent: percentReduction(envelopeBase64Bytes, envelopeCborBytes),
+      embeddedPayloadReductionVsEnvelopeBase64Percent: percentReduction(envelopeBase64Bytes, embeddedPayloadBytes),
+    });
 
-  console.log(
-    `[SIZE] ${definition.file}: JSON ${envelopeJsonBytes} B | Base64 ${envelopeBase64Bytes} B | CBOR ${envelopeCborBytes} B | .mjksig ${mjksigBytes} B | embedded payload ${embeddedPayloadBytes} B | embedded file growth ${embeddedFileGrowthBytes} B`,
-  );
+    console.log(
+      `[SIZE] ${definition.file} (${signerCount} signer${signerCount === 1 ? "" : "s"}): JSON ${envelopeJsonBytes} B | Base64 ${envelopeBase64Bytes} B | CBOR ${envelopeCborBytes} B | .mjksig ${mjksigBytes} B | embedded payload ${embeddedPayloadBytes} B | full-file growth ${embeddedFileGrowthBytes} B`,
+    );
+  }
 }
 
 async function benchmarkLegacyCompatibility(
@@ -643,6 +749,42 @@ function average(values: number[]): number {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 }
 
+function buildSizeTrend(): SizeTrendMeasurement[] {
+  const rows: SizeTrendMeasurement[] = [];
+  for (let signerCount = 1; signerCount <= MAX_SIGNERS; signerCount++) {
+    const samples = sizeResults.filter((item) => item.signerCount === signerCount);
+    if (samples.length === 0) continue;
+    rows.push({
+      signerCount,
+      fixtureCount: samples.length,
+      averageEnvelopeJsonBytes: Math.round(average(samples.map((item) => item.envelopeJsonBytes))),
+      averageEnvelopeBase64SerializedBytes: Math.round(average(samples.map((item) => item.envelopeBase64SerializedBytes))),
+      averageEnvelopeCborBytes: Math.round(average(samples.map((item) => item.envelopeCborBytes))),
+      averageMjksigContainerBytes: Math.round(average(samples.map((item) => item.mjksigContainerBytes))),
+      averageEmbeddedPayloadBytes: Math.round(average(samples.map((item) => item.embeddedPayloadUtf8Bytes))),
+      averageEmbeddedFileGrowthBytes: Math.round(average(samples.map((item) => item.embeddedFileGrowthBytes))),
+    });
+  }
+  return rows;
+}
+
+function buildTimingTrend(): TimingTrendMeasurement[] {
+  const rows: TimingTrendMeasurement[] = [];
+  for (let signerCount = 1; signerCount <= MAX_SIGNERS; signerCount++) {
+    const suffix = signerCount === 1
+      ? `detached signing (signer 1/${MAX_SIGNERS})`
+      : `detached multi-sig add signer ${signerCount}/${MAX_SIGNERS}`;
+    const samples = timings.filter((item) => item.name.endsWith(suffix));
+    if (samples.length === 0) continue;
+    rows.push({
+      signerCount,
+      fixtureCount: samples.length,
+      averageOperationMeanMs: roundMs(average(samples.map((item) => item.meanMs))),
+    });
+  }
+  return rows;
+}
+
 function buildAnalysis(): string[] {
   if (sizeResults.length === 0) {
     return ["No supported sample fixtures were found, so serialization size analysis could not be calculated."];
@@ -655,13 +797,23 @@ function buildAnalysis(): string[] {
   const avgCborReduction = percentReduction(avgJson, avgCbor);
   const avgEmbedDiff = percentReduction(avgBase64, avgEmbedded);
   const avgFileGrowth = average(sizeResults.map((result) => result.embeddedFileGrowthBytes));
+  const trend = buildSizeTrend();
+  const oneSigner = trend.find((row) => row.signerCount === 1);
+  const maxSigner = trend.find((row) => row.signerCount === MAX_SIGNERS);
+  const countGrowth = (first: number | undefined, last: number | undefined) => {
+    if (first === undefined || last === undefined) return "not available";
+    const delta = last - first;
+    const pct = first > 0 ? (delta / first) * 100 : 0;
+    return `${delta >= 0 ? "+" : ""}${Math.round(delta)} bytes (${delta >= 0 ? "+" : ""}${pct.toFixed(2)}%)`;
+  };
 
   const analysis = [
-    `Across ${sizeResults.length} real signed fixture(s), the mean raw envelope is ${Math.round(avgJson)} bytes as minified JSON and ${Math.round(avgCbor)} bytes as CBOR. CBOR is ${avgCborReduction >= 0 ? `${avgCborReduction}% smaller` : `${Math.abs(avgCborReduction)}% larger`} than JSON on this fixture set.`,
-    `The existing Base64 serializer averages ${Math.round(avgBase64)} bytes. The actual embedded payload, including its version marker and Base64 wrapper, averages ${Math.round(avgEmbedded)} bytes; this is ${avgEmbedDiff >= 0 ? `${avgEmbedDiff}% smaller` : `${Math.abs(avgEmbedDiff)}% larger`} than the existing Base64 representation.`,
-    `The whole embedded file grows by an average of ${Math.round(avgFileGrowth)} bytes. This value includes the format handler's metadata/trailer overhead and should not be confused with the payload alone.`,
-    "Raw CBOR is the best comparison when the consumer accepts binary data directly. The versioned .mjksig container adds framing for detection and version dispatch; embedded payloads add their text prefix and Base64 overhead to fit existing string-based file handlers.",
-    "JSON remains preferable for human inspection and integrations that require JSON. Base64 serialization remains useful for text-only transports, while .mjksig is preferable when a self-identifying, versioned detached file is needed.",
+    `Across ${sizeResults.length} measured fixture-by-signer-count sample(s) spanning ${new Set(sizeResults.map((item) => item.fixture)).size} actual fixture(s), the average envelope representation is ${Math.round(avgJson)} bytes as minified JSON, ${Math.round(avgCbor)} bytes as raw CBOR, and ${Math.round(avgBase64)} bytes using the existing Base64 serializer. Across these samples, raw CBOR is ${avgCborReduction >= 0 ? `${avgCborReduction}% smaller` : `${Math.abs(avgCborReduction)}% larger`} than minified JSON on average.`,
+    `From 1 signer to ${MAX_SIGNERS} signer(s), average minified JSON size changes by ${countGrowth(oneSigner?.averageEnvelopeJsonBytes, maxSigner?.averageEnvelopeJsonBytes)}; raw CBOR changes by ${countGrowth(oneSigner?.averageEnvelopeCborBytes, maxSigner?.averageEnvelopeCborBytes)}; existing Base64 serialization changes by ${countGrowth(oneSigner?.averageEnvelopeBase64SerializedBytes, maxSigner?.averageEnvelopeBase64SerializedBytes)}. The trend is measured from actual SDK envelopes at every signer count, not linearly extrapolated.`,
+    `The embedded payload, including its version marker and Base64 wrapper, averages ${Math.round(avgEmbedded)} bytes across all measured samples. Compared with the existing Base64 envelope serialization, it is ${avgEmbedDiff >= 0 ? `${avgEmbedDiff}% smaller` : `${Math.abs(avgEmbedDiff)}% larger`} on average; this is a representation comparison, not a claim that the embedded payload is raw CBOR.`,
+    `The complete embedded file grows by an average of ${Math.round(avgFileGrowth)} bytes. This includes the handler's metadata/trailer overhead and can differ from the payload size.`,
+    "Raw CBOR is the best fit when a consumer accepts binary data directly. The versioned .mjksig container adds a small header for identification and version dispatch; embedded payloads add their text prefix and Base64 overhead because the existing format handlers accept string payloads.",
+    "JSON remains useful for inspection and JSON-native integrations. The existing Base64 serializer is appropriate for text-only transport. Use .mjksig when a detached envelope needs to be self-identifying and versioned.",
   ];
   return analysis;
 }
@@ -671,7 +823,9 @@ function summarize(): Report["summary"] {
   const passed = checks.length - failed;
   const byMean = [...timings].sort((a, b) => a.meanMs - b.meanMs);
   return {
-    fixtureCount: sizeResults.length,
+    fixtureCount: new Set(sizeResults.map((item) => item.fixture)).size,
+    sizeSampleCount: sizeResults.length,
+    maxSigners: MAX_SIGNERS,
     legacyFixtureCount: legacyResults.length,
     checksPassed: passed,
     checksFailed: failed,
@@ -690,6 +844,54 @@ function summarize(): Report["summary"] {
   };
 }
 
+function chartAxisMax(values: number[]): number {
+  const rawMax = Math.max(1, ...values);
+  if (rawMax < 100) return Number((Math.ceil(rawMax * 1.2 * 10) / 10).toFixed(1));
+  return Math.ceil((rawMax * 1.15) / 1000) * 1000;
+}
+
+function buildMermaidSizeBarChart(report: Report): string[] {
+  const trend = report.sizeTrend;
+  if (trend.length === 0) return ["No size trend data available for charts."];
+  const labels = `[${trend.map((row) => row.signerCount).join(", ")}]`;
+  const json = `[${trend.map((row) => row.averageEnvelopeJsonBytes).join(", ")}]`;
+  const cbor = `[${trend.map((row) => row.averageEnvelopeCborBytes).join(", ")}]`;
+  const base64 = `[${trend.map((row) => row.averageEnvelopeBase64SerializedBytes).join(", ")}]`;
+  const max = chartAxisMax(trend.flatMap((row) => [
+    row.averageEnvelopeJsonBytes,
+    row.averageEnvelopeCborBytes,
+    row.averageEnvelopeBase64SerializedBytes,
+  ]));
+  return [
+    "```mermaid",
+    "xychart-beta",
+    "    title \"Average Envelope Payload Size by Signer Count\"",
+    `    x-axis \"Signer count\" ${labels}`,
+    `    y-axis \"Payload bytes\" 0 --> ${max}`,
+    `    bar \"Minified JSON\" ${json}`,
+    `    bar \"Raw CBOR\" ${cbor}`,
+    `    bar \"Base64 serialized\" ${base64}`,
+    "```",
+  ];
+}
+
+function buildMermaidTimingLineChart(report: Report): string[] {
+  const trend = report.timingTrend;
+  if (trend.length === 0) return ["No timing trend data available for charts."];
+  const labels = `[${trend.map((row) => row.signerCount).join(", ")}]`;
+  const values = `[${trend.map((row) => row.averageOperationMeanMs).join(", ")}]`;
+  const max = chartAxisMax(trend.map((row) => row.averageOperationMeanMs));
+  return [
+    "```mermaid",
+    "xychart-beta",
+    "    title \"Mean Time to Sign or Add One Signer\"",
+    `    x-axis \"Resulting signer count\" ${labels}`,
+    `    y-axis \"Mean operation time (ms)\" 0 --> ${max}`,
+    `    line \"Mean detached signing operation\" ${values}`,
+    "```",
+  ];
+}
+
 function buildMarkdown(report: Report): string {
   const formatBytes = (bytes: number) => `${bytes.toLocaleString("en-US")} B (${toKiB(bytes)} KiB)`;
   const lines: string[] = [
@@ -703,53 +905,78 @@ function buildMarkdown(report: Report): string {
     `- **Iterations per timing:** ${report.iterations} (plus ${report.warmupIterations} warm-up iteration per operation)`,
     `- **Runtime:** Node ${report.runtime.node} / ${report.runtime.platform} ${report.runtime.architecture}`,
     `- **Package:** ${report.runtime.packageName}@${report.runtime.packageVersion}`,
-    `- **Test key:** generated using existing \`${report.keySetup.helper}\`; key secrets are not included in this report`,
+    `- **Test keys:** ${report.keySetup.keyCount} fresh keys generated using \`${report.keySetup.helper}\`; key secrets are not included in this report`,
+    `- **Signer-count increments:** 1 through ${report.summary.maxSigners}`,
     "",
     "## Summary",
     "",
-    `- Fixtures benchmarked: **${report.summary.fixtureCount}**` ,
+    `- Fixtures benchmarked: **${report.summary.fixtureCount}**`,
+    `- Fixture × signer-count size samples: **${report.summary.sizeSampleCount}**`,
     `- Legacy fixtures checked: **${report.summary.legacyFixtureCount}**`,
     `- Checks passed: **${report.summary.checksPassed}**`,
     `- Checks failed: **${report.summary.checksFailed}**`,
-    `- Average envelope JSON size: **${formatBytes(report.summary.averageEnvelopeJsonBytes)}**`,
-    `- Average envelope raw CBOR size: **${formatBytes(report.summary.averageEnvelopeCborBytes)}**`,
+    `- Average envelope JSON size across all fixture/count samples: **${formatBytes(report.summary.averageEnvelopeJsonBytes)}**`,
+    `- Average envelope raw CBOR size across all fixture/count samples: **${formatBytes(report.summary.averageEnvelopeCborBytes)}**`,
     `- Average CBOR reduction vs JSON: **${report.summary.averageCborReductionVsJsonPercent}%**`,
     `- Average existing Base64 serialization size: **${formatBytes(report.summary.averageEnvelopeBase64Bytes)}**`,
     `- Average embedded payload size, including prefix/wrapper: **${formatBytes(report.summary.averageEmbeddedPayloadBytes)}**`,
     `- Average complete embedded-file growth: **${formatBytes(report.summary.averageEmbeddedFileGrowthBytes)}**`,
     "",
-    "## Payload sizes by fixture",
+    "## Multi-signature serialization charts",
     "",
-    "| Fixture | Original file | Envelope JSON | Base64 serialized | Raw CBOR | `.mjksig` v2 | Embedded payload | Full-file growth |",
-    "|---|---:|---:|---:|---:|---:|---:|---:|",
+    "The bar chart compares measured envelope sizes at each signer count, averaged across fixtures. The line chart shows the mean time taken to sign the initial envelope or add the next signer; it is an operation time, not cumulative workflow time.",
+    "",
+    "### Payload size by signer count",
+    "",
+    ...buildMermaidSizeBarChart(report),
+    "",
+    "### Detached signing operation time by signer count",
+    "",
+    ...buildMermaidTimingLineChart(report),
+    "",
+    "### Average sizes at each increment",
+    "",
+    "| Signers | Fixtures averaged | JSON | Base64 serialized | Raw CBOR | `.mjksig` v2 | Embedded payload | Complete file growth |",
+    "|---:|---:|---:|---:|---:|---:|---:|---:|",
   ];
 
-  for (const item of report.sizes) {
-    lines.push(
-      `| ${item.fixture} | ${item.originalFileBytes} B | ${item.envelopeJsonBytes} B | ${item.envelopeBase64SerializedBytes} B | ${item.envelopeCborBytes} B | ${item.mjksigContainerBytes} B | ${item.embeddedPayloadUtf8Bytes} B | ${item.embeddedFileGrowthBytes} B |`,
-    );
+  for (const item of report.sizeTrend) {
+    lines.push(`| ${item.signerCount} | ${item.fixtureCount} | ${item.averageEnvelopeJsonBytes} B | ${item.averageEnvelopeBase64SerializedBytes} B | ${item.averageEnvelopeCborBytes} B | ${item.averageMjksigContainerBytes} B | ${item.averageEmbeddedPayloadBytes} B | ${item.averageEmbeddedFileGrowthBytes} B |`);
   }
 
   lines.push(
     "",
-    "### Signature-object sizes",
+    "### Mean detached signing time by signer count",
     "",
-    "| Fixture | Signature JSON | Signature Base64 serialized | Signature CBOR |",
-    "|---|---:|---:|---:|",
+    "| Resulting signers | Fixture samples | Mean time to sign/add signer |",
+    "|---:|---:|---:|",
   );
-  for (const item of report.sizes) {
-    lines.push(`| ${item.fixture} | ${item.signatureJsonBytes} B | ${item.signatureBase64SerializedBytes} B | ${item.signatureCborBytes} B |`);
+  for (const item of report.timingTrend) {
+    lines.push(`| ${item.signerCount} | ${item.fixtureCount} | ${item.averageOperationMeanMs} ms |`);
   }
 
   lines.push(
     "",
-    "### Embedded payload details",
+    "## Payload sizes by fixture and signer count",
     "",
-    "| Fixture | Extracted payload UTF-8 bytes | Characters | File grew by |",
-    "|---|---:|---:|---:|",
+    "| Fixture | Signers | Original file | Envelope JSON | Base64 serialized | Raw CBOR | `.mjksig` v2 | Embedded payload | Full-file growth |",
+    "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
   );
   for (const item of report.sizes) {
-    lines.push(`| ${item.fixture} | ${item.embeddedPayloadUtf8Bytes} B | ${item.embeddedPayloadCharacters} | ${item.embeddedFileGrowthBytes} B |`);
+    lines.push(`| ${item.fixture} | ${item.signerCount} | ${item.originalFileBytes} B | ${item.envelopeJsonBytes} B | ${item.envelopeBase64SerializedBytes} B | ${item.envelopeCborBytes} B | ${item.mjksigContainerBytes} B | ${item.embeddedPayloadUtf8Bytes} B | ${item.embeddedFileGrowthBytes} B |`);
+  }
+
+  lines.push(
+    "",
+    "### Last-signature object sizes",
+    "",
+    "Signature-object sizes describe the individual signer entry added at that step; envelope columns show cumulative multi-signature growth.",
+    "",
+    "| Fixture | Signers in envelope | Signature JSON | Signature Base64 serialized | Signature CBOR |",
+    "|---|---:|---:|---:|---:|",
+  );
+  for (const item of report.sizes) {
+    lines.push(`| ${item.fixture} | ${item.signerCount} | ${item.signatureJsonBytes} B | ${item.signatureBase64SerializedBytes} B | ${item.signatureCborBytes} B |`);
   }
 
   lines.push("", "## Legacy embedded-file compatibility", "");
@@ -767,12 +994,12 @@ function buildMarkdown(report: Report): string {
 
   lines.push("", "## Timing results", "", "| Operation | Iterations | Mean ms | Median ms | Min ms | Max ms | Ops/sec |", "|---|---:|---:|---:|---:|---:|---:|");
   for (const item of report.timings) {
-    lines.push(`| ${item.name} | ${item.iterations} | ${item.meanMs} | ${item.medianMs} | ${item.minMs} | ${item.maxMs} | ${item.operationsPerSecond} |`);
+    lines.push(`| ${item.name.replaceAll("|", "\\|")} | ${item.iterations} | ${item.meanMs} | ${item.medianMs} | ${item.minMs} | ${item.maxMs} | ${item.operationsPerSecond} |`);
   }
 
   lines.push("", "## Checks", "", "| Status | Check | Details |", "|---|---|---|");
   for (const item of report.checks) {
-    lines.push(`| ${item.passed ? "PASS" : "FAIL"} | ${item.name.replaceAll("|", "\\|")} | ${(item.details ?? "").replaceAll("|", "\\|")} |`);
+    lines.push(`| ${item.passed ? "PASS" : "FAIL"} | ${item.name.replaceAll("|", "\\|")} | ${(item.details ?? "").replaceAll("|", "\\|").replaceAll("\n", " ")} |`);
   }
 
   lines.push("", "## Analysis", "");
@@ -783,14 +1010,16 @@ function buildMarkdown(report: Report): string {
     "## Interpretation notes",
     "",
     "- All byte counts are measured from the current SDK checkout; they are not estimates copied from the README.",
+    "- Each signer-count increment uses one additional freshly generated `MajikKey`; keys are created with the existing `getTestKey()` helper.",
     "- `JSON` measures UTF-8 bytes of minified `JSON.stringify(envelope.toJSON())`.",
     "- `Base64 serialized` measures the actual string returned by `envelope.serialize()`.",
     "- `Raw CBOR` measures `envelope.toCBOR()` bytes with no `.mjksig` container header.",
     "- `.mjksig v2` measures `envelope.toMJKSIGBytes()`, including its actual header/framing.",
     "- `Embedded payload` measures the exact UTF-8 string extracted by the selected file handler, including the version prefix and Base64 wrapper.",
     "- `Full-file growth` is the final embedded Blob length minus the original fixture length; it includes native metadata/trailer overhead and can differ from the embedded-payload length.",
-    "- Timings include one warm-up call per operation before the measured iterations. The key generation/setup time is reported separately.",
-    "- Benchmark times are environment-dependent. Use the same runtime, machine, iteration count, and fixture set when comparing commits.",
+    "- Timing for signer count N measures the first detached signature (N=1) or the operation that adds signer N to an envelope with N-1 existing signers. The chart reports means averaged across fixtures.",
+    "- Timings include one warm-up call per operation before measured iterations. Aggregate key generation/setup time is reported separately.",
+    "- Benchmark times are environment-dependent. Use the same runtime, machine, iteration count, signer count, and fixture set when comparing commits.",
     "",
   );
   return lines.join("\n");
@@ -808,7 +1037,7 @@ function buildTimingCsv(report: Report): string {
 function buildCsv(report: Report): string {
   const header = [
     "fixture", "mimeType", "originalFileBytes", "detachedCleanFileBytes", "embeddedFileBytes",
-    "embeddedFileGrowthBytes", "signatureCount", "signatureJsonBytes", "signatureBase64SerializedBytes",
+    "embeddedFileGrowthBytes", "signerCount", "signatureJsonBytes", "signatureBase64SerializedBytes",
     "signatureCborBytes", "envelopeJsonBytes", "envelopeBase64SerializedBytes", "envelopeCborBytes",
     "mjksigContainerBytes", "mjksigHeaderOverheadBytes", "embeddedPayloadUtf8Bytes", "embeddedPayloadCharacters",
     "cborReductionVsEnvelopeJsonPercent", "cborReductionVsEnvelopeBase64Percent",
@@ -826,18 +1055,28 @@ function csvCell(value: unknown): string {
 async function main(): Promise<void> {
   console.log("\nMajik Signature serialization benchmark");
   console.log(`Iterations: ${ITERATIONS}; warm-ups per operation: ${WARMUP_ITERATIONS}`);
+  console.log(`Signer-count increments: 1..${MAX_SIGNERS}`);
   console.log(`Fixtures: ${FIXTURES_DIR}`);
   console.log(`Reports: ${REPORT_DIR}\n`);
 
   const keyStart = performance.now();
-  const key = await getTestKey();
-  const keyGenerationMs = roundMs(performance.now() - keyStart);
-  console.log(`[KEY] Generated unlocked test key via getTestKey() in ${keyGenerationMs} ms`);
+  const keys: TestKey[] = [];
+  const perKeyGenerationMs: number[] = [];
+  let keyGenerationMs = 0;
 
   try {
+    for (let index = 0; index < MAX_SIGNERS; index++) {
+      const singleKeyStart = performance.now();
+      keys.push(await getTestKey());
+      perKeyGenerationMs.push(roundMs(performance.now() - singleKeyStart));
+      console.log(`[KEY] Generated test key ${index + 1}/${MAX_SIGNERS} in ${perKeyGenerationMs[index]} ms`);
+    }
+    keyGenerationMs = roundMs(performance.now() - keyStart);
+    console.log(`[KEY] Generated ${keys.length} unlocked test keys in ${keyGenerationMs} ms total`);
+
     for (const definition of FIXTURE_DEFINITIONS) {
       try {
-        await benchmarkFixture(definition, key);
+        await benchmarkFixture(definition, keys);
       } catch (caught) {
         const message = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
         check(`${definition.file}: benchmark completed without uncaught error`, false, message);
@@ -854,11 +1093,14 @@ async function main(): Promise<void> {
       }
     }
   } finally {
-    // Do not retain test secret material after benchmarking.
-    try {
-      key.lock();
-    } catch {
-      // Some test key versions may already be locked; that does not invalidate results.
+    // Do not retain test secret material after benchmarking, including if key
+    // creation or an individual fixture fails partway through the run.
+    for (const key of keys) {
+      try {
+        key.lock();
+      } catch {
+        // Some test key versions may already be locked; that does not invalidate results.
+      }
     }
   }
 
@@ -866,6 +1108,8 @@ async function main(): Promise<void> {
   const benchmarkElapsedMs = roundMs(performance.now() - startMonotonic);
   const packageMetadata = getPackageMetadata();
   const summary = summarize();
+  const sizeTrend = buildSizeTrend();
+  const timingTrend = buildTimingTrend();
   const report: Report = {
     title: "Majik Signature Serialization Benchmark",
     startedAt: startWallTime.toISOString(),
@@ -882,17 +1126,22 @@ async function main(): Promise<void> {
     },
     keySetup: {
       helper: "test/helpers/crypto.ts:getTestKey()",
+      keyCount: keys.length,
       generationMs: keyGenerationMs,
-      keyType: "fresh generated MajikKey used only for this benchmark run",
+      perKeyGenerationMs,
+      keyType: "fresh generated MajikKey instances used only for this benchmark run",
       secretMaterialWrittenToReport: false,
     },
     fixtureDiscovery: {
       fixtureDirectory: FIXTURES_DIR,
       included: includedFixtureNames,
       skipped: skippedFixtureNames,
+      signerCount: MAX_SIGNERS,
     },
     timings,
     sizes: sizeResults,
+    sizeTrend,
+    timingTrend,
     legacyCompatibility: legacyResults,
     checks,
     summary,
@@ -920,6 +1169,8 @@ async function main(): Promise<void> {
 
   console.log("\n=== Serialization Benchmark Summary ===");
   console.log(`Real fixtures benchmarked: ${summary.fixtureCount}`);
+  console.log(`Size samples (fixture × signer-count): ${summary.sizeSampleCount}`);
+  console.log(`Signer counts benchmarked: 1..${summary.maxSigners}`);
   console.log(`Legacy fixtures checked: ${summary.legacyFixtureCount}`);
   console.log(`Checks: ${summary.checksPassed} passed, ${summary.checksFailed} failed`);
   console.log(`Average envelope JSON: ${summary.averageEnvelopeJsonBytes} bytes`);
