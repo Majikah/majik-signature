@@ -1164,7 +1164,7 @@ export class MajikSignatureEmbed {
     const envelope = await MajikSignatureEnvelope.from(envelopeInput);
     const prepared = await prepareDetachedBytes(handler, bytes, {
       requireCanonical: options?.requireCanonical,
-      validateEnvelope: (r) => void MajikSignatureEnvelope.fromJSON(r),
+      validateEnvelope: (r) => void parseEmbeddedEnvelope(r),
     });
     if (!prepared.ok) {
       return [
@@ -1515,7 +1515,7 @@ export class MajikSignatureEmbed {
     }
 
     const prepared = await prepareDetachedBytes(handler, bytes, {
-      validateEnvelope: (r) => void MajikSignatureEnvelope.fromJSON(r),
+      validateEnvelope: (r) => void parseEmbeddedEnvelope(r),
     });
     if (!prepared.ok) throw new MajikSignatureError(prepared.reason);
     const originalBytes = prepared.original;

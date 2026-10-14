@@ -8,7 +8,9 @@
 
 **Majik Signature** is a hybrid post-quantum content signing and verification library for the Majikah ecosystem. Built on top of [**Majik Key**](https://www.npmjs.com/package/@majikah/majik-key), it produces tamper-evident, forgery-resistant digital signatures for any content — plaintext, JSON, PDFs, audio, video, Office documents, or raw binary — using a dual-algorithm architecture that combines classical **Ed25519** with post-quantum **ML-DSA-87** (FIPS-204).
 
-Beyond signing raw bytes, Majik Signature can **embed signatures directly into a file's native format**, or produce **detached envelopes** that travel independently of the file — as portable JSON, base64, or a dedicated self-describing binary container (`.mjksig`). It supports **multi-party signing**, **signing allowlists**, **envelope sealing**, **trusted timestamps (TSA)**, **batch/folder signing** via a manifest format (`.mjksmap`), **chronological signing-order verification**, and **blockchain anchor registration**.
+Beyond signing raw bytes, Majik Signature can **embed signatures directly into a file's native format** or produce **detached envelopes** that travel independently of the file. Envelopes can be represented as JSON, the existing Base64 serialization format, CBOR bytes, or a dedicated self-describing binary container (`.mjksig`). The current `.mjksig` writer uses **version 2 with CBOR**, while the reader retains support for legacy version 1 JSON containers. Newly embedded envelopes use a version-marked, Base64-wrapped CBOR representation, while existing files with legacy JSON-encoded embedded envelopes remain readable. The SDK also supports **multi-party signing**, **signing allowlists**, **envelope sealing**, **trusted timestamps (TSA)**, **batch/folder signing** via the `.mjksmap` manifest format, **chronological signing-order verification**, and **blockchain anchor registration**.
+
+
 
 ---
 
@@ -118,9 +120,12 @@ Beyond signing raw bytes, Majik Signature can **embed signatures directly into a
       - [`envelope.toJSON()` / `MajikSignatureEnvelope.fromJSON(json)`](#envelopetojson--majiksignatureenvelopefromjsonjson)
       - [`envelope.serialize()` / `MajikSignatureEnvelope.deserialize(base64)`](#envelopeserialize--majiksignatureenvelopedeserializebase64)
       - [`envelope.toMJKSIG()` / `MajikSignatureEnvelope.fromMJKSIG(input)`](#envelopetomjksig--majiksignatureenvelopefrommjksiginput)
+      - [`signature.toCBOR()` / `MajikSignature.fromCBOR(bytes)`](#signaturetocbor--majiksignaturefromcborbytes)
+      - [`envelope.toCBOR()` / `MajikSignatureEnvelope.fromCBOR(bytes)`](#envelopetocbor--majiksignatureenvelopefromcborbytes)
   - [Supported File Formats](#supported-file-formats)
   - [Signature \& Envelope Structure](#signature--envelope-structure)
   - [Binary Container Formats (MJKSIG / MJKSMAP)](#binary-container-formats-mjksig--mjksmap)
+    - [Usage](#usage)
   - [Error Handling](#error-handling)
   - [Security Considerations](#security-considerations)
     - [What is Guaranteed](#what-is-guaranteed)
@@ -212,6 +217,9 @@ Both signatures cover a **domain-separated canonical payload**:
 
 This binding means a valid signature cannot be reused on different content, transferred to a different signer, replayed with a modified timestamp, or forged without both private keys.
 
+**Serialization compatibility note:** CBOR is used for encoding and transporting signature and envelope data; it does **not** replace or redefine the canonical payload used by the signing algorithms. The canonical signing payload remains domain-separated using `majik-signature-v1:` and the established canonical JSON representation. Container versions describe the serialization of the stored envelope, not a change to the underlying signing algorithms or signature schema. This separation allows the SDK to adopt CBOR while retaining verification compatibility with existing signatures.
+
+
 ### 3. Content-Agnostic Hashing
 
 Content is never embedded in the envelope — only its SHA-256 hash is signed. A 500 MB video signs at the same speed as a 10-byte string, and every content type is supported identically.
@@ -295,7 +303,7 @@ Verification is fully **public** — anyone with the signer's public keys can ve
 
 ### Detached Signing & Batch Workflows
 
-[![Static Badge](https://img.shields.io/badge/IANA-vnd.majikah.mjksig-green)](https://www.iana.org/assignments/media-types/application/vnd.majikah.mjksig)
+[![Static Badge](https://img.shields.io/badge/IANA-vnd.majikah.mjksig-green?style=for-the-badge)](https://www.iana.org/assignments/media-types/application/vnd.majikah.mjksig) [![Static Badge](https://img.shields.io/badge/IANA-vnd.majikah.mjksmap-green?style=for-the-badge)](https://www.iana.org/assignments/media-types/application/vnd.majikah.mjksmap)
 
 - **Detached envelopes** — sign a file and receive the envelope separately, for external verification pipelines where payload and signature travel independently
 - **Self-describing binary containers** — `.mjksig` for a single detached envelope, `.mjksmap` for a manifest covering an entire batch, each with magic bytes, a version header, and a length-prefixed payload
@@ -315,7 +323,7 @@ Verification is fully **public** — anyone with the signer's public keys can ve
 - **MKV, WebM** — embedded via a custom Matroska metadata tag
 - **JPEG, FLAC** — native format metadata, same round-trip guarantees as other handlers
 - **HTML, Markdown, JSON, plain text, source code** — embedded as an appended, format-appropriate metadata block
-- **Any other format** — universal binary trailer: `[original bytes][signature JSON][8-byte length][8-byte magic]` — cleanly detectable and strippable regardless of format
+- **Any other format** — universal binary trailer: `[original bytes][version-marked embedded-envelope payload][8-byte length][8-byte magic]`. New writes use the embedded CBOR codec; legacy JSON payloads remain supported when reading existing files.
 
 See [Supported File Formats](#supported-file-formats) for the full handler table.
 
@@ -332,11 +340,14 @@ See [Supported File Formats](#supported-file-formats) for the full handler table
 
 ### Serialization & Portability
 
-- **JSON envelope** — full `toJSON()` / `fromJSON()` round-trip, at both the signature and envelope level
-- **Base64 serialization** — `serialize()` / `deserialize()` for compact transport (HTTP headers, DB columns, etc.)
-- **File-embedded** — the signature lives inside the file itself, no sidecar files needed
-- **Self-contained** — the envelope includes the signer's public keys, verifiable without a separate key registry
-- **Binary containers** — `.mjksig` and `.mjksmap` for detached envelopes and batch manifests that need to travel or be stored on disk as their own file
+- **JSON serialization** — `toJSON()` / `fromJSON()` remain supported for signatures and envelopes, including legacy envelope shapes.
+- **Base64 serialization** — `serialize()` / `deserialize()` remain available for the SDK's existing Base64 transport format.
+- **CBOR serialization** — `toCBOR()` / `fromCBOR()` provide binary CBOR serialization for signatures and envelopes.
+- **File-embedded envelopes** — newly written embedded envelopes use a version-marked, Base64-wrapped CBOR payload through the existing file-format handlers. Legacy JSON-encoded embedded envelopes remain readable.
+- **Versioned `.mjksig` containers** — new containers use version 2 with CBOR; version 1 JSON containers remain supported for backward compatibility.
+- **JSON `.mjksmap` manifests** — batch manifests continue to use the existing version 1 JSON payload format.
+- **Self-contained envelopes** — envelopes carry the signer's public keys so verification can run without a separate key registry.
+- **Portable binary containers** — `.mjksig` and `.mjksmap` support detached-envelope and batch-manifest storage as standalone files.
 
 ---
 
@@ -1176,6 +1187,8 @@ Base64 transport for a full multi-sig envelope.
 #### `envelope.toMJKSIG()` / `MajikSignatureEnvelope.fromMJKSIG(input)`
 Self-describing binary container for a detached envelope — see [Binary Container Formats](#binary-container-formats-mjksig--mjksmap).
 
+
+
 ```typescript
 const signature = await MajikSignature.sign(content, key);
 
@@ -1189,24 +1202,50 @@ const restored = MajikSignature.fromJSON(json);
 const restoredFromB64 = MajikSignature.deserialize(b64);
 ```
 
+
+#### `signature.toCBOR()` / `MajikSignature.fromCBOR(bytes)`
+
+Serialize a `MajikSignature` to CBOR bytes and restore a typed signature instance from CBOR. Use this when you want the CBOR representation directly, rather than JSON or the existing Base64 serialization format.
+
+#### `envelope.toCBOR()` / `MajikSignatureEnvelope.fromCBOR(bytes)`
+
+Serialize a `MajikSignatureEnvelope` to CBOR bytes and restore a typed envelope instance from CBOR. This is useful for binary transport, storage, and integrations that work directly with CBOR-encoded envelopes.
+
+CBOR serialization is separate from `.mjksig` container serialization: a raw CBOR byte sequence does not, by itself, include the `.mjksig` magic bytes, container version, reserved byte, or length header.
+
+```typescript
+
+const signature = await MajikSignature.sign(content, key);
+const signatureCbor = signature.toCBOR();
+const restoredSignature = MajikSignature.fromCBOR(signatureCbor);
+
+const envelope = envelopeFromYourWorkflow;
+const envelopeCbor = envelope.toCBOR();
+const restoredEnvelope = MajikSignatureEnvelope.fromCBOR(envelopeCbor);
+
+```
+
 ---
 
 ## Supported File Formats
 
 Handlers are tried in order; the first one whose `canHandle()` matches wins. If nothing matches, the **universal trailer fallback** always applies — meaning *every* file type is signable, even ones with no dedicated handler.
 
-| Format(s)                                     | Handler     | Embedding Mechanism                                                                            |
-| --------------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------- |
-| PDF                                           | PDF         | Binary trailer appended after the last `%%EOF` marker (PDF 1.7 §7.5.6 compliant)               |
-| PNG                                           | PNG         | `iTXt` metadata chunk                                                                          |
-| WAV                                           | WAV         | RIFF `LIST INFO` chunk, custom `ISIG` sub-chunk                                                |
-| MP3                                           | MP3         | ID3v2 `TXXX` frame                                                                             |
-| MP4, MOV, M4A, M4V                            | MP4/MOV     | `moov/udta` box, custom `majk` box type                                                        |
-| DOCX, XLSX, PPTX, ODT, ODS, ODP               | Office      | Dedicated `majik-signature.json` entry inside the ZIP container                                |
-| MKV, WebM                                     | MKV         | Custom Matroska metadata tag                                                                   |
-| JPEG, FLAC                                    | JPEG / FLAC | Native format metadata (non-destructive; same round-trip guarantees as other handlers)         |
-| HTML, Markdown, JSON, plain text, source code | Text        | Appended, format-appropriate metadata block                                                    |
-| Anything else                                 | Fallback    | Universal binary trailer: `[original][signature JSON][8-byte length][8-byte magic "MAJIKSIG"]` |
+| Format(s)                                     | Handler     | Embedding Mechanism                                                                                             |
+| --------------------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------- |
+| PDF                                           | PDF         | Binary trailer appended after the last `%%EOF` marker (PDF 1.7 §7.5.6 compliant)                                |
+| PNG                                           | PNG         | `iTXt` metadata chunk                                                                                           |
+| WAV                                           | WAV         | RIFF `LIST INFO` chunk, custom `ISIG` sub-chunk                                                                 |
+| MP3                                           | MP3         | ID3v2 `TXXX` frame                                                                                              |
+| MP4, MOV, M4A, M4V                            | MP4/MOV     | `moov/udta` box, custom `majk` box type                                                                         |
+| DOCX, XLSX, PPTX, ODT, ODS, ODP               | Office      | Dedicated `majik-signature.json` entry inside the ZIP container                                                 |
+| MKV, WebM                                     | MKV         | Custom Matroska metadata tag                                                                                    |
+| JPEG, FLAC                                    | JPEG / FLAC | Native format metadata (non-destructive; same round-trip guarantees as other handlers)                          |
+| HTML, Markdown, JSON, plain text, source code | Text        | Appended, format-appropriate metadata block                                                                     |
+| Anything else                                 | Fallback    | Universal binary trailer: `[original][version-marked envelope payload][8-byte length][8-byte magic "MAJIKSIG"]` |
+
+
+**Embedded-envelope encoding and compatibility:** File-format handlers retain their existing embedding mechanisms, but the envelope payload written by the SDK now uses a version-marked, Base64-wrapped CBOR representation. When reading a payload, the SDK recognizes this representation and decodes CBOR; legacy JSON-encoded embedded envelopes continue to be supported. The Office handler's `majik-signature.json` ZIP entry name is retained, but the entry's newly written payload should not be described as raw JSON—the envelope is stored using the versioned embedded-payload codec.
 
 All handlers guarantee: files remain fully usable after signing (PDFs still open, videos still play, Office files stay editable), signing is idempotent (safe to re-sign), and `strip()` always reproduces exactly the bytes that were originally hashed — including deterministic ZIP re-canonicalization for Office formats (the ZIP is always rebuilt via a full unzip/rezip pass on `strip()`, even when no signature entry exists yet), so that identical content always strips to identical bytes regardless of when it was last re-zipped.
 
@@ -1283,37 +1322,51 @@ A batch manifest (`MjksMapJSON`, backing `MajikSignatureMap`) is a flat list of 
 
 The dominant contributor is `mlDsaSignature` (~6 KB base64) and `signerMlDsaPublicKey` (~3.5 KB base64) — the inherent cost of post-quantum signatures, negligible relative to any real content being signed.
 
+**Representation note:** The JSON examples above describe the logical signature, envelope, and manifest structures. They are not a byte-for-byte description of every serialized representation. Direct CBOR serialization and `.mjksig` version 2 encode the envelope using CBOR; `.mjksig` version 1 and `.mjksmap` version 1 use JSON.
+
 ---
 
 ## Binary Container Formats (MJKSIG / MJKSMAP)
+Two dedicated, versioned, self-identifying binary containers support out-of-band transport and on-disk storage. They are distinct from `serialize()` / `deserialize()`, which provide the SDK's existing Base64 serialization API.
 
-Two dedicated, versioned, self-identifying binary containers exist for out-of-band travel and on-disk storage — distinct from `serialize()`/`deserialize()` (plain base64 of the JSON, no header), which remains for lightweight in-app round-tripping.
+Both containers use the same header layout:
 
-Both share the same header layout: `[magic bytes][1-byte version][1-byte reserved][4-byte big-endian payload length][payload JSON]`.
+`[magic bytes][1-byte version][1-byte reserved][4-byte big-endian payload length][payload]`
 
-| Format                                 | Magic     | Magic Length | Header Length | Media Type                        | Extension  |
-| -------------------------------------- | --------- | ------------ | ------------- | --------------------------------- | ---------- |
-| `.mjksig` — a single detached envelope | `MJKSIG`  | 6 bytes      | 12 bytes      | `application/vnd.majikah.mjksig`  | `.mjksig`  |
-| `.mjksmap` — a batch manifest          | `MJKSMAP` | 7 bytes      | 13 bytes      | `application/vnd.majikah.mjksmap` | `.mjksmap` |
+The payload encoding is selected by the container format and version.
 
-Both formats validate magic bytes, supported version, and declared payload length **before** attempting to parse the JSON payload — a truncated or corrupted buffer fails fast with a clear `MajikSignatureSerializationError` rather than an obscure `JSON.parse` error.
+| Format | Magic | Magic Length | Header Length | Version | Payload Encoding |
+|---|---|---:|---:|---|---|
+| `.mjksig` — detached envelope | `MJKSIG` | 6 bytes | 12 bytes | `1` | Legacy JSON |
+| `.mjksig` — detached envelope | `MJKSIG` | 6 bytes | 12 bytes | `2` | CBOR — current writer format |
+| `.mjksmap` — batch manifest | `MJKSMAP` | 7 bytes | 13 bytes | `1` | JSON — current format |
+
+**MJKSIG compatibility:** Newly generated `.mjksig` containers use version 2 with a CBOR payload. The reader supports both version 2 CBOR and version 1 JSON, allowing older detached-envelope files to remain usable.
+
+**MJKSMAP compatibility:** `.mjksmap` continues to use version 1 with a JSON payload. The MJKSIG CBOR migration does not mean that MJKSMAP has migrated to CBOR.
+
+The parser validates the magic bytes, supported version, and declared payload length before dispatching to the appropriate payload decoder. Depending on the format and version, that decoder parses CBOR or JSON. Truncated, corrupted, or unsupported containers fail with a typed `MajikSignatureSerializationError` rather than relying on an unhandled parsing exception.
+
+### Usage
 
 ```typescript
-// MJKSIG
-const bytes = envelope.toMJKSIGBytes();     // sync Uint8Array — Node scripts, direct fs writes
-const blob = envelope.toMJKSIG();           // Blob — browser downloads, zip packaging
-const restored = await MajikSignatureEnvelope.fromMJKSIG(blob); // accepts Blob or Uint8Array
-const isMjksig = await MajikSignatureEnvelope.isMJKSIG(blob);   // cheap magic-byte sniff, no parse
+// MJKSIG — new containers use version 2 / CBOR
+const bytes = envelope.toMJKSIGBytes(); // Uint8Array
+const blob = envelope.toMJKSIG();        // Blob
+
+const restored = await MajikSignatureEnvelope.fromMJKSIG(blob);
+const isMjksig = await MajikSignatureEnvelope.isMJKSIG(blob);
 const version = await MajikSignatureEnvelope.getMJKSIGVersion(blob);
 
-// MJKSMAP
+// MJKSMAP — remains version 1 / JSON
 const mapBytes = map.toMJKSMAPBytes();
 const mapBlob = map.toMJKSMAP();
+
 const restoredMap = await MajikSignatureMap.fromMJKSMAP(mapBlob);
 const isMjksmap = await MajikSignatureMap.isMJKSMAP(mapBlob);
 ```
 
-`MajikSignatureEnvelope.from(input)` and `MajikSignatureMap.from(input)` are universal entry points that accept an instance, its plain JSON shape, raw bytes, or a Blob — every method that accepts a detached envelope or map (`verifyFileDetached()`, `signFileDetached()`'s `existingEnvelope` option, `verifyFilesFromMjksMap()`, etc.) normalizes through these internally, so callers don't need to know or care which shape they currently have on hand.
+`MajikSignatureEnvelope.from(input)` and `MajikSignatureMap.from(input)` remain convenient entry points for normalizing their supported input shapes. Use the MJKSIG methods when you need the full versioned container, rather than raw CBOR bytes or a JSON/Base64 representation.
 
 ---
 
@@ -1326,7 +1379,7 @@ Majik Signature throws a typed error hierarchy rather than generic `Error` objec
 | `MajikSignatureError`              | Base class; also thrown for general/unexpected failures (e.g. signing a sealed envelope, missing envelope on seal/anchor)                                                                      |
 | `MajikSignatureKeyError`           | The key is locked, lacks signing keys, or isn't the required issuer                                                                                                                            |
 | `MajikSignatureVerificationError`  | Verification fails unexpectedly (not the same as `valid: false`), including a failed TSA signature check                                                                                       |
-| `MajikSignatureSerializationError` | JSON/base64/MJKSIG/MJKSMAP parsing or encoding fails, including malformed binary headers                                                                                                       |
+| `MajikSignatureSerializationError` | JSON, Base64, CBOR, MJKSIG, or MJKSMAP parsing and encoding fails, including malformed container headers, unsupported versions, and invalid payload lengths.                                                                                                |
 | `MajikSignatureAllowlistError`     | A non-listed signer attempts to sign a restricted file                                                                                                                                         |
 | `MajikSignatureValidationError`    | A structural shape check fails — malformed envelope, malformed batch manifest entry, empty/duplicate batch paths, empty allowlist, mismatched seal fields, invalid `expectedOrder` input, etc. |
 
