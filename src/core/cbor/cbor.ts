@@ -23,11 +23,25 @@ export function encodeCBOR(value: unknown): Uint8Array {
  *
  * Structural and application-specific validation belongs to the caller.
  */
-export function decodeCBOR(input: Uint8Array | ArrayBuffer): unknown {
-  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+
+export function decodeCBOR(
+  input: Uint8Array | ArrayBuffer,
+): unknown {
+  const bytes =
+    input instanceof Uint8Array
+      ? input
+      : new Uint8Array(input);
 
   if (bytes.length === 0) {
     throw new TypeError("CBOR input must not be empty");
+  }
+
+  // CBOR break (0xff) cannot appear as a standalone top-level item.
+  // Reject it before passing the input to a potentially permissive decoder.
+  if (bytes[0] === 0xff) {
+    throw new TypeError(
+      "Malformed CBOR: break code cannot appear at the top level",
+    );
   }
 
   return decode(bytes);

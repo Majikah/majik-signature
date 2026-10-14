@@ -91,7 +91,7 @@ const secureFill = Uint8Array.prototype.fill;
  *
  * Signature envelope (MajikSignatureJSON):
  *   - Ed25519 signature    (64 bytes, classical)
- *   - ML-DSA-87 signature  (4595 bytes, post-quantum)
+ *   - ML-DSA-87 signature  (4627 bytes, post-quantum)
  *   - Both cover the same canonical payload (domain + JSON metadata)
  *   - Verification requires BOTH to pass — hybrid security
  *
@@ -596,10 +596,12 @@ export class MajikSignature {
       signerEdPublicKey: this._signerEdPublicKey,
       signerMlDsaPublicKey: this._signerMlDsaPublicKey,
       contentHash: this._contentHash,
-      contentType: this._contentType,
       timestamp: this._timestamp,
       edSignature: this._edSignature,
       mlDsaSignature: this._mlDsaSignature,
+      ...(this._contentType !== undefined
+        ? { contentType: this._contentType }
+        : {}),
       ...(this._allowlistHash !== undefined
         ? { allowlistHash: this._allowlistHash }
         : {}),

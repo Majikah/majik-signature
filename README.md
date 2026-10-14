@@ -182,7 +182,7 @@ flowchart TD
 Every Majik Signature is produced by **two independent signing algorithms** over the same canonical payload:
 
 - **Ed25519** — classical elliptic curve signature (128-bit security, 64-byte signature)
-- **ML-DSA-87 (FIPS-204)** — post-quantum lattice-based signature (NIST Category 5, ~4595-byte signature)
+- **ML-DSA-87 (FIPS-204)** — post-quantum lattice-based signature (NIST Category 5, ~4627-byte signature)
 
 Verification requires **both** to pass. This means:
 - A classical attacker breaking Ed25519 still cannot forge the ML-DSA-87 signature.
@@ -1228,7 +1228,7 @@ A single signer's envelope (`MajikSignatureJSON`):
   "contentType": "audio/wav",
   "timestamp": "2026-01-01T00:00:00.000Z",
   "edSignature": "base64-ed25519-signature-64-bytes",
-  "mlDsaSignature": "base64-ml-dsa-87-signature-4595-bytes",
+  "mlDsaSignature": "base64-ml-dsa-87-signature-4627-bytes",
   "allowlistHash": "base64-sha256-of-allowlist-44-chars",
   "validUntil": "2027-01-01T00:00:00.000Z",
   "versionChainHash": "base64-sha256-of-version-chain-44-chars",

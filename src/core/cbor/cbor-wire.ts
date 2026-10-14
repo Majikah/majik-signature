@@ -301,7 +301,7 @@ export function signatureToCBOR(
     mlDsaSignature: bytesFromBase64(
       signature.mlDsaSignature,
       "mlDsaSignature",
-      4595,
+      4627,
     ),
     ...(signature.allowlistHash !== undefined
       ? {
@@ -369,7 +369,7 @@ export function signatureFromCBOR(
     ...(contentType !== undefined ? { contentType } : {}),
     timestamp: requiredString(obj.timestamp, "timestamp"),
     edSignature: base64FromBytes(obj.edSignature, "edSignature", 64),
-    mlDsaSignature: base64FromBytes(obj.mlDsaSignature, "mlDsaSignature", 4595),
+    mlDsaSignature: base64FromBytes(obj.mlDsaSignature, "mlDsaSignature", 4627),
     ...(allowlistHash !== undefined ? { allowlistHash } : {}),
     ...(validUntil !== undefined ? { validUntil } : {}),
     ...(versionChainHash !== undefined ? { versionChainHash } : {}),

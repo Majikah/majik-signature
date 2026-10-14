@@ -13,7 +13,9 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import {
   MAJIK_ENVELOPE_VERSION,
   MAJIK_SEAL_DOMAIN,
+  MJKSIG_CBOR_VERSION,
   MJKSIG_HEADER_LEN,
+  MJKSIG_JSON_VERSION,
   MJKSIG_MAGIC,
   MJKSIG_MAGIC_LEN,
   MJKSIG_MEDIA_TYPE,
@@ -1304,22 +1306,60 @@ export class MajikSignatureEnvelope {
    * workflows where wrapping the result in a `Blob` would add unnecessary
    * overhead.
    */
+
+  /**
+   * Encode this envelope as a version-2 MJKSIG container.
+   *
+   * Version 2 stores the envelope as CBOR with native byte strings for
+   * cryptographic fields. The header layout remains:
+   *
+   * [magic][container version][reserved][payload length: uint32 BE][payload]
+   *
+   * @returns A self-describing MJKSIG byte sequence.
+   * @throws MajikSignatureSerializationError when encoding fails or the payload
+   * cannot fit in the 32-bit container length field.
+   */
   toMJKSIGBytes(): Uint8Array {
-    const payloadJson = new TextEncoder().encode(JSON.stringify(this.toJSON()));
-    const out = new Uint8Array(MJKSIG_HEADER_LEN + payloadJson.length);
+    try {
+      // New containers use CBOR, not JSON.
+      const payload = this.toCBOR();
 
-    out.set(MJKSIG_MAGIC, 0);
-    out[MJKSIG_MAGIC_LEN] = MJKSIG_VERSION;
-    out[MJKSIG_MAGIC_LEN + 1] = 0x00; // reserved — always 0 in v1
+      if (payload.byteLength === 0) {
+        throw new TypeError("MJKSIG payload must not be empty");
+      }
 
-    const lenOffset = MJKSIG_MAGIC_LEN + 2;
-    out[lenOffset] = (payloadJson.length >>> 24) & 0xff;
-    out[lenOffset + 1] = (payloadJson.length >>> 16) & 0xff;
-    out[lenOffset + 2] = (payloadJson.length >>> 8) & 0xff;
-    out[lenOffset + 3] = payloadJson.length & 0xff;
+      if (payload.byteLength > 0xffff_ffff) {
+        throw new RangeError(
+          "MJKSIG payload exceeds the maximum 32-bit container length",
+        );
+      }
 
-    out.set(payloadJson, MJKSIG_HEADER_LEN);
-    return out;
+      const out = new Uint8Array(MJKSIG_HEADER_LEN + payload.byteLength);
+
+      // Preserve the existing magic bytes and header layout.
+      out.set(MJKSIG_MAGIC, 0);
+      out[MJKSIG_MAGIC_LEN] = MJKSIG_VERSION; // v2 = CBOR
+      out[MJKSIG_MAGIC_LEN + 1] = 0x00; // reserved
+
+      const lenOffset = MJKSIG_MAGIC_LEN + 2;
+
+      // Explicit big-endian uint32, matching the existing format.
+      const view = new DataView(out.buffer, out.byteOffset, out.byteLength);
+      view.setUint32(lenOffset, payload.byteLength, false);
+
+      out.set(payload, MJKSIG_HEADER_LEN);
+
+      return out;
+    } catch (err) {
+      if (err instanceof MajikSignatureError) {
+        throw err;
+      }
+
+      throw new MajikSignatureSerializationError(
+        "Failed to serialize envelope as MJKSIG v2 CBOR",
+        err,
+      );
+    }
   }
 
   /**
@@ -1379,15 +1419,22 @@ export class MajikSignatureEnvelope {
     return MajikSignatureEnvelope.#parseMJKSIGBytes(raw);
   }
 
-  /** Core MJKSIG byte parser — shared by fromMJKSIG() after Blob resolution. */
+  /**
+   * Parse a versioned MJKSIG container.
+   *
+   * v1 payloads are decoded as JSON.
+   * v2 payloads are decoded as CBOR.
+   *
+   * Both formats normalize into the same validated envelope class.
+   */
   static #parseMJKSIGBytes(raw: Uint8Array): MajikSignatureEnvelope {
     if (raw.length < MJKSIG_HEADER_LEN + 1) {
-      // +1 == at least one byte of payload JSON
       throw new MajikSignatureSerializationError(
-        "Malformed MJKSIG: too short to contain a valid header",
+        "Malformed MJKSIG: too short to contain a valid header and payload",
       );
     }
 
+    // 1. Validate magic bytes.
     for (let i = 0; i < MJKSIG_MAGIC_LEN; i++) {
       if (raw[i] !== MJKSIG_MAGIC[i]) {
         throw new MajikSignatureSerializationError(
@@ -1396,21 +1443,32 @@ export class MajikSignatureEnvelope {
       }
     }
 
+    // 2. Select the payload decoder using the container version.
     const version = raw[MJKSIG_MAGIC_LEN];
+
     if (!(MJKSIG_SUPPORTED_VERSIONS as readonly number[]).includes(version)) {
       throw new MajikSignatureSerializationError(
-        `Unsupported MJKSIG version: ${version} (supported: ${MJKSIG_SUPPORTED_VERSIONS.join(", ")})`,
+        `Unsupported MJKSIG version: ${version} ` +
+          `(supported: ${MJKSIG_SUPPORTED_VERSIONS.join(", ")})`,
       );
     }
 
-    const lenOffset = MJKSIG_MAGIC_LEN + 2;
-    const payloadLen =
-      (raw[lenOffset] << 24) |
-      (raw[lenOffset + 1] << 16) |
-      (raw[lenOffset + 2] << 8) |
-      raw[lenOffset + 3];
+    // 3. Reserved byte must remain zero.
+    const reserved = raw[MJKSIG_MAGIC_LEN + 1];
 
-    if (payloadLen <= 0) {
+    if (reserved !== 0x00) {
+      throw new MajikSignatureSerializationError(
+        `Malformed MJKSIG: reserved byte must be 0x00, got 0x${reserved.toString(16).padStart(2, "0")}`,
+      );
+    }
+
+    // 4. Read the unsigned big-endian 32-bit payload length.
+    const lenOffset = MJKSIG_MAGIC_LEN + 2;
+    const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+
+    const payloadLen = view.getUint32(lenOffset, false);
+
+    if (payloadLen === 0) {
       throw new MajikSignatureSerializationError(
         "Malformed MJKSIG: invalid payload length",
       );
@@ -1418,16 +1476,57 @@ export class MajikSignatureEnvelope {
 
     const payloadStart = MJKSIG_HEADER_LEN;
     const payloadEnd = payloadStart + payloadLen;
+
     if (payloadEnd > raw.length) {
       throw new MajikSignatureSerializationError(
         "Malformed MJKSIG: declared payload length exceeds buffer",
       );
     }
 
-    const json = new TextDecoder().decode(raw.slice(payloadStart, payloadEnd));
-    // fromJSON() runs full #validateShape() — MJKSIG framing validity does
-    // NOT imply envelope validity, so this is not a redundant check.
-    return MajikSignatureEnvelope.fromJSON(json);
+    // Require exactly one complete container. Reject trailing bytes rather
+    // than silently accepting ambiguous or concatenated payloads.
+    if (payloadEnd !== raw.length) {
+      throw new MajikSignatureSerializationError(
+        "Malformed MJKSIG: unexpected trailing bytes after declared payload",
+      );
+    }
+
+    const payload = raw.subarray(payloadStart, payloadEnd);
+
+    // 5. Decode according to the versioned container format.
+    switch (version) {
+      case MJKSIG_JSON_VERSION: {
+        // Legacy v1: UTF-8 JSON.
+        let json: string;
+
+        try {
+          json = new TextDecoder("utf-8", { fatal: true }).decode(payload);
+        } catch (err) {
+          throw new MajikSignatureSerializationError(
+            "Malformed MJKSIG v1: payload is not valid UTF-8",
+            err,
+          );
+        }
+
+        // fromJSON performs the normal legacy promotion and validation.
+        return MajikSignatureEnvelope.fromJSON(json);
+      }
+
+      case MJKSIG_CBOR_VERSION: {
+        // Current v2: CBOR-native byte strings.
+        // fromCBOR converts the CBOR wire schema back to the existing JSON
+        // model, then invokes fromJSON for normal envelope validation.
+        return MajikSignatureEnvelope.fromCBOR(payload);
+      }
+
+      default: {
+        // Defensive guard if a future supported version is added but its
+        // payload decoder has not yet been implemented.
+        throw new MajikSignatureSerializationError(
+          `Unsupported MJKSIG payload encoding for version ${version}`,
+        );
+      }
+    }
   }
 
   /**
