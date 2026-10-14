@@ -67,6 +67,7 @@
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build",
     "package": "npm run build && npm version patch && git push && git push --tags",
+    "benchmark:serialization": "npx vite-node test/benchmark/serialization.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:office": "vitest run  test/office-hardening.test.ts",
