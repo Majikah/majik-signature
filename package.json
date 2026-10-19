@@ -63,6 +63,7 @@
     "url": "https://github.com/Majikah/majik-signature/issues"
   },
   "scripts": {
+    "update:dev": "npm i -D @types/node@latest vitest@latest",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build",
