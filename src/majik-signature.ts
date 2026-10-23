@@ -841,6 +841,8 @@ export class MajikSignature {
       validUntil?: string;
       existingEnvelope?: EnvelopeInput;
       tsa?: MajikTimestamp;
+      priorFile?: FileLike;
+      message?: string;
     },
   ): ReturnType<typeof MajikSignatureEmbed.signDetached<MajikSignature>> {
     return MajikSignatureEmbed.signDetached<MajikSignature>(
@@ -1085,6 +1087,19 @@ export class MajikSignature {
     return MajikSignatureEmbed.verifyFileRevisions(
       finalFile,
       revisions,
+      MajikSignature,
+      options,
+    );
+  }
+
+  static async verifyFileDetachedChain(
+    file: FileLike,
+    envelope: EnvelopeInput,
+    options?: { mimeType?: string; now?: Date },
+  ): Promise<FileChainVerification> {
+    return MajikSignatureEmbed.verifyDetachedChain(
+      file,
+      envelope,
       MajikSignature,
       options,
     );
