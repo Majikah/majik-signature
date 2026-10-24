@@ -1704,6 +1704,145 @@ export class MajikSignatureEmbed {
       (r): r is { stripped: Uint8Array; contentHash: string } => r !== null,
     );
 
+    return MajikSignatureEmbed._checkRevisionSet(
+      envelope,
+      normalized,
+      MajikSig,
+      options,
+    );
+  }
+
+  /**
+   * Tier-2 revision-set verification for a DETACHED envelope (.mjksig sidecar).
+   *
+   * @remarks
+   * Detached counterpart of `verifyFileRevisions`. The supplied files are clean
+   * (no embedded envelope) — each is the bytes one signer produced, as returned
+   * by `signDetached().blob`. They are matched to `fileVersions[].contentHash`
+   * and checked against the sidecar's signatures. The final file is included
+   * automatically.
+   *
+   * @throws `MajikSignatureError` when the envelope has no fileVersions, fails
+   * allowlist/chain integrity, or the final file isn't in clean detached form.
+   */
+  static async verifyDetachedRevisions(
+    finalFile: FileLike,
+    revisions: FileLike[],
+    envelopeInput: EnvelopeInput,
+    MajikSig: MajikSignatureStaticAdapter,
+    options?: ExtractOptions & {
+      now?: Date;
+      resolvePublicKeys?: (
+        signerId: string,
+      ) => MajikSignerPublicKeys | Promise<MajikSignerPublicKeys>;
+    },
+  ): Promise<RevisionSetVerification> {
+    const envelope = await MajikSignatureEnvelope.from(envelopeInput);
+
+    if (envelope.fileVersions.length === 0) {
+      throw new MajikSignatureError(
+        "This envelope has no fileVersions chain to verify against.",
+      );
+    }
+
+    const allowlistIntegrity = envelope.verifyAllowlistIntegrity();
+    if (!allowlistIntegrity.valid) {
+      throw new MajikSignatureError(
+        `Envelope allowlist integrity failed: ${allowlistIntegrity.reason}`,
+      );
+    }
+    const chainIntegrity = envelope.verifyVersionChainIntegrity();
+    if (!chainIntegrity.valid) {
+      throw new MajikSignatureError(
+        `Envelope version chain integrity failed: ${chainIntegrity.reason}`,
+      );
+    }
+
+    const inputs = [...revisions, finalFile];
+    const normalized = (
+      await Promise.all(
+        inputs.map(async (input, idx) => {
+          const isFinal = idx === inputs.length - 1;
+          const blob = normalizeToBlob(await normalizeToBytes(input));
+          const { bytes: rBytes, handler: rHandler } =
+            await MajikSignatureEmbed._prepare(blob, options);
+
+          const prepared = await prepareDetachedBytes(rHandler, rBytes, {
+            validateEnvelope: (r) => void parseEmbeddedEnvelope(r),
+          });
+          if (!prepared.ok) {
+            // A bad supplied revision just stays unmatched; a bad FINAL file is fatal.
+            if (isFinal) throw new MajikSignatureError(prepared.reason);
+            return null;
+          }
+          return {
+            stripped: prepared.original,
+            contentHash: bytesToBase64(hashContent(prepared.original)),
+          };
+        }),
+      )
+    ).filter(
+      (r): r is { stripped: Uint8Array; contentHash: string } => r !== null,
+    );
+
+    return MajikSignatureEmbed._checkRevisionSet(
+      envelope,
+      normalized,
+      MajikSig,
+      options,
+    );
+  }
+
+  static async verifyDetachedChain(
+    file: FileLike,
+    envelopeInput: EnvelopeInput,
+    MajikSig: MajikSignatureStaticAdapter,
+    options?: ExtractOptions & { now?: Date },
+  ): Promise<FileChainVerification> {
+    const { bytes, handler } = await MajikSignatureEmbed._prepare(
+      file,
+      options,
+    );
+    const envelope = await MajikSignatureEnvelope.from(envelopeInput);
+
+    if (envelope.fileVersions.length === 0)
+      throw new MajikSignatureError(
+        "Cannot verify chain — envelope has no fileVersions.",
+      );
+
+    const prepared = await prepareDetachedBytes(handler, bytes, {
+      validateEnvelope: (r) => void parseEmbeddedEnvelope(r),
+    });
+    if (!prepared.ok) throw new MajikSignatureError(prepared.reason);
+
+    const allowlistIntegrity = envelope.verifyAllowlistIntegrity();
+    const chainIntegrity = envelope.verifyVersionChainIntegrity();
+    const { latest, history, ok } =
+      MajikSignatureEmbed._verifyEnvelopeSelfContained(
+        envelope,
+        prepared.original,
+        MajikSig,
+        options?.now,
+      );
+    return {
+      latest,
+      history,
+      chainValid: allowlistIntegrity.valid && chainIntegrity.valid && ok,
+    };
+  }
+
+  private static async _checkRevisionSet(
+    envelope: MajikSignatureEnvelope,
+    normalized: { stripped: Uint8Array; contentHash: string }[],
+    MajikSig: MajikSignatureStaticAdapter,
+    options?: {
+      now?: Date;
+      resolvePublicKeys?: (
+        signerId: string,
+      ) => MajikSignerPublicKeys | Promise<MajikSignerPublicKeys>;
+    },
+  ): Promise<RevisionSetVerification> {
+    const chain = envelope.fileVersions;
     const results: RevisionCheckResult[] = [];
 
     for (let i = 0; i < chain.length; i++) {
@@ -1791,44 +1930,6 @@ export class MajikSignatureEmbed {
         results.every((r) => r.status === "verified"),
       isCompleteSet: results.every((r) => r.status !== "unmatched"),
       results,
-    };
-  }
-
-  static async verifyDetachedChain(
-    file: FileLike,
-    envelopeInput: EnvelopeInput,
-    MajikSig: MajikSignatureStaticAdapter,
-    options?: ExtractOptions & { now?: Date },
-  ): Promise<FileChainVerification> {
-    const { bytes, handler } = await MajikSignatureEmbed._prepare(
-      file,
-      options,
-    );
-    const envelope = await MajikSignatureEnvelope.from(envelopeInput);
-
-    if (envelope.fileVersions.length === 0)
-      throw new MajikSignatureError(
-        "Cannot verify chain — envelope has no fileVersions.",
-      );
-
-    const prepared = await prepareDetachedBytes(handler, bytes, {
-      validateEnvelope: (r) => void parseEmbeddedEnvelope(r),
-    });
-    if (!prepared.ok) throw new MajikSignatureError(prepared.reason);
-
-    const allowlistIntegrity = envelope.verifyAllowlistIntegrity();
-    const chainIntegrity = envelope.verifyVersionChainIntegrity();
-    const { latest, history, ok } =
-      MajikSignatureEmbed._verifyEnvelopeSelfContained(
-        envelope,
-        prepared.original,
-        MajikSig,
-        options?.now,
-      );
-    return {
-      latest,
-      history,
-      chainValid: allowlistIntegrity.valid && chainIntegrity.valid && ok,
     };
   }
 

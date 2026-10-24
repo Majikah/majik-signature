@@ -1092,6 +1092,27 @@ export class MajikSignature {
     );
   }
 
+  static async verifyFileRevisionsDetached(
+    finalFile: FileLike,
+    revisions: FileLike[],
+    envelope: EnvelopeInput,
+    options?: {
+      mimeType?: string;
+      now?: Date;
+      resolvePublicKeys?: (
+        signerId: string,
+      ) => MajikSignerPublicKeys | Promise<MajikSignerPublicKeys>;
+    },
+  ): Promise<RevisionSetVerification> {
+    return MajikSignatureEmbed.verifyDetachedRevisions(
+      finalFile,
+      revisions,
+      envelope,
+      MajikSignature,
+      options,
+    );
+  }
+
   static async verifyFileDetachedChain(
     file: FileLike,
     envelope: EnvelopeInput,
