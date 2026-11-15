@@ -612,6 +612,7 @@ export class MajikSignature {
       now?: Date;
     } = {},
   ): RevisionCommitmentResult {
+    MajikSignatureValidator.validateSignerPublicKeys(publicKeys);
     const env =
       signature instanceof MajikSignature ? signature.toJSON() : signature;
     MajikSignatureValidator.validateJSON(env);
