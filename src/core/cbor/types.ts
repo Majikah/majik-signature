@@ -52,6 +52,9 @@ export interface MajikSignatureCBOR {
   /** Raw SHA-256 revision-chain commitment (32 bytes). */
   versionChainHash?: Uint8Array;
 
+  /** Raw SHA-256 SignRoom session-context commitment (32 bytes). */
+  sessionContextHash?: Uint8Array;
+
   /** Optional TSA record using the CBOR-native representation. */
   tsa?: MajikTimestampCBOR;
 }
@@ -91,6 +94,9 @@ export interface MajikSignatureCompactCBOR {
 
   /** Raw SHA-256 revision-chain commitment (32 bytes). */
   versionChainHash?: Uint8Array;
+
+  /** Raw SHA-256 SignRoom session-context commitment (32 bytes). */
+  sessionContextHash?: Uint8Array;
 }
 
 
@@ -118,6 +124,9 @@ export interface TSADigestCBOR {
 
   /** Raw SHA-256 digest (32 bytes). */
   value: Uint8Array;
+
+  /** Optional digest scope; omitted for legacy content-scope timestamps. */
+  scope?: "content" | "signature";
 }
 
 /**
