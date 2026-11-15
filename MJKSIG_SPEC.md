@@ -219,7 +219,10 @@ interface MajikSignatureJSON {
    * same treatment as allowlistHash/validUntil — absent, never null.
    */
   versionChainHash?: string;
-  
+
+  /** Optional base64 SHA-256 SignRoom session/challenge/policy commitment. */
+  sessionContextHash?: string;
+
   /** Trusted Timestamp Authority metadata and signature */
   tsa?: MajikTimestamp;
 }
