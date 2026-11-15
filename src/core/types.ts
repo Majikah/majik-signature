@@ -182,6 +182,9 @@ export interface MajikSignatureJSON {
    */
   versionChainHash?: string;
 
+  /** Base64 SHA-256 commitment to the SignRoom session, challenge, and policy. */
+  sessionContextHash?: string;
+
   /**
    * Optional Trusted Timestamp Authority attestation for this signature.
    *
@@ -264,16 +267,22 @@ export interface MajikSignatureCompactJSON {
   validUntil?: ISODateString;
   /** Optional signed revision-chain commitment. */
   versionChainHash?: string;
+  /** Optional signed SignRoom session-context commitment. */
+  sessionContextHash?: string;
 }
 
 /**
  * Digest descriptor used by the Trusted Timestamp Authority API.
  */
+export type TSADigestScope = "content" | "signature";
+
 export interface TSADigest {
   /** Hash function used for the digest. */
   algorithm: "SHA-256";
   /** Base64-encoded digest value. */
   value: string;
+  /** Optional scope; omitted retains legacy content-hash timestamp behavior. */
+  scope?: TSADigestScope;
 }
 
 /**
@@ -492,6 +501,9 @@ export interface SignOptions {
    * The expiry is signed as part of the canonical payload.
    */
   validUntil?: string;
+
+  /** Optional SHA-256 commitment to a canonical SignRoom session context. */
+  sessionContextHash?: string;
 }
 
 /**
@@ -519,6 +531,9 @@ export interface VerificationResult {
 
   /** Advisory content type stored in the signature envelope, when present. */
   contentType?: string;
+
+  /** Signed SignRoom session-context commitment, when present. */
+  sessionContextHash?: string;
 
   /**
    * File-format handler that processed the file.
