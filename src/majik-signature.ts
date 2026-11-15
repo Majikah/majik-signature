@@ -414,6 +414,12 @@ export class MajikSignature {
       if (publicKeys.signerId !== env.signerId) {
         return invalid("Signer key fingerprint does not match signature signerId");
       }
+      if (
+        bytesToBase64(publicKeys.edPublicKey) !== env.signerEdPublicKey ||
+        bytesToBase64(publicKeys.mlDsaPublicKey) !== env.signerMlDsaPublicKey
+      ) {
+        return invalid("Supplied signer public keys do not match the signature record");
+      }
 
       const recomputedHash = bytesToBase64(hashContent(content));
       if (recomputedHash !== env.contentHash) return invalid();
@@ -511,6 +517,12 @@ export class MajikSignature {
 
       if (publicKeys.signerId !== env.signerId) {
         return invalid("Signer key fingerprint does not match signature signerId");
+      }
+      if (
+        bytesToBase64(publicKeys.edPublicKey) !== env.signerEdPublicKey ||
+        bytesToBase64(publicKeys.mlDsaPublicKey) !== env.signerMlDsaPublicKey
+      ) {
+        return invalid("Supplied signer public keys do not match the signature record");
       }
 
       const payload = buildSigningPayload({
@@ -650,6 +662,8 @@ export class MajikSignature {
       if (env.sessionContextHash !== options.expectedSessionContextHash) {
         return invalid("Signature session context does not match the expected session");
       }
+    } else if (env.sessionContextHash !== undefined) {
+      return invalid("Expected session context hash is required for session-bound signatures");
     }
 
     if (publicKeys.signerId !== env.signerId) {
