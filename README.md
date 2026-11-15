@@ -90,12 +90,14 @@ Beyond signing raw bytes, Majik Signature can **embed signatures directly into a
       - [`MajikSignature.getSealInfo(file, options?)`](#majiksignaturegetsealinfofile-options)
       - [`MajikSignature.isSealed(file, options?)`](#majiksignatureissealedfile-options)
     - [Trusted Timestamps API](#trusted-timestamps-api)
-    - [SignRoom Session-Bound Signing](#signroom-session-bound-signing)
       - [`signature.buildTSARequestPayload()`](#signaturebuildtsarequestpayload)
       - [`MajikSignature.signTSA(request, key, tsa, options?)`](#majiksignaturesigntsarequest-key-tsa-options)
       - [`signature.addTSA(timestamp)`](#signatureaddtsatimestamp)
       - [`signature.verifyTSA()`](#signatureverifytsa)
       - [`signature.hasTSA`](#signaturehastsa)
+    - [SignRoom Session-Bound Signing](#signroom-session-bound-signing)
+      - [`buildSessionContextHash(context)`](#buildsessioncontexthashcontext)
+      - [`MajikSignature.verifyDigest(hash, signature, publicKeys, options?)`](#majiksignatureverifydigesthash-signature-publickeys-options)
     - [Batch Signing \& MajikSignatureMap API](#batch-signing--majiksignaturemap-api)
       - [`MajikSignature.signBatchDetached(files, key, options?)`](#majiksignaturesignbatchdetachedfiles-key-options)
       - [`MajikSignature.verifyFilesFromMjksMap(map, files, publicKeys, options?)`](#majiksignatureverifyfilesfrommjksmapmap-files-publickeys-options)
@@ -984,16 +986,16 @@ Structural check only. **Returns:** `Promise<boolean>`
 
 ### Trusted Timestamps API
 
-#### `signature.buildTSARequestPayload(scope?)`
+#### `signature.buildTSARequestPayload()`
 Builds a `MajikTSARequest` from an existing signature. The default `content` scope retains legacy behavior; the `signature` scope hashes the canonical unsigned signer record, including both hybrid signatures and signed metadata, while excluding the TSA property itself.
 
 #### `MajikSignature.signTSA(request, key, tsa, options?)`
 **Server-side.** Signs a TSA payload and returns a complete `MajikTimestamp`, including a server-generated nonce and timestamp.
 
-#### `signature.addTSA(timestamp, expectedTsaFingerprint?)`
+#### `signature.addTSA(timestamp)`
 Attaches and validates a `MajikTimestamp` on an existing signature instance. Signature-scoped timestamps are checked against the canonical unsigned signature record. When supplied, `expectedTsaFingerprint` pins the attestation to the trusted TSA key. A TSA, once attached, cannot be replaced.
 
-#### `signature.verifyTSA(expectedTsaFingerprint?)`
+#### `signature.verifyTSA()`
 Re-verifies the attached TSA's digest and hybrid signature. Supply the trusted TSA fingerprint to pin verification to the configured TSA identity.
 
 #### `signature.hasTSA`
