@@ -251,7 +251,7 @@ describe("SignRoom session-bound signature foundation", () => {
     expect(restored.toJSON().tsa?.payload.digest.scope).toBe("signature");
     expect(restored.verifyTSA(MajikSignature.publicKeysFromMajikKey(tsaKey)).valid).toBe(true);
     expect(() => restored.verifyTSA(MajikSignature.publicKeysFromMajikKey(signerKey))).toThrow(
-      /trusted TSA identity/i,
+      /TSA identity does not match the trusted TSA public-key fingerprint/i,
     );
   });
 
