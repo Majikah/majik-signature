@@ -240,17 +240,17 @@ describe("SignRoom session-bound signature foundation", () => {
       id: "tsa.majikah.solutions",
       signerFingerprint: tsaKey.fingerprint,
     });
-    signature.addTSA(timestamp, tsaKey.fingerprint);
+    signature.addTSA(timestamp, MajikSignature.publicKeysFromMajikKey(tsaKey));
 
     expect(signature.hasTSA).toBe(true);
-    expect(signature.verifyTSA(tsaKey.fingerprint).valid).toBe(true);
+    expect(signature.verifyTSA(MajikSignature.publicKeysFromMajikKey(tsaKey)).valid).toBe(true);
     expect(signature.toJSON().tsa?.payload.digest.scope).toBe("signature");
 
     const restored = MajikSignature.fromCBOR(signature.toCBOR());
     expect(restored.sessionContextHash).toBe(sessionContextHash);
     expect(restored.toJSON().tsa?.payload.digest.scope).toBe("signature");
-    expect(restored.verifyTSA(tsaKey.fingerprint).valid).toBe(true);
-    expect(() => restored.verifyTSA("different-tsa-fingerprint")).toThrow(
+    expect(restored.verifyTSA(MajikSignature.publicKeysFromMajikKey(tsaKey)).valid).toBe(true);
+    expect(() => restored.verifyTSA(MajikSignature.publicKeysFromMajikKey(signerKey))).toThrow(
       /trusted TSA identity/i,
     );
   });
@@ -280,9 +280,9 @@ describe("SignRoom session-bound signature foundation", () => {
         signerFingerprint: tsaKey.fingerprint,
       },
     );
-    signatureA.addTSA(tokenA, tsaKey.fingerprint);
+    signatureA.addTSA(tokenA, MajikSignature.publicKeysFromMajikKey(tsaKey));
 
-    expect(() => signatureB.addTSA(tokenA, tsaKey.fingerprint)).toThrow(
+    expect(() => signatureB.addTSA(tokenA, MajikSignature.publicKeysFromMajikKey(tsaKey))).toThrow(
       /TSA digest does not match the canonical signature record/i,
     );
   });
@@ -298,7 +298,7 @@ describe("SignRoom session-bound signature foundation", () => {
       },
     );
 
-    expect(() => signature.addTSA(token, "untrusted-fingerprint")).toThrow(
+    expect(() => signature.addTSA(token, MajikSignature.publicKeysFromMajikKey(signerKey))).toThrow(
       /trusted TSA identity/i,
     );
     expect(signature.hasTSA).toBe(false);
