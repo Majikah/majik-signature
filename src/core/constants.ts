@@ -20,6 +20,10 @@ export const MAJIK_ENVELOPE_VERSION = 1 as const;
  */
 export const MAJIK_SIGNATURE_DOMAIN = "majik-signature-v1:" as const;
 
+/** Domain separator for TSA digests over unsigned signature records. */
+export const MAJIK_SIGNATURE_ATTESTATION_DOMAIN =
+  "majik-signature-attestation-v1:" as const;
+
 /**
  * Domain separator for the seal hash payload.
  * Distinct from MAJIK_SIGNATURE_DOMAIN to prevent cross-protocol reuse.
