@@ -993,10 +993,10 @@ Builds a `MajikTSARequest` from an existing signature. The default `content` sco
 **Server-side.** Signs a TSA payload and returns a complete `MajikTimestamp`, including a server-generated nonce and timestamp.
 
 #### `signature.addTSA(timestamp)`
-Attaches and validates a `MajikTimestamp` on an existing signature instance. Signature-scoped timestamps are checked against the canonical unsigned signature record. When supplied, `expectedTsaFingerprint` pins the attestation to the trusted TSA key. A TSA, once attached, cannot be replaced.
+Attaches and validates a `MajikTimestamp` on an existing signature instance. Signature-scoped timestamps are checked against the canonical unsigned signature record. When supplied, `trustedTsaPublicKeys` validates the attestation against the authoritative TSA signer identity and both public keys. A TSA, once attached, cannot be replaced.
 
 #### `signature.verifyTSA()`
-Re-verifies the attached TSA's digest and hybrid signature. Supply the trusted TSA fingerprint to pin verification to the configured TSA identity.
+Re-verifies the attached TSA's digest and hybrid signature. Supply `MajikSignature.publicKeysFromMajikKey(trustedTsaKey)` to pin verification to the authoritative TSA public keys.
 
 #### `signature.hasTSA`
 `boolean` getter.
@@ -1045,10 +1045,10 @@ const timestamp = await MajikSignature.signTSA(request, tsaKey, {
   id: "tsa.majikah.solutions",
   signerFingerprint: tsaKey.fingerprint,
 });
-signature.addTSA(timestamp, tsaKey.fingerprint);
+signature.addTSA(timestamp, MajikSignature.publicKeysFromMajikKey(tsaKey));
 ```
 
-Signature-scoped TSA digests are domain-separated and exclude the TSA field to avoid circular hashing. Legacy content-scoped timestamps remain valid and backward-compatible. In SignRoom, the API should verify the user signature first, generate the TSA token server-side, pin it to the trusted TSA fingerprint, attach it, and persist the timestamped envelope. TSA issuance and billing policy belong to the application service, not this library.
+Signature-scoped TSA digests are domain-separated and exclude the TSA field to avoid circular hashing. Legacy content-scoped timestamps remain valid and backward-compatible. In SignRoom, the API should verify the user signature first, generate the TSA token server-side, verify it against the trusted TSA public keys, attach it, and persist the timestamped envelope. TSA issuance and billing policy belong to the application service, not this library.
 
 ### Batch Signing & MajikSignatureMap API
 
