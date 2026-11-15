@@ -287,7 +287,7 @@ describe("SignRoom session-bound signature foundation", () => {
     );
   });
 
-  it("rejects an untrusted TSA fingerprint when attaching an otherwise valid token", async () => {
+  it("rejects an untrusted TSA key when attaching an otherwise valid token", async () => {
     const signature = await MajikSignature.sign(CONTENT, issuerKey);
     const token = await MajikSignature.signTSA(
       signature.buildTSARequestPayload("signature"),
@@ -299,7 +299,7 @@ describe("SignRoom session-bound signature foundation", () => {
     );
 
     expect(() => signature.addTSA(token, MajikSignature.publicKeysFromMajikKey(signerKey))).toThrow(
-      /trusted TSA identity/i,
+      /TSA identity does not match the trusted TSA public-key fingerprint/i,
     );
     expect(signature.hasTSA).toBe(false);
   });
