@@ -217,6 +217,9 @@ function timestampToCBOR(
           "tsa.payload.digest.value",
           32,
         ),
+        ...(tsa.payload.digest.scope !== undefined
+          ? { scope: tsa.payload.digest.scope }
+          : {}),
       },
       nonce: bytesFromBase64(tsa.payload.nonce, "tsa.payload.nonce", 32),
       timestamp: tsa.payload.timestamp,
@@ -246,6 +249,10 @@ function timestampFromCBOR(input: unknown, depth: number): MajikTimestamp {
   if (digest.algorithm !== "SHA-256") {
     throw new TypeError("tsa.payload.digest.algorithm must be SHA-256");
   }
+  const digestScope = optionalString(digest.scope, "tsa.payload.digest.scope");
+  if (digestScope !== undefined && digestScope !== "content" && digestScope !== "signature") {
+    throw new TypeError("tsa.payload.digest.scope must be content or signature");
+  }
 
   return {
     version: 1,
@@ -254,6 +261,7 @@ function timestampFromCBOR(input: unknown, depth: number): MajikTimestamp {
       digest: {
         algorithm: "SHA-256",
         value: base64FromBytes(digest.value, "tsa.payload.digest.value", 32),
+        ...(digestScope !== undefined ? { scope: digestScope } : {}),
       },
       nonce: base64FromBytes(payload.nonce, "tsa.payload.nonce", 32),
       timestamp: requiredString(payload.timestamp, "tsa.payload.timestamp"),
@@ -324,6 +332,15 @@ export function signatureToCBOR(
           ),
         }
       : {}),
+    ...(signature.sessionContextHash !== undefined
+      ? {
+          sessionContextHash: bytesFromBase64(
+            signature.sessionContextHash,
+            "sessionContextHash",
+            32,
+          ),
+        }
+      : {}),
     ...(signature.tsa !== undefined
       ? { tsa: timestampToCBOR(signature.tsa, depth + 1) }
       : {}),
@@ -351,6 +368,10 @@ export function signatureFromCBOR(
     obj.versionChainHash === undefined
       ? undefined
       : base64FromBytes(obj.versionChainHash, "versionChainHash", 32);
+  const sessionContextHash =
+    obj.sessionContextHash === undefined
+      ? undefined
+      : base64FromBytes(obj.sessionContextHash, "sessionContextHash", 32);
 
   return {
     version: 1,
@@ -373,6 +394,7 @@ export function signatureFromCBOR(
     ...(allowlistHash !== undefined ? { allowlistHash } : {}),
     ...(validUntil !== undefined ? { validUntil } : {}),
     ...(versionChainHash !== undefined ? { versionChainHash } : {}),
+    ...(sessionContextHash !== undefined ? { sessionContextHash } : {}),
     ...(obj.tsa !== undefined
       ? { tsa: timestampFromCBOR(obj.tsa, depth + 1) }
       : {}),

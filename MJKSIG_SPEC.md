@@ -34,7 +34,7 @@ Both algorithms sign the exact same **canonical payload** bytes. Verification re
 The canonical signing payload is constructed deterministically to ensure byte-for-byte identical inputs during both signing and verification.
 
 **Format:**
-`"majik-signature-v1:" + JSON.stringify({ v, id, ts, ct, hash[, alh][, vu][, vch] })`
+`"majik-signature-v1:" + JSON.stringify({ v, id, ts, ct, hash[, alh][, vu][, vch][, sch] })`
 
 Where:
 *   `v`: Envelope version (integer, `1`).
@@ -44,13 +44,39 @@ Where:
 *   `hash`: SHA-256 hash of the original detached file's content, base64 encoded.
 *   `alh`: SHA-256 hash of the canonical allowlist JSON, base64 encoded. This key is completely omitted (not set to `null`) if an allowlist is not established, preserving backward compatibility.
 *   `vu`:  Optional ISO 8601 expiry. When present, verify() treats the signature as invalid once the current time is past this value. Absent = never expires (matches all pre-existing signatures — fully backward compatible). Covered by the canonical signing payload when present, so it cannot be stripped or extended post-hoc without breaking both signatures.
-*   `vch`: Optional SHA-256 hash of the `fileVersions` revision chain, base64 encoded, as it stood when this signer signed (including their own new entry). Present only on files using file versioning (see §2.4). Omitted entirely, never `null`, on any signature that predates or doesn't use this feature — preserves the same backward-compatibility guarantee as `alh`/`vu`.
+*   `vch`: Optional SHA-256 hash of the `fileVersions` revision chain, base64 encoded, as it stood when this signer signed (including their own new entry). Present only on files using file versioning (see §2.5). Omitted entirely, never `null`, on any signature that predates or doesn't use this feature — preserves the same backward-compatibility guarantee as `alh`/`vu`.
+*   `sch`: Optional base64 SHA-256 commitment to canonical SignRoom context containing version `1`, session ID, one-time challenge ID, and immutable policy hash. Omitted for standalone signatures, preserving legacy payload bytes. Produced by `buildSessionContextHash()`.
 
 ### 2.3 Allowlist and Sealing
 *   **Allowlist:** The first signer may optionally restrict future signers by embedding an `ExpectedSigner` array. The establisher commits to this allowlist cryptographically via the `allowlistHash` in their canonical payload.
 *   **Seal:** The issuer (allowlist establisher) can permanently lock the envelope against further signatures. Sealing computes a SHA3-512 hash over the current signatories and a seal timestamp. The seal hash domain prefix is `majik-seal-v1:`. 
   
-### 2.4 File Versioning & Revision Chains
+### 2.4 SignRoom Session Context
+
+SignRoom signatures may include `sessionContextHash` (`sch` in the canonical payload). It is the base64 SHA-256 hash of a domain-separated canonical JSON object:
+
+```json
+{"v":1,"sessionId":"...","challengeId":"...","policyHash":"..."}
+```
+
+The domain prefix is `majik-signature-session-context-v1:`. The policy hash is itself a base64 SHA-256 digest of the immutable session-policy snapshot. The helper `buildSessionContextHash()` validates the supplied identifiers and policy digest before producing the commitment.
+
+Both Ed25519 and ML-DSA-87 sign `sch` as part of the canonical payload. The server must reconstruct the commitment from authoritative session, challenge, and policy data and compare it during verification. This library does not authorize participants, issue challenges, or enforce one-time challenge consumption; those are application responsibilities.
+
+Standalone signatures omit `sch` entirely. This preserves their historical canonical payload bytes.
+
+### 2.4.1 SignRoom Signature-Scoped TSA
+
+A TSA digest may optionally include `scope`:
+
+- Omitted or `content`: legacy behavior; the digest is the signer's document `contentHash`.
+- `signature`: the digest is SHA-256 over `buildSignatureAttestationBytes(signature)`, which uses the domain prefix `majik-signature-attestation-v1:` followed by canonical JSON of the unsigned per-signer record. The record includes the signer identity and public keys, document hash, signature timestamp, both hybrid signature values, and optional signed metadata (`alh`, `vu`, `vch`, `sch`). The TSA property is excluded to prevent a circular commitment.
+
+The TSA payload's `digest.scope`, when present, is included in the TSA's own canonical signed payload. CBOR v2 stores this scope as a text field and preserves its absence for legacy timestamps.
+
+For SignRoom, the API should verify the participant signature first, request a new signature-scoped TSA for that record, and verify the returned timestamp against the authoritative TSA public-key bundle before attaching it. A digest cache must not cause one participant's token to be reused for another signature record.
+
+### 2.5 File Versioning & Revision Chains
 
 MJKSIG supports an append-only revision chain (`fileVersions`) for workflows where a signer visually mutates the document itself (e.g. a drawn signature stamp) before signing — which changes the file's byte content on every hand-off, not just its metadata.
 
@@ -204,7 +230,10 @@ interface MajikSignatureJSON {
    * same treatment as allowlistHash/validUntil — absent, never null.
    */
   versionChainHash?: string;
-  
+
+  /** Optional base64 SHA-256 SignRoom session/challenge/policy commitment. */
+  sessionContextHash?: string;
+
   /** Trusted Timestamp Authority metadata and signature */
   tsa?: MajikTimestamp;
 }
@@ -227,7 +256,7 @@ interface ExpectedSigner {
 
 Version 2 encodes the envelope as a CBOR map using ordinary CBOR maps and byte strings (no CBOR record extensions). Map keys use the field names shown in §§4.1–4.3; nested objects and arrays retain their schema structure.
 
-Binary values represented as Base64 or hexadecimal strings in the logical schema are encoded as native CBOR byte strings in v2. This includes fingerprints, public keys, signatures, content hashes, allowlist hashes, version-chain hashes, and seal hashes. Timestamps, content types, messages, and other textual fields remain CBOR text strings; numeric and boolean values retain their corresponding CBOR types. Optional fields remain absent when not set.
+Binary values represented as Base64 or hexadecimal strings in the logical schema are encoded as native CBOR byte strings in v2. This includes fingerprints, public keys, signatures, content hashes, allowlist hashes, version-chain hashes, session-context hashes, and seal hashes. TSA digest scope is a text field when present. Timestamps, content types, messages, and other textual fields remain CBOR text strings; numeric and boolean values retain their corresponding CBOR types. Optional fields remain absent when not set.
 
 This encoding change affects only container serialization. It does not change the canonical signing payload, signature algorithms, or verification rules in §2. A reader chooses the decoder from the container version byte: v1 JSON or v2 CBOR. Reading legacy v1 containers does not mean older implementations can read v2 containers.
 
@@ -289,7 +318,7 @@ Across all 15 fixture-and-signer-count samples (three fixtures and signer counts
     *   Reconstruct the deterministic canonical byte payload.
     *   Verify the classical `edSignature` against `signerEdPublicKey`.
     *   Verify the post-quantum `mlDsaSignature` against `signerMlDsaPublicKey`.
-6.  **Version Chain Verification (if `fileVersions` is present):** Walk the chain confirming each entry's `previousVersionHash` matches the hash of the prior entry (§2.4.1), then for each signature carrying a `versionChainHash`, recompute the hash of the chain prefix up to and including its corresponding entry and confirm it matches.
+6.  **Version Chain Verification (if `fileVersions` is present):** Walk the chain confirming each entry's `previousVersionHash` matches the hash of the prior entry (§2.5.1), then for each signature carrying a `versionChainHash`, recompute the hash of the chain prefix up to and including its corresponding entry and confirm it matches.
 
 If all checks pass, the detached signature securely correlates to the file.
 

@@ -22,11 +22,12 @@
 
 import { ISODateString, MajikKeyFingerprint } from "@majikah/majik-key";
 import {
+  MAJIK_SIGNATURE_ATTESTATION_DOMAIN,
   MAJIK_SIGNATURE_DOMAIN,
   MAJIK_SIGNATURE_VERSION,
   MAJIK_TSA_DOMAIN,
 } from "./constants.js";
-import { MajikTSAPayload } from "./types.js";
+import type { MajikSignatureJSON, MajikTSAPayload } from "./types.js";
 
 /**
  * Fields used to construct a canonical Majik Signature signing payload.
@@ -117,6 +118,8 @@ export interface PayloadFields {
    * chain metadata.
    */
   versionChainHash?: string;
+  /** Optional SHA-256 commitment to a SignRoom session context. */
+  sessionContextHash?: string;
 }
 
 /**
@@ -173,6 +176,9 @@ export function buildSigningPayload(fields: PayloadFields): Uint8Array {
     ...(fields.versionChainHash !== undefined
       ? { vch: fields.versionChainHash }
       : {}),
+    ...(fields.sessionContextHash !== undefined
+      ? { sch: fields.sessionContextHash }
+      : {}),
   });
   const prefix = new TextEncoder().encode(MAJIK_SIGNATURE_DOMAIN);
   const body = new TextEncoder().encode(meta);
@@ -218,9 +224,38 @@ export function buildSigningPayload(fields: PayloadFields): Uint8Array {
  * });
  * ```
  */
+export function buildSignatureAttestationBytes(signature: MajikSignatureJSON): Uint8Array {
+  // TSA is excluded to avoid a circular commitment.
+  const meta = JSON.stringify({
+    v: signature.version,
+    id: signature.signerId,
+    edpk: signature.signerEdPublicKey,
+    mlpk: signature.signerMlDsaPublicKey,
+    hash: signature.contentHash,
+    ct: signature.contentType ?? null,
+    ts: signature.timestamp,
+    ed: signature.edSignature,
+    ml: signature.mlDsaSignature,
+    ...(signature.allowlistHash !== undefined ? { alh: signature.allowlistHash } : {}),
+    ...(signature.validUntil !== undefined ? { vu: signature.validUntil } : {}),
+    ...(signature.versionChainHash !== undefined ? { vch: signature.versionChainHash } : {}),
+    ...(signature.sessionContextHash !== undefined ? { sch: signature.sessionContextHash } : {}),
+  });
+  const prefix = new TextEncoder().encode(MAJIK_SIGNATURE_ATTESTATION_DOMAIN);
+  const body = new TextEncoder().encode(meta);
+  const out = new Uint8Array(prefix.length + body.length);
+  out.set(prefix, 0);
+  out.set(body, prefix.length);
+  return out;
+}
+
 export function buildTSACanonicalBytes(payload: MajikTSAPayload): Uint8Array {
   const meta = JSON.stringify({
-    digest: payload.digest,
+    digest: {
+      algorithm: payload.digest.algorithm,
+      value: payload.digest.value,
+      ...(payload.digest.scope !== undefined ? { scope: payload.digest.scope } : {}),
+    },
     nonce: payload.nonce,
     timestamp: payload.timestamp,
     tsa: payload.tsa,
