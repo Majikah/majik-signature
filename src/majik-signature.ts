@@ -1591,7 +1591,7 @@ export class MajikSignature {
     };
   }
 
-  addTSA(tsa: MajikTimestamp, expectedTsaFingerprint?: string): void {
+  addTSA(tsa: MajikTimestamp, trustedTsaPublicKeys?: MajikSignerPublicKeys): void {
     if (this._tsa !== undefined)
       throw new MajikSignatureError(
         "TSA is already set and cannot be replaced",
@@ -1619,19 +1619,28 @@ export class MajikSignature {
       );
     }
 
-    if (
-      expectedTsaFingerprint !== undefined &&
-      tsa.payload.tsa.signerFingerprint !== expectedTsaFingerprint
-    ) {
-      throw new MajikSignatureVerificationError(
-        "TSA signer fingerprint does not match the trusted TSA identity",
-      );
-    }
-
     const canonicalBytes = buildTSACanonicalBytes(tsa.payload);
     const tsaSig = MajikSignature.fromJSON(tsa.signature);
-    const publicKeys = tsaSig.extractPublicKeys();
-    const result = MajikSignature.verify(canonicalBytes, tsaSig, publicKeys);
+    const embeddedPublicKeys = tsaSig.extractPublicKeys();
+    const verificationKeys = trustedTsaPublicKeys ?? embeddedPublicKeys;
+
+    if (trustedTsaPublicKeys !== undefined) {
+      MajikSignatureValidator.validateSignerPublicKeys(trustedTsaPublicKeys);
+      if (
+        tsa.payload.tsa.signerFingerprint !== trustedTsaPublicKeys.signerId ||
+        tsa.signature.signerId !== trustedTsaPublicKeys.signerId
+      ) {
+        throw new MajikSignatureVerificationError(
+          "TSA identity does not match the trusted TSA public-key fingerprint",
+        );
+      }
+    }
+
+    const result = MajikSignature.verify(
+      canonicalBytes,
+      tsaSig,
+      verificationKeys,
+    );
 
     if (!result.valid)
       throw new MajikSignatureVerificationError(
@@ -1646,7 +1655,7 @@ export class MajikSignature {
    * Use after deserialization to confirm the embedded TSA is still valid.
    * Returns a VerificationResult from the TSA signature check.
    */
-  verifyTSA(expectedTsaFingerprint?: string): VerificationResult {
+  verifyTSA(trustedTsaPublicKeys?: MajikSignerPublicKeys): VerificationResult {
     if (!this._tsa)
       throw new MajikSignatureError("No TSA present on this signature");
 
@@ -1672,19 +1681,28 @@ export class MajikSignature {
       );
     }
 
-    if (
-      expectedTsaFingerprint !== undefined &&
-      this._tsa.payload.tsa.signerFingerprint !== expectedTsaFingerprint
-    ) {
-      throw new MajikSignatureVerificationError(
-        "TSA signer fingerprint does not match the trusted TSA identity",
-      );
-    }
-
     const canonicalBytes = buildTSACanonicalBytes(this._tsa.payload);
     const tsaSig = MajikSignature.fromJSON(this._tsa.signature);
-    const publicKeys = tsaSig.extractPublicKeys();
-    return MajikSignature.verify(canonicalBytes, tsaSig, publicKeys);
+    const embeddedPublicKeys = tsaSig.extractPublicKeys();
+    const verificationKeys = trustedTsaPublicKeys ?? embeddedPublicKeys;
+
+    if (trustedTsaPublicKeys !== undefined) {
+      MajikSignatureValidator.validateSignerPublicKeys(trustedTsaPublicKeys);
+      if (
+        this._tsa.payload.tsa.signerFingerprint !== trustedTsaPublicKeys.signerId ||
+        this._tsa.signature.signerId !== trustedTsaPublicKeys.signerId
+      ) {
+        throw new MajikSignatureVerificationError(
+          "TSA identity does not match the trusted TSA public-key fingerprint",
+        );
+      }
+    }
+
+    return MajikSignature.verify(
+      canonicalBytes,
+      tsaSig,
+      verificationKeys,
+    );
   }
 
   get hasTSA(): boolean {
