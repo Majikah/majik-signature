@@ -213,6 +213,8 @@ export interface MajikTSAPayload {
     algorithm: "SHA-256";
     /** Base64-encoded digest value. */
     value: string;
+    /** Optional digest scope; omitted means the legacy content-hash scope. */
+    scope?: TSADigestScope;
   };
 
   /**
