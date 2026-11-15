@@ -65,6 +65,17 @@ Both Ed25519 and ML-DSA-87 sign `sch` as part of the canonical payload. The serv
 
 Standalone signatures omit `sch` entirely. This preserves their historical canonical payload bytes.
 
+### 2.4.1 SignRoom Signature-Scoped TSA
+
+A TSA digest may optionally include `scope`:
+
+- Omitted or `content`: legacy behavior; the digest is the signer's document `contentHash`.
+- `signature`: the digest is SHA-256 over `buildSignatureAttestationBytes(signature)`, which uses the domain prefix `majik-signature-attestation-v1:` followed by canonical JSON of the unsigned per-signer record. The record includes the signer identity and public keys, document hash, signature timestamp, both hybrid signature values, and optional signed metadata (`alh`, `vu`, `vch`, `sch`). The TSA property is excluded to prevent a circular commitment.
+
+The TSA payload's `digest.scope`, when present, is included in the TSA's own canonical signed payload. CBOR v2 stores this scope as a text field and preserves its absence for legacy timestamps.
+
+For SignRoom, the API should verify the participant signature first, request a new signature-scoped TSA for that record, and verify the returned timestamp against the authoritative TSA public-key bundle before attaching it. A digest cache must not cause one participant's token to be reused for another signature record.
+
 ### 2.5 File Versioning & Revision Chains
 
 MJKSIG supports an append-only revision chain (`fileVersions`) for workflows where a signer visually mutates the document itself (e.g. a drawn signature stamp) before signing — which changes the file's byte content on every hand-off, not just its metadata.
@@ -245,7 +256,7 @@ interface ExpectedSigner {
 
 Version 2 encodes the envelope as a CBOR map using ordinary CBOR maps and byte strings (no CBOR record extensions). Map keys use the field names shown in §§4.1–4.3; nested objects and arrays retain their schema structure.
 
-Binary values represented as Base64 or hexadecimal strings in the logical schema are encoded as native CBOR byte strings in v2. This includes fingerprints, public keys, signatures, content hashes, allowlist hashes, version-chain hashes, and seal hashes. Timestamps, content types, messages, and other textual fields remain CBOR text strings; numeric and boolean values retain their corresponding CBOR types. Optional fields remain absent when not set.
+Binary values represented as Base64 or hexadecimal strings in the logical schema are encoded as native CBOR byte strings in v2. This includes fingerprints, public keys, signatures, content hashes, allowlist hashes, version-chain hashes, session-context hashes, and seal hashes. TSA digest scope is a text field when present. Timestamps, content types, messages, and other textual fields remain CBOR text strings; numeric and boolean values retain their corresponding CBOR types. Optional fields remain absent when not set.
 
 This encoding change affects only container serialization. It does not change the canonical signing payload, signature algorithms, or verification rules in §2. A reader chooses the decoder from the container version byte: v1 JSON or v2 CBOR. Reading legacy v1 containers does not mean older implementations can read v2 containers.
 
