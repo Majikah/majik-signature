@@ -39,6 +39,10 @@ export * from "./core/cbor/index.js";
 // These are exported for consumers who want to build on top of the primitives
 // without going through MajikSignature (e.g. streaming hash pipelines,
 // custom envelope formats). Not needed for normal sign/verify usage.
-export { buildSigningPayload } from "./core/payload.js";
+export {
+  buildSignatureAttestationBytes,
+  buildSigningPayload,
+} from "./core/payload.js";
+export * from "./core/session-context.js";
 export { hashContent, bytesToBase64, base64ToBytes } from "./core/hash.js";
 export { MajikSignatureValidator } from "./core/validator.js";
