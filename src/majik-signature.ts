@@ -24,7 +24,11 @@ import {
   MajikSignatureSerializationError,
 } from "./core/errors.js";
 import { MajikSignatureValidator } from "./core/validator.js";
-import { buildSigningPayload, buildTSACanonicalBytes } from "./core/payload.js";
+import {
+  buildSignatureAttestationBytes,
+  buildSigningPayload,
+  buildTSACanonicalBytes,
+} from "./core/payload.js";
 import { hashContent, bytesToBase64, base64ToBytes } from "./core/hash.js";
 import type {
   BatchFileInput,
@@ -54,6 +58,7 @@ import type {
   SignatoriesResult,
   SignatoryInfo,
   SignOptions,
+  TSADigestScope,
   VerificationResult,
 } from "./core/types.js";
 import { MajikSignatureEmbed } from "./core/embed/majik-embed.js";
@@ -141,6 +146,7 @@ export class MajikSignature {
   private readonly _allowlistHash?: string;
   private readonly _validUntil?: ISODateString;
   private readonly _versionChainHash?: string;
+  private readonly _sessionContextHash?: string;
   private _tsa?: MajikTimestamp;
 
   private constructor(data: MajikSignatureJSON) {
@@ -156,6 +162,7 @@ export class MajikSignature {
     this._allowlistHash = data.allowlistHash;
     this._validUntil = data.validUntil;
     this._versionChainHash = data.versionChainHash;
+    this._sessionContextHash = data.sessionContextHash;
     this._tsa = data.tsa;
   }
 
@@ -211,6 +218,11 @@ export class MajikSignature {
     return this._versionChainHash;
   }
 
+  /** Signed commitment to the SignRoom session, challenge, and policy. */
+  get sessionContextHash(): string | undefined {
+    return this._sessionContextHash;
+  }
+
   get tsa(): MajikTimestamp | undefined {
     return this._tsa;
   }
@@ -256,6 +268,9 @@ export class MajikSignature {
     MajikSignatureValidator.assertDefined(key, "key");
     MajikSignatureValidator.validateContentType(options?.contentType);
     MajikSignatureValidator.validateValidUntil(options?.validUntil);
+    if (options?.sessionContextHash !== undefined) {
+      MajikSignatureValidator.validateSessionContextHash(options.sessionContextHash);
+    }
 
     if (key.isLocked)
       throw new MajikSignatureKeyError(
@@ -289,6 +304,7 @@ export class MajikSignature {
       const validUntil = options?.validUntil; // NEW
 
       const versionChainHash = options?.versionChainHash;
+      const sessionContextHash = options?.sessionContextHash;
       const payload = buildSigningPayload({
         signerId,
         timestamp,
@@ -297,6 +313,7 @@ export class MajikSignature {
         allowlistHash,
         validUntil,
         versionChainHash,
+        sessionContextHash,
       });
 
       if (debug) console.log("Signing Payload:", payload);
@@ -330,6 +347,7 @@ export class MajikSignature {
         ...(allowlistHash !== undefined ? { allowlistHash } : {}),
         ...(validUntil !== undefined ? { validUntil } : {}),
         ...(versionChainHash !== undefined ? { versionChainHash } : {}),
+        ...(sessionContextHash !== undefined ? { sessionContextHash } : {}),
       };
 
       return new MajikSignature(envelope);
@@ -393,6 +411,10 @@ export class MajikSignature {
           ...(reason ? { reason } : {}),
         }) as VerificationResult;
 
+      if (publicKeys.signerId !== env.signerId) {
+        return invalid("Signer key fingerprint does not match signature signerId");
+      }
+
       const recomputedHash = bytesToBase64(hashContent(content));
       if (recomputedHash !== env.contentHash) return invalid();
 
@@ -405,6 +427,7 @@ export class MajikSignature {
         allowlistHash: env.allowlistHash,
         validUntil: env.validUntil,
         versionChainHash: env.versionChainHash,
+        sessionContextHash: env.sessionContextHash,
       });
 
       let edOk: boolean;
@@ -452,6 +475,9 @@ export class MajikSignature {
         contentHash: env.contentHash,
         timestamp: env.timestamp,
         contentType: env.contentType,
+        ...(env.sessionContextHash !== undefined
+          ? { sessionContextHash: env.sessionContextHash }
+          : {}),
       };
     } catch (err) {
       if (err instanceof MajikSignatureError) throw err;
@@ -483,6 +509,10 @@ export class MajikSignature {
         ...(reason ? { reason } : {}),
       });
 
+      if (publicKeys.signerId !== env.signerId) {
+        return invalid("Signer key fingerprint does not match signature signerId");
+      }
+
       const payload = buildSigningPayload({
         signerId: env.signerId,
         timestamp: env.timestamp,
@@ -491,6 +521,7 @@ export class MajikSignature {
         allowlistHash: env.allowlistHash,
         validUntil: env.validUntil,
         versionChainHash: env.versionChainHash,
+        sessionContextHash: env.sessionContextHash,
       });
 
       let edOk: boolean;
@@ -533,6 +564,9 @@ export class MajikSignature {
         contentHash: env.contentHash,
         timestamp: env.timestamp,
         contentType: env.contentType,
+        ...(env.sessionContextHash !== undefined
+          ? { sessionContextHash: env.sessionContextHash }
+          : {}),
         commitmentOnly: true,
       };
     } catch (err) {
@@ -545,6 +579,91 @@ export class MajikSignature {
   }
 
   // ── SELF-VALIDATE ───────────────────────────────────────────────────────────
+  /**
+   * Verify a hybrid signature against a trusted SHA-256 digest without
+   * possessing the original plaintext bytes.
+   *
+   * The caller must independently establish that expectedContentHash is the
+   * trusted digest of the stored document. When expectedSessionContextHash is
+   * supplied, it must match the session/challenge/policy commitment in the
+   * signer's canonical payload.
+   *
+   * This does not authorize the signer, issue or consume a one-time challenge,
+   * or establish TSA trust. Those remain application/API responsibilities.
+   */
+  static verifyDigest(
+    expectedContentHash: string,
+    signature: MajikSignature | MajikSignatureJSON,
+    publicKeys: MajikSignerPublicKeys,
+    options: {
+      expectedSessionContextHash?: string;
+      now?: Date;
+    } = {},
+  ): RevisionCommitmentResult {
+    const env =
+      signature instanceof MajikSignature ? signature.toJSON() : signature;
+    MajikSignatureValidator.validateJSON(env);
+
+    const invalid = (reason: string): RevisionCommitmentResult => ({
+      valid: false,
+      signerId: env.signerId,
+      contentHash: env.contentHash,
+      timestamp: env.timestamp,
+      contentType: env.contentType,
+      ...(env.sessionContextHash !== undefined
+        ? { sessionContextHash: env.sessionContextHash }
+        : {}),
+      commitmentOnly: true,
+      reason,
+    });
+
+    if (
+      typeof expectedContentHash !== "string" ||
+      expectedContentHash.length !== 44
+    ) {
+      return invalid("Expected content hash must be a base64 SHA-256 digest");
+    }
+    try {
+      const digestBytes = base64ToBytes(expectedContentHash);
+      if (
+        digestBytes.length !== 32 ||
+        bytesToBase64(digestBytes) !== expectedContentHash
+      ) {
+        return invalid("Expected content hash is not a canonical SHA-256 digest");
+      }
+    } catch {
+      return invalid("Expected content hash is not a valid base64 SHA-256 digest");
+    }
+
+    if (env.contentHash !== expectedContentHash) {
+      return invalid("Signature contentHash does not match the expected digest");
+    }
+
+    if (options.expectedSessionContextHash !== undefined) {
+      try {
+        MajikSignatureValidator.validateSessionContextHash(
+          options.expectedSessionContextHash,
+        );
+      } catch {
+        return invalid("Expected session context hash is invalid");
+      }
+      if (env.sessionContextHash !== options.expectedSessionContextHash) {
+        return invalid("Signature session context does not match the expected session");
+      }
+    }
+
+    if (publicKeys.signerId !== env.signerId) {
+      return invalid("Signer key fingerprint does not match signature signerId");
+    }
+
+    return MajikSignature.verifyCommitment(
+      signature,
+      publicKeys,
+      options.now ?? new Date(),
+    );
+  }
+
+
 
   validate(): void {
     MajikSignatureValidator.validateJSON(this.toJSON());
@@ -611,6 +730,9 @@ export class MajikSignature {
       ...(this._tsa !== undefined ? { tsa: this._tsa } : {}),
       ...(this._versionChainHash !== undefined
         ? { versionChainHash: this._versionChainHash }
+        : {}),
+      ...(this._sessionContextHash !== undefined
+        ? { sessionContextHash: this._sessionContextHash }
         : {}),
     };
   }
@@ -1429,7 +1551,23 @@ export class MajikSignature {
 
   // ── TRUSTED TIMESTAMPS ───────────────────────────────────────────────────────
 
-  buildTSARequestPayload(): MajikTSARequest {
+  buildTSARequestPayload(
+    scope: TSADigestScope = "content",
+  ): MajikTSARequest {
+    if (scope === "signature") {
+      const digest = bytesToBase64(
+        hashContent(buildSignatureAttestationBytes(this.toJSON())),
+      );
+      return {
+        digest: {
+          algorithm: "SHA-256",
+          value: digest,
+          scope: "signature",
+        },
+      };
+    }
+
+    // An omitted scope retains the legacy content-hash timestamp behavior.
     return {
       digest: {
         algorithm: "SHA-256",
@@ -1438,7 +1576,7 @@ export class MajikSignature {
     };
   }
 
-  addTSA(tsa: MajikTimestamp): void {
+  addTSA(tsa: MajikTimestamp, expectedTsaFingerprint?: string): void {
     if (this._tsa !== undefined)
       throw new MajikSignatureError(
         "TSA is already set and cannot be replaced",
@@ -1446,10 +1584,34 @@ export class MajikSignature {
 
     MajikSignatureValidator.validateMajikTimestamp(tsa);
 
-    if (tsa.payload.digest.value !== this._contentHash)
+    const expectedDigest =
+      tsa.payload.digest.scope === "signature"
+        ? bytesToBase64(
+            hashContent(buildSignatureAttestationBytes(this.toJSON())),
+          )
+        : this._contentHash;
+
+    if (tsa.payload.digest.value !== expectedDigest)
       throw new MajikSignatureError(
-        "TSA digest does not match signature contentHash",
+        tsa.payload.digest.scope === "signature"
+          ? "TSA digest does not match the canonical signature record"
+          : "TSA digest does not match signature contentHash",
       );
+
+    if (tsa.payload.tsa.signerFingerprint !== tsa.signature.signerId) {
+      throw new MajikSignatureVerificationError(
+        "TSA identity fingerprint does not match the embedded TSA signer",
+      );
+    }
+
+    if (
+      expectedTsaFingerprint !== undefined &&
+      tsa.payload.tsa.signerFingerprint !== expectedTsaFingerprint
+    ) {
+      throw new MajikSignatureVerificationError(
+        "TSA signer fingerprint does not match the trusted TSA identity",
+      );
+    }
 
     const canonicalBytes = buildTSACanonicalBytes(tsa.payload);
     const tsaSig = MajikSignature.fromJSON(tsa.signature);
@@ -1469,14 +1631,40 @@ export class MajikSignature {
    * Use after deserialization to confirm the embedded TSA is still valid.
    * Returns a VerificationResult from the TSA signature check.
    */
-  verifyTSA(): VerificationResult {
+  verifyTSA(expectedTsaFingerprint?: string): VerificationResult {
     if (!this._tsa)
       throw new MajikSignatureError("No TSA present on this signature");
 
-    if (this._tsa.payload.digest.value !== this._contentHash)
+    const expectedDigest =
+      this._tsa.payload.digest.scope === "signature"
+        ? bytesToBase64(
+            hashContent(buildSignatureAttestationBytes(this.toJSON())),
+          )
+        : this._contentHash;
+
+    if (this._tsa.payload.digest.value !== expectedDigest)
       throw new MajikSignatureError(
-        "TSA digest does not match signature contentHash",
+        this._tsa.payload.digest.scope === "signature"
+          ? "TSA digest does not match the canonical signature record"
+          : "TSA digest does not match signature contentHash",
       );
+
+    if (
+      this._tsa.payload.tsa.signerFingerprint !== this._tsa.signature.signerId
+    ) {
+      throw new MajikSignatureVerificationError(
+        "TSA identity fingerprint does not match the embedded TSA signer",
+      );
+    }
+
+    if (
+      expectedTsaFingerprint !== undefined &&
+      this._tsa.payload.tsa.signerFingerprint !== expectedTsaFingerprint
+    ) {
+      throw new MajikSignatureVerificationError(
+        "TSA signer fingerprint does not match the trusted TSA identity",
+      );
+    }
 
     const canonicalBytes = buildTSACanonicalBytes(this._tsa.payload);
     const tsaSig = MajikSignature.fromJSON(this._tsa.signature);
@@ -1512,6 +1700,7 @@ export class MajikSignature {
       tsa,
     };
 
+    MajikSignatureValidator.validateMajikTSAPayload(payload);
     const canonicalBytes = buildTSACanonicalBytes(payload);
     const signature = await MajikSignature.sign(canonicalBytes, key);
 
@@ -1598,6 +1787,9 @@ export class MajikSignature {
       allowlistHash: this._allowlistHash,
       validUntil: this._validUntil,
       versionChainHash: this._versionChainHash,
+      ...(this._sessionContextHash !== undefined
+        ? { sessionContextHash: this._sessionContextHash }
+        : {}),
     };
   }
 
@@ -1634,6 +1826,9 @@ export class MajikSignature {
       allowlistHash: compact.allowlistHash,
       validUntil: compact.validUntil,
       versionChainHash: compact.versionChainHash,
+      ...(compact.sessionContextHash !== undefined
+        ? { sessionContextHash: compact.sessionContextHash }
+        : {}),
     };
 
     return MajikSignature.fromJSON(full);
