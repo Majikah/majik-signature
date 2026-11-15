@@ -4,6 +4,7 @@
  */
 
 import { ISODateString } from "@majikah/majik-key";
+import { base64ToBytes, bytesToBase64 } from "./hash.js";
 import {
   MAJIK_SIGNATURE_VERSION,
   MAJIK_ENVELOPE_VERSION,
@@ -236,6 +237,10 @@ export class MajikSignatureValidator {
         );
     }
 
+    if (j.sessionContextHash !== undefined) {
+      MajikSignatureValidator.validateSessionContextHash(j.sessionContextHash);
+    }
+
     if (j.allowlistHash !== undefined) {
       if (
         typeof j.allowlistHash !== "string" ||
@@ -348,6 +353,28 @@ export class MajikSignatureValidator {
       );
   }
 
+  static validateSessionContextHash(value: unknown): asserts value is string {
+    if (typeof value !== "string" || value.length !== CONTENT_HASH_B64_LEN) {
+      throw new MajikSignatureValidationError(
+        "sessionContextHash must be a 44-character base64 SHA-256 digest",
+        "sessionContextHash",
+      );
+    }
+
+    try {
+      const decoded = base64ToBytes(value);
+      if (decoded.length !== 32 || bytesToBase64(decoded) !== value) {
+        throw new Error("non-canonical digest");
+      }
+    } catch (err) {
+      throw new MajikSignatureValidationError(
+        "sessionContextHash must be a canonical base64 SHA-256 digest",
+        "sessionContextHash",
+        err,
+      );
+    }
+  }
+
   static validateValidUntil(value: ISODateString | undefined): void {
     if (value === undefined) return;
     if (typeof value !== "string" || Number.isNaN(Date.parse(value))) {
@@ -441,6 +468,15 @@ export class MajikSignatureValidator {
       throw new MajikSignatureValidationError(
         "TSA payload digest algorithm must be SHA-256",
       );
+    if (
+      d.scope !== undefined &&
+      d.scope !== "content" &&
+      d.scope !== "signature"
+    ) {
+      throw new MajikSignatureValidationError(
+        "TSA payload digest scope must be content or signature",
+      );
+    }
     if (typeof d.value !== "string" || d.value.length !== CONTENT_HASH_B64_LEN)
       throw new MajikSignatureValidationError(
         "TSA payload digest value must be a 44-char base64 string",
