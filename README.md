@@ -1036,15 +1036,23 @@ const envelope = signed.envelope;
 const sidecar = signed.mjksig; // binary .mjksig Blob
 ```
 
-For subsequent participants, pass the existing envelope. When the participant adds a visual stamp, also pass the exact previous document bytes as `priorFile`; the SDK validates that prior file and appends a cryptographically committed FileVersion:
+For subsequent participants, pass the existing envelope. When a participant adds a visual stamp, pass the exact next `fileVersion` entry. The SDK validates that it follows the existing envelope, matches the signer and signed content, appends it to the returned envelope, and commits its chain hash. A signer who does not add a new revision is automatically bound to the current chain:
 
 ```ts
 const next = await MajikSignature.signSessionFile(stampedDocument, participantKey, {
   sessionContext: participantSessionContext, // that participant's own challenge
   existingEnvelope: previous.envelope,
-  priorFile: previous.blob,
+  fileVersion: {
+    version: previous.envelope.lastFileVersion!.version + 1,
+    timestamp: new Date().toISOString(),
+    contentHash: stampedContentHash,
+    previousVersionHash: MajikSignatureEnvelope.hashFileVersionEntry(
+      previous.envelope.lastFileVersion!,
+    ),
+    createdBy: participantKey.fingerprint,
+    message: "Participant added a visual stamp",
+  },
   contentType: "application/pdf",
-  message: "Participant added a visual stamp",
 });
 ```
 

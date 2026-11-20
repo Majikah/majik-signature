@@ -527,6 +527,111 @@ describe("SignRoom session-bound signature foundation", () => {
       expect(verified.results.every((result) => result.valid)).toBe(true);
     });
 
+
+    it("commits an explicit SignRoom FileVersion and returns it in the sidecar", async () => {
+      const original = new Blob(["explicit revision source"], {
+        type: "text/plain",
+      });
+      const sessionContext = makeContext(
+        "session-explicit-revision",
+        "challenge-explicit-revision",
+        "revision-policy",
+      );
+      const first = await MajikSignature.signSessionFile(
+        original,
+        issuerKey,
+        {
+          sessionContext,
+          contentType: "text/plain",
+        },
+      );
+
+      const stamped = new Blob(["explicit revision source\\nvisual stamp"], {
+        type: "text/plain",
+      });
+      const stampedHash = hashText("explicit revision source\\nvisual stamp");
+      const fileVersion = {
+        version: 1,
+        timestamp: "2026-11-20T02:00:00.000Z",
+        contentHash: stampedHash,
+        createdBy: signerKey.fingerprint,
+      };
+      const participantContext = makeContext(
+        "session-explicit-revision",
+        "challenge-explicit-revision-2",
+        "revision-policy",
+      );
+      const next = await MajikSignature.signSessionFile(stamped, signerKey, {
+        sessionContext: participantContext,
+        contentType: "text/plain",
+        existingEnvelope: first.envelope,
+        fileVersion,
+      });
+
+      expect(next.signature.versionChainHash).toBe(
+        MajikSignatureEnvelope.hashFileVersionChain([fileVersion]),
+      );
+      expect(next.envelope.fileVersions).toEqual([fileVersion]);
+      const decoded = await MajikSignatureEnvelope.fromMJKSIG(next.mjksig);
+      expect(decoded.fileVersions).toEqual([fileVersion]);
+    });
+
+    it("commits a no-stamp SignRoom signature to the existing revision chain", async () => {
+      const source = new Blob(["revision-chain source"], {
+        type: "text/plain",
+      });
+      const firstContext = makeContext(
+        "session-current-chain",
+        "challenge-current-chain-1",
+        "same-policy",
+      );
+      const first = await MajikSignature.signSessionFile(source, issuerKey, {
+        sessionContext: firstContext,
+        contentType: "text/plain",
+      });
+      const stamped = new Blob(["revision-chain source\\nstamped"], {
+        type: "text/plain",
+      });
+      const fileVersion = {
+        version: 1,
+        timestamp: "2026-11-20T02:10:00.000Z",
+        contentHash: hashText("revision-chain source\\nstamped"),
+        createdBy: signerKey.fingerprint,
+      };
+      const stampedResult = await MajikSignature.signSessionFile(
+        stamped,
+        signerKey,
+        {
+          sessionContext: makeContext(
+            "session-current-chain",
+            "challenge-current-chain-visual",
+            "same-policy",
+          ),
+          contentType: "text/plain",
+          existingEnvelope: first.envelope,
+          fileVersion,
+        },
+      );
+      const nextSigner = await MajikSignature.signSessionFile(
+        stampedResult.blob,
+        tsaKey,
+        {
+          sessionContext: makeContext(
+            "session-current-chain",
+            "challenge-current-chain-3",
+            "same-policy",
+          ),
+          contentType: "text/plain",
+          existingEnvelope: stampedResult.envelope,
+        },
+      );
+
+      expect(nextSigner.signature.versionChainHash).toBe(
+        MajikSignatureEnvelope.hashFileVersionChain([fileVersion]),
+      );
+      expect(nextSigner.envelope.fileVersions).toEqual([fileVersion]);
+    });
+
     it("checks a signature-scoped TSA and can require a pinned TSA identity", async () => {
       const file = new Blob(["session document with official timestamp"], {
         type: "text/plain",

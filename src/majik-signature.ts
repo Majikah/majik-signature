@@ -971,21 +971,85 @@ export class MajikSignature {
     key: MajikKey,
     options: SessionFileSignOptions,
   ) {
-    const { sessionContext, ...signingOptions } = options;
+    const {
+      sessionContext,
+      fileVersion,
+      ...signingOptions
+    } = options;
     const sessionContextHash = buildSessionContextHash(sessionContext);
+    const sessionEnvelope = signingOptions.existingEnvelope
+      ? await MajikSignatureEnvelope.from(signingOptions.existingEnvelope)
+      : MajikSignatureEnvelope.empty();
+
+    if (fileVersion && signingOptions.priorFile) {
+      throw new MajikSignatureError(
+        "Pass fileVersion or priorFile to signSessionFile(), not both. fileVersion is the explicit SignRoom revision entry.",
+      );
+    }
+
+    let versionChainHash: string | undefined;
+    if (fileVersion) {
+      const lastVersion = sessionEnvelope.lastFileVersion;
+      const expectedVersion = (lastVersion?.version ?? 0) + 1;
+      const expectedPreviousVersionHash = lastVersion
+        ? MajikSignatureEnvelope.hashFileVersionEntry(lastVersion)
+        : undefined;
+      if (
+        fileVersion.version !== expectedVersion ||
+        fileVersion.createdBy !== key.fingerprint ||
+        fileVersion.previousVersionHash !== expectedPreviousVersionHash ||
+        typeof fileVersion.timestamp !== "string" ||
+        !Number.isFinite(Date.parse(fileVersion.timestamp)) ||
+        new Date(Date.parse(fileVersion.timestamp)).toISOString() !== fileVersion.timestamp ||
+        typeof fileVersion.contentHash !== "string" ||
+        !/^[A-Za-z0-9+/]{43}=$/.test(fileVersion.contentHash)
+      ) {
+        throw new MajikSignatureError(
+          "The supplied SignRoom FileVersion must be the next valid revision, linked to the existing envelope and created by the signing key.",
+        );
+      }
+      versionChainHash = MajikSignatureEnvelope.hashFileVersionChain([
+        ...sessionEnvelope.fileVersions,
+        fileVersion,
+      ]);
+    } else if (sessionEnvelope.fileVersions.length > 0) {
+      // Even when this signer does not alter the document, bind the signature
+      // to the exact current revision chain already stored in the sidecar.
+      versionChainHash = MajikSignatureEnvelope.hashFileVersionChain(
+        sessionEnvelope.fileVersions,
+      );
+    }
+
     const result = await MajikSignatureEmbed.signDetached<MajikSignature>(
       file,
       key,
       MajikSignature,
       {
         ...signingOptions,
+        existingEnvelope: sessionEnvelope,
+        ...(fileVersion ? { timestamp: fileVersion.timestamp } : {}),
         sessionContextHash,
+        ...(versionChainHash !== undefined ? { versionChainHash } : {}),
       },
     );
 
+    if (
+      fileVersion &&
+      result.signature.contentHash !== fileVersion.contentHash
+    ) {
+      throw new MajikSignatureError(
+        "The supplied SignRoom FileVersion contentHash does not match the document bytes being signed.",
+      );
+    }
+
+    const envelope = fileVersion
+      ? result.envelope.withFileVersion(fileVersion)
+      : result.envelope;
+
     return {
       ...result,
-      mjksig: result.envelope.toMJKSIG(),
+      envelope,
+      mjksig: envelope.toMJKSIG(),
     };
   }
 

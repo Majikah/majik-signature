@@ -719,6 +719,8 @@ export class MajikSignatureEmbed {
       validUntil?: ISODateString;
       /** Canonical SignRoom context commitment, supplied only by signSessionFile(). */
       sessionContextHash?: string;
+      /** Internal caller-supplied revision commitment for session-aware APIs. */
+      versionChainHash?: string;
       expectedSigners?: ExpectedSigner[];
       existingEnvelope?: EnvelopeInput;
       tsa?: MajikTimestamp;
@@ -775,7 +777,7 @@ export class MajikSignatureEmbed {
     );
 
     let newVersionEntry: FileVersion | undefined;
-    let versionChainHash: string | undefined;
+    let versionChainHash: string | undefined = options?.versionChainHash;
     if (options?.priorFile) {
       const last = envelope.lastFileVersion;
       newVersionEntry = {
