@@ -1367,9 +1367,9 @@ export class MajikSignature {
 
     const allowlistIntegrity = envelope.verifyAllowlistIntegrity();
     const versionChainIntegrity = envelope.verifyVersionChainIntegrity();
-    const sealIntegrity = envelope.isSealed()
+    const sealIntegrity: SealVerificationResult = envelope.isSealed()
       ? envelope.verifySeal()
-      : { valid: true as const };
+      : { valid: true };
     const chainValid = chain ? chain.chainValid : versionChainIntegrity.valid;
     const tsaValid = tsaResults.every((result) => result.valid);
     const trustedTsaValid =
