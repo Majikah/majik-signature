@@ -1173,6 +1173,8 @@ export interface SessionFileSignOptions {
   existingEnvelope?: EnvelopeInput;
   /** Optional TSA token matching this exact signature record. */
   tsa?: MajikTimestamp;
+  /** Exact FileVersion entry to append and cryptographically commit in this signature. */
+  fileVersion?: FileVersion;
   /**
    * Exact prior document revision before this participant's own visual stamp.
    * Requires existingEnvelope and activates revision-chain bookkeeping.
