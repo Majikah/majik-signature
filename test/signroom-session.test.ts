@@ -581,6 +581,75 @@ describe("SignRoom session-bound signature foundation", () => {
         },
       ]);
     });
+
+    it("rejects mixed session policies and reused one-time challenges", async () => {
+      const file = new Blob(["challenge isolation"], { type: "text/plain" });
+      const issuerContext = makeContext(
+        "session-isolation",
+        "challenge-shared",
+        "policy-isolation",
+      );
+      const participantContext = makeContext(
+        "session-isolation",
+        "challenge-shared",
+        "policy-isolation",
+      );
+      const issuer = await MajikSignature.signSessionFile(file, issuerKey, {
+        sessionContext: issuerContext,
+        contentType: "text/plain",
+        expectedSigners: [
+          MajikSignature.expectedSignerFromKey(issuerKey),
+          MajikSignature.expectedSignerFromKey(signerKey),
+        ],
+      });
+      const participant = await MajikSignature.signSessionFile(
+        issuer.blob,
+        signerKey,
+        {
+          sessionContext: participantContext,
+          contentType: "text/plain",
+          existingEnvelope: issuer.envelope,
+        },
+      );
+
+      const reusedChallenge = await MajikSignature.verifySessionFile(
+        participant.blob,
+        participant.mjksig,
+        {
+          expectedSessionContexts: {
+            [issuerKey.fingerprint]: issuerContext,
+            [signerKey.fingerprint]: participantContext,
+          },
+          expectedSignerPublicKeys: {
+            [issuerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(issuerKey),
+            [signerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(signerKey),
+          },
+        },
+      );
+      expect(reusedChallenge.valid).toBe(false);
+      expect(reusedChallenge.reason).toMatch(/distinct one-time challenge/i);
+
+      const mixedSession = await MajikSignature.verifySessionFile(
+        participant.blob,
+        participant.mjksig,
+        {
+          expectedSessionContexts: {
+            [issuerKey.fingerprint]: issuerContext,
+            [signerKey.fingerprint]: makeContext(
+              "another-session",
+              "challenge-participant-unique",
+              "policy-isolation",
+            ),
+          },
+          expectedSignerPublicKeys: {
+            [issuerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(issuerKey),
+            [signerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(signerKey),
+          },
+        },
+      );
+      expect(mixedSession.valid).toBe(false);
+      expect(mixedSession.reason).toMatch(/same SignRoom session/i);
+    });
   });
 
 });

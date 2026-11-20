@@ -1257,14 +1257,49 @@ export class MajikSignature {
       });
     }
 
+    const resolvedSessionContexts = signatures
+      .map((signature) => ({
+        signerId: signature.signerId,
+        context: Object.prototype.hasOwnProperty.call(
+          options.expectedSessionContexts,
+          signature.signerId,
+        )
+          ? options.expectedSessionContexts[signature.signerId]
+          : undefined,
+      }))
+      .filter(
+        (entry): entry is {
+          signerId: string;
+          context: NonNullable<typeof entry.context>;
+        } => entry.context !== undefined,
+      );
+    const sessionIds = new Set(
+      resolvedSessionContexts.map((entry) => entry.context.sessionId),
+    );
+    const policyHashes = new Set(
+      resolvedSessionContexts.map((entry) => entry.context.policyHash),
+    );
+    const challengeIds = resolvedSessionContexts.map(
+      (entry) => entry.context.challengeId,
+    );
+    const hasUniqueChallenges =
+      new Set(challengeIds).size === challengeIds.length;
+    const sessionScopeReason =
+      resolvedSessionContexts.length !== signatures.length
+        ? undefined // Missing signer contexts are reported on their individual result.
+        : sessionIds.size !== 1
+          ? "All participant signatures must belong to the same SignRoom session"
+          : policyHashes.size !== 1
+            ? "All participant signatures must commit to the same immutable session policy"
+            : !hasUniqueChallenges
+              ? "Each participant must use a distinct one-time challenge"
+              : undefined;
+
     const results = signatures.map((signature, index) => {
       const base = cryptographicResults[index];
-      const context = Object.prototype.hasOwnProperty.call(
-        options.expectedSessionContexts,
-        signature.signerId,
-      )
-        ? options.expectedSessionContexts[signature.signerId]
-        : undefined;
+      const context = resolvedSessionContexts.find(
+        (entry) => entry.signerId === signature.signerId,
+      )?.context;
 
       if (envelope.hasAllowlist()) {
         const isIssuer = signature.signerId === envelope.allowlistSignerId;
@@ -1282,6 +1317,15 @@ export class MajikSignature {
             reason: "Signer is not authorized by the envelope allowlist",
           };
         }
+      }
+
+      if (sessionScopeReason) {
+        return {
+          ...base,
+          valid: false,
+          sessionContextHash: signature.sessionContextHash,
+          reason: sessionScopeReason,
+        };
       }
 
       if (!context) {
