@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { MajikKey } from "@majikah/majik-key";
 
 import { MajikSignature } from "../src/majik-signature.js";
+import { MajikSignatureEnvelope } from "../src/core/envelope.js";
 import { buildSessionContextHash } from "../src/core/session-context.js";
 import { bytesToBase64, hashContent } from "../src/core/hash.js";
 import { getTestKey } from "./helpers/crypto.js";
@@ -303,4 +304,352 @@ describe("SignRoom session-bound signature foundation", () => {
     );
     expect(signature.hasTSA).toBe(false);
   });
+
+  describe("session-aware detached file APIs", () => {
+    const makeContext = (sessionId: string, challengeId: string, policy: string) => ({
+      sessionId,
+      challengeId,
+      policyHash: hashText(policy),
+    });
+
+    it("signs a session-bound document and round-trips its .mjksig sidecar", async () => {
+      const file = new Blob(["session-bound document"], {
+        type: "text/plain",
+      });
+      const sessionContext = makeContext(
+        "session-single",
+        "challenge-single-1",
+        "session-policy-v1",
+      );
+
+      const signed = await MajikSignature.signSessionFile(file, issuerKey, {
+        sessionContext,
+        contentType: "text/plain",
+      });
+
+      expect(signed.signature.sessionContextHash).toBe(
+        buildSessionContextHash(sessionContext),
+      );
+      expect(await MajikSignatureEnvelope.isMJKSIG(signed.mjksig)).toBe(true);
+
+      const restored = await MajikSignatureEnvelope.fromMJKSIG(signed.mjksig);
+      expect(restored.signatures).toHaveLength(1);
+
+      const verified = await MajikSignature.verifySessionFile(
+        signed.blob,
+        signed.mjksig,
+        {
+          expectedSessionContexts: {
+            [issuerKey.fingerprint]: sessionContext,
+          },
+          expectedSignerPublicKeys: {
+            [issuerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(issuerKey),
+          },
+        },
+      );
+
+      expect(verified.valid).toBe(true);
+      expect(verified.results).toHaveLength(1);
+      expect(verified.results[0].valid).toBe(true);
+      expect(verified.results[0].sessionContextHash).toBe(
+        buildSessionContextHash(sessionContext),
+      );
+    });
+
+    it("verifies multiple participants against their individual challenge contexts", async () => {
+      const file = new Blob(["multi-signer session document"], {
+        type: "text/plain",
+      });
+      const issuerContext = makeContext(
+        "session-multi",
+        "challenge-issuer",
+        "shared-policy",
+      );
+      const signerContext = makeContext(
+        "session-multi",
+        "challenge-participant",
+        "shared-policy",
+      );
+
+      const issuer = await MajikSignature.signSessionFile(file, issuerKey, {
+        sessionContext: issuerContext,
+        contentType: "text/plain",
+        expectedSigners: [
+          MajikSignature.expectedSignerFromKey(issuerKey),
+          MajikSignature.expectedSignerFromKey(signerKey),
+        ],
+      });
+      const participant = await MajikSignature.signSessionFile(
+        issuer.blob,
+        signerKey,
+        {
+          sessionContext: signerContext,
+          contentType: "text/plain",
+          existingEnvelope: issuer.envelope,
+        },
+      );
+
+      expect(participant.envelope.signatures).toHaveLength(2);
+      expect(
+        participant.envelope.signatures[0].sessionContextHash,
+      ).not.toBe(participant.envelope.signatures[1].sessionContextHash);
+
+      const verified = await MajikSignature.verifySessionFile(
+        participant.blob,
+        participant.mjksig,
+        {
+          expectedSessionContexts: {
+            [issuerKey.fingerprint]: issuerContext,
+            [signerKey.fingerprint]: signerContext,
+          },
+          expectedSignerPublicKeys: {
+            [issuerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(issuerKey),
+            [signerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(signerKey),
+          },
+        },
+      );
+
+      expect(verified.valid).toBe(true);
+      expect(verified.results).toHaveLength(2);
+      expect(verified.results.every((result) => result.valid)).toBe(true);
+    });
+
+    it("rejects missing or mismatched authoritative signer contexts", async () => {
+      const file = new Blob(["strict session verification"], {
+        type: "text/plain",
+      });
+      const signedContext = makeContext(
+        "session-strict",
+        "challenge-real",
+        "policy-real",
+      );
+      const signed = await MajikSignature.signSessionFile(file, issuerKey, {
+        sessionContext: signedContext,
+        contentType: "text/plain",
+      });
+
+      const missing = await MajikSignature.verifySessionFile(
+        signed.blob,
+        signed.mjksig,
+        {
+          expectedSessionContexts: {},
+          expectedSignerPublicKeys: {
+            [issuerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(issuerKey),
+          },
+        },
+      );
+      expect(missing.valid).toBe(false);
+      expect(missing.results[0].reason).toMatch(/No authoritative session context/i);
+
+      const mismatched = await MajikSignature.verifySessionFile(
+        signed.blob,
+        signed.mjksig,
+        {
+          expectedSessionContexts: {
+            [issuerKey.fingerprint]: makeContext(
+              "session-strict",
+              "challenge-replayed",
+              "policy-real",
+            ),
+          },
+          expectedSignerPublicKeys: {
+            [issuerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(issuerKey),
+          },
+        },
+      );
+      expect(mismatched.valid).toBe(false);
+      expect(mismatched.results[0].reason).toMatch(/session context does not match/i);
+    });
+
+    it("extends and verifies a session-bound visual-stamp revision chain", async () => {
+      const original = new Blob(["original session document revision"], {
+        type: "text/plain",
+      });
+      const issuerContext = makeContext(
+        "session-revisions",
+        "challenge-revision-issuer",
+        "revision-policy",
+      );
+      const participantContext = makeContext(
+        "session-revisions",
+        "challenge-revision-participant",
+        "revision-policy",
+      );
+      const issuer = await MajikSignature.signSessionFile(
+        original,
+        issuerKey,
+        {
+          sessionContext: issuerContext,
+          contentType: "text/plain",
+          expectedSigners: [
+            MajikSignature.expectedSignerFromKey(issuerKey),
+            MajikSignature.expectedSignerFromKey(signerKey),
+          ],
+        },
+      );
+
+      const stamped = new Blob(["original session document revision\nvisual stamp"], {
+        type: "text/plain",
+      });
+      const participant = await MajikSignature.signSessionFile(
+        stamped,
+        signerKey,
+        {
+          sessionContext: participantContext,
+          contentType: "text/plain",
+          existingEnvelope: issuer.envelope,
+          priorFile: issuer.blob,
+          message: "Participant added a visual stamp",
+        },
+      );
+
+      expect(participant.envelope.fileVersions).toHaveLength(2);
+      expect(participant.signature.versionChainHash).toBeTruthy();
+
+      const verified = await MajikSignature.verifySessionFile(
+        participant.blob,
+        participant.mjksig,
+        {
+          expectedSessionContexts: {
+            [issuerKey.fingerprint]: issuerContext,
+            [signerKey.fingerprint]: participantContext,
+          },
+          expectedSignerPublicKeys: {
+            [issuerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(issuerKey),
+            [signerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(signerKey),
+          },
+        },
+      );
+
+      expect(verified.valid).toBe(true);
+      expect(verified.chain?.chainValid).toBe(true);
+      expect(verified.results).toHaveLength(2);
+      expect(verified.results.every((result) => result.valid)).toBe(true);
+    });
+
+    it("checks a signature-scoped TSA and can require a pinned TSA identity", async () => {
+      const file = new Blob(["session document with official timestamp"], {
+        type: "text/plain",
+      });
+      const sessionContext = makeContext(
+        "session-tsa-api",
+        "challenge-tsa-api",
+        "tsa-policy",
+      );
+      const signed = await MajikSignature.signSessionFile(file, issuerKey, {
+        sessionContext,
+        contentType: "text/plain",
+      });
+      const timestamp = await MajikSignature.signTSA(
+        signed.signature.buildTSARequestPayload("signature"),
+        tsaKey,
+        {
+          id: "tsa.majikah.solutions",
+          signerFingerprint: tsaKey.fingerprint,
+        },
+      );
+      signed.signature.addTSA(
+        timestamp,
+        MajikSignature.publicKeysFromMajikKey(tsaKey),
+      );
+      const timestampedEnvelope = signed.envelope.withSignature(
+        signed.signature.toJSON(),
+      );
+      const verified = await MajikSignature.verifySessionFile(
+        signed.blob,
+        timestampedEnvelope.toMJKSIG(),
+        {
+          expectedSessionContexts: {
+            [issuerKey.fingerprint]: sessionContext,
+          },
+          expectedSignerPublicKeys: {
+            [issuerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(issuerKey),
+          },
+          trustedTsaPublicKeys: MajikSignature.publicKeysFromMajikKey(tsaKey),
+          requireTSA: true,
+          requireTrustedTSA: true,
+        },
+      );
+
+      expect(verified.valid).toBe(true);
+      expect(verified.tsaResults).toEqual([
+        {
+          signerId: issuerKey.fingerprint,
+          present: true,
+          valid: true,
+          trusted: true,
+        },
+      ]);
+    });
+
+    it("rejects mixed session policies and reused one-time challenges", async () => {
+      const file = new Blob(["challenge isolation"], { type: "text/plain" });
+      const issuerContext = makeContext(
+        "session-isolation",
+        "challenge-shared",
+        "policy-isolation",
+      );
+      const participantContext = makeContext(
+        "session-isolation",
+        "challenge-shared",
+        "policy-isolation",
+      );
+      const issuer = await MajikSignature.signSessionFile(file, issuerKey, {
+        sessionContext: issuerContext,
+        contentType: "text/plain",
+        expectedSigners: [
+          MajikSignature.expectedSignerFromKey(issuerKey),
+          MajikSignature.expectedSignerFromKey(signerKey),
+        ],
+      });
+      const participant = await MajikSignature.signSessionFile(
+        issuer.blob,
+        signerKey,
+        {
+          sessionContext: participantContext,
+          contentType: "text/plain",
+          existingEnvelope: issuer.envelope,
+        },
+      );
+
+      const reusedChallenge = await MajikSignature.verifySessionFile(
+        participant.blob,
+        participant.mjksig,
+        {
+          expectedSessionContexts: {
+            [issuerKey.fingerprint]: issuerContext,
+            [signerKey.fingerprint]: participantContext,
+          },
+          expectedSignerPublicKeys: {
+            [issuerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(issuerKey),
+            [signerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(signerKey),
+          },
+        },
+      );
+      expect(reusedChallenge.valid).toBe(false);
+      expect(reusedChallenge.reason).toMatch(/distinct one-time challenge/i);
+
+      const mixedSession = await MajikSignature.verifySessionFile(
+        participant.blob,
+        participant.mjksig,
+        {
+          expectedSessionContexts: {
+            [issuerKey.fingerprint]: issuerContext,
+            [signerKey.fingerprint]: makeContext(
+              "another-session",
+              "challenge-participant-unique",
+              "policy-isolation",
+            ),
+          },
+          expectedSignerPublicKeys: {
+            [issuerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(issuerKey),
+            [signerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(signerKey),
+          },
+        },
+      );
+      expect(mixedSession.valid).toBe(false);
+      expect(mixedSession.reason).toMatch(/same SignRoom session/i);
+    });
+  });
+
 });
