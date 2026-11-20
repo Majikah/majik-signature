@@ -96,6 +96,8 @@ Beyond signing raw bytes, Majik Signature can **embed signatures directly into a
       - [`signature.verifyTSA()`](#signatureverifytsa)
       - [`signature.hasTSA`](#signaturehastsa)
     - [SignRoom Session-Bound Signing](#signroom-session-bound-signing)
+      - [`MajikSignature.signSessionFile(file, key, options)`](#majiksignaturesignsessionfilefile-key-options)
+      - [`MajikSignature.verifySessionFile(file, envelope, options)`](#majiksignatureverifysessionfilefile-envelope-options)
       - [`buildSessionContextHash(context)`](#buildsessioncontexthashcontext)
       - [`MajikSignature.verifyDigest(hash, signature, publicKeys, options?)`](#majiksignatureverifydigesthash-signature-publickeys-options)
     - [Batch Signing \& MajikSignatureMap API](#batch-signing--majiksignaturemap-api)
@@ -1005,11 +1007,87 @@ Re-verifies the attached TSA's digest and hybrid signature. Supply `MajikSignatu
 
 ### SignRoom Session-Bound Signing
 
-SignRoom can bind each signer to a session ID, a server-issued one-time challenge ID, and an immutable policy hash. Build the context commitment from authoritative session values and pass it to `MajikSignature.sign()`:
+SignRoom can bind each participant to a session ID, a server-issued one-time challenge ID, and an immutable policy hash. For detached document workflows, prefer the session-aware file APIs below: they build the context commitment internally and preserve the normal detached envelope and revision-chain behavior.
+
+#### `MajikSignature.signSessionFile(file, key, options)`
+
+Sign one detached document for a SignRoom participant. A session context is required; the method computes its canonical commitment and includes it in both the Ed25519 and ML-DSA-87 signing payloads.
+
+```ts
+const sessionContext = {
+  sessionId,
+  challengeId,
+  policyHash, // base64 SHA-256 digest of the immutable session policy
+};
+
+const signed = await MajikSignature.signSessionFile(
+  documentBlob,
+  unlockedMajikKey,
+  {
+    sessionContext,
+    contentType: "application/pdf",
+    expectedSigners, // optional; used when this signer establishes the allowlist
+  },
+);
+
+// The document is detached and clean. Store/send the sidecar separately.
+const document = signed.blob;
+const envelope = signed.envelope;
+const sidecar = signed.mjksig; // binary .mjksig Blob
+```
+
+For subsequent participants, pass the existing envelope. When the participant adds a visual stamp, also pass the exact previous document bytes as `priorFile`; the SDK validates that prior file and appends a cryptographically committed FileVersion:
+
+```ts
+const next = await MajikSignature.signSessionFile(stampedDocument, participantKey, {
+  sessionContext: participantSessionContext, // that participant's own challenge
+  existingEnvelope: previous.envelope,
+  priorFile: previous.blob,
+  contentType: "application/pdf",
+  message: "Participant added a visual stamp",
+});
+```
+
+The returned `mjksig` contains the envelope as it exists when this call returns. If a server later attaches an official TSA token, serialize the updated envelope again with `updatedEnvelope.toMJKSIG()` so the sidecar includes that attestation.
+
+#### `MajikSignature.verifySessionFile(file, envelope, options)`
+
+Verify the detached document and every participant's session-bound signature. Verification fails closed unless callers supply both the authoritative session context and trusted signing public keys for every signer. The maps are keyed by signer fingerprint because each participant has a distinct one-time challenge.
+
+```ts
+const verification = await MajikSignature.verifySessionFile(
+  documentBlob,
+  sidecar, // .mjksig Blob, envelope JSON, or MajikSignatureEnvelope
+  {
+    expectedSessionContexts: {
+      [issuerKey.fingerprint]: issuerSessionContext,
+      [participantKey.fingerprint]: participantSessionContext,
+    },
+    expectedSignerPublicKeys: {
+      [issuerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(issuerKey),
+      [participantKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(participantKey),
+    },
+    trustedTsaPublicKeys, // optional: pins TSA verification to this key
+    requireTSA: true,
+    requireTrustedTSA: true,
+  },
+);
+
+if (!verification.valid) {
+  console.error(verification.reason, verification.results);
+}
+```
+
+The result includes one cryptographic/session verification result per participant, TSA status per signature, and revision-chain details when present. When `requireTrustedTSA` is enabled, `trustedTsaPublicKeys` is mandatory and every signer must have a valid attestation pinned to that TSA identity. Without a pinned TSA key, a present token is checked for internal consistency but is not reported as trusted.
+
+The SDK validates signatures, signer keys, session commitments, allowlist integrity, sealing, revision chains, and any TSA records. It does not authorize participants, issue or consume one-time challenges, or decide whether a challenge is still active; those remain application-server responsibilities.
+
+#### `buildSessionContextHash(context)`
+
+The lower-level helper remains available when applications need to construct or compare the canonical context commitment directly:
 
 ```ts
 import {
-  MajikSignature,
   buildSessionContextHash,
   hashContent,
   bytesToBase64,
@@ -1021,34 +1099,13 @@ const sessionContextHash = buildSessionContextHash({
   challengeId,
   policyHash,
 });
-
-const signature = await MajikSignature.sign(documentBytes, unlockedMajikKey, {
-  sessionContextHash,
-});
-
-// Verify a stored-file digest without sending plaintext to the API.
-const result = MajikSignature.verifyDigest(
-  trustedDocumentHash,
-  signature.toJSON(),
-  authoritativeSignerPublicKeys,
-  { expectedSessionContextHash: sessionContextHash },
-);
 ```
 
-The context hash is signed by both Ed25519 and ML-DSA-87. The library does not create, authorize, or consume challenges; the application server must enforce challenge ownership, expiry, and single-use behavior. A session-bound signature must be verified with its expected session-context hash.
+#### `MajikSignature.verifyDigest(hash, signature, publicKeys, options?)`
 
-For SignRoom, issue a timestamp for each individual signature record:
+For digest-only workflows where the application has independently established the trusted document hash, `verifyDigest()` remains available. For detached file verification, prefer `verifySessionFile()` because it can recompute the digest from the supplied document bytes and verify all participants in the envelope.
 
-```ts
-const request = signature.buildTSARequestPayload("signature");
-const timestamp = await MajikSignature.signTSA(request, tsaKey, {
-  id: "tsa.majikah.solutions",
-  signerFingerprint: tsaKey.fingerprint,
-});
-signature.addTSA(timestamp, MajikSignature.publicKeysFromMajikKey(tsaKey));
-```
-
-Signature-scoped TSA digests are domain-separated and exclude the TSA field to avoid circular hashing. Legacy content-scoped timestamps remain valid and backward-compatible. In SignRoom, the API should verify the user signature first, generate the TSA token server-side, verify it against the trusted TSA public keys, attach it, and persist the timestamped envelope. TSA issuance and billing policy belong to the application service, not this library.
+Signature-scoped TSA digests are domain-separated and exclude the TSA field to avoid circular hashing. In SignRoom, the API should verify the participant signature first, generate the TSA token server-side, verify it against the trusted TSA public keys, attach it, and persist the timestamped envelope. TSA issuance and billing policy belong to the application service, not this library.
 
 ### Batch Signing & MajikSignatureMap API
 
