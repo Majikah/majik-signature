@@ -30,6 +30,7 @@ import {
   buildTSACanonicalBytes,
 } from "./core/payload.js";
 import { hashContent, bytesToBase64, base64ToBytes } from "./core/hash.js";
+import { buildSessionContextHash } from "./core/session-context.js";
 import type {
   BatchFileInput,
   BatchSignOptions,
@@ -54,6 +55,10 @@ import type {
   RevisionSetVerification,
   SealInfo,
   SealVerificationResult,
+  SessionFileSignOptions,
+  SessionFileVerifyOptions,
+  SessionFileVerificationResult,
+  SessionFileTsaVerificationResult,
   SignatoriesFilter,
   SignatoriesResult,
   SignatoryInfo,
@@ -944,6 +949,46 @@ export class MajikSignature {
     );
   }
 
+
+  /**
+   * Sign one detached document as part of a SignRoom session.
+   *
+   * Unlike signFileDetached(), this method requires a canonical session
+   * context and commits it into the Ed25519 + ML-DSA-87 signing payload.
+   * Each participant should call this with their own one-time challenge
+   * context. Existing envelopes and priorFile revision handling use the
+   * same orchestration path as ordinary detached signing.
+   *
+   * The returned mjksig Blob serializes the resulting envelope in the
+   * current binary MJKSIG format. It is a detached sidecar; the document
+   * itself remains clean and separate.
+   *
+   * This method does not issue a TSA token or authorize/consume the session
+   * challenge. Those responsibilities remain with the session service.
+   */
+  static async signSessionFile(
+    file: FileLike,
+    key: MajikKey,
+    options: SessionFileSignOptions,
+  ) {
+    const { sessionContext, ...signingOptions } = options;
+    const sessionContextHash = buildSessionContextHash(sessionContext);
+    const result = await MajikSignatureEmbed.signDetached<MajikSignature>(
+      file,
+      key,
+      MajikSignature,
+      {
+        ...signingOptions,
+        sessionContextHash,
+      },
+    );
+
+    return {
+      ...result,
+      mjksig: result.envelope.toMJKSIG(),
+    };
+  }
+
   /**
    * Sign a file and return the signature envelope detached.
    *
@@ -1056,6 +1101,252 @@ export class MajikSignature {
       options,
       debug,
     );
+  }
+
+
+  /**
+   * Verify a detached document and every participant signature against
+   * authoritative SignRoom contexts.
+   *
+   * expectedSessionContexts must contain one context per signer, keyed by
+   * signer fingerprint. This is necessary because each participant signs
+   * with a distinct one-time challenge. Unknown signers, missing contexts,
+   * standalone signatures, and context mismatches fail closed.
+   *
+   * The method verifies the current document bytes and, when present, the
+   * self-contained revision chain. Historical revisions are verified at the
+   * commitment level, matching verifyFileDetachedChain() semantics.
+   *
+   * TSA attestations are checked when present. Without trustedTsaPublicKeys,
+   * that check only proves consistency with the key embedded in the TSA
+   * record; it does not establish external trust.
+   */
+  static async verifySessionFile(
+    file: FileLike,
+    envelopeInput: EnvelopeInput,
+    options: SessionFileVerifyOptions,
+  ): Promise<SessionFileVerificationResult> {
+    if (
+      !options ||
+      !options.expectedSessionContexts ||
+      typeof options.expectedSessionContexts !== "object"
+    ) {
+      throw new TypeError("expectedSessionContexts must be a signer-keyed context map");
+    }
+    if (options.requireTrustedTSA && !options.trustedTsaPublicKeys) {
+      throw new TypeError(
+        "trustedTsaPublicKeys is required when requireTrustedTSA is enabled",
+      );
+    }
+
+    const envelope = await MajikSignatureEnvelope.from(envelopeInput);
+    const signatures = [...envelope.signatures];
+    if (signatures.length === 0) {
+      return {
+        valid: false,
+        results: [],
+        tsaResults: [],
+        reason: "Session envelope contains no participant signatures",
+      };
+    }
+
+    const now = options.now ?? new Date();
+    let chain: FileChainVerification | undefined;
+    let cryptographicResults: VerificationResult[];
+
+    if (envelope.fileVersions.length > 0) {
+      chain = await MajikSignature.verifyFileDetachedChain(
+        file,
+        envelope,
+        { mimeType: options.mimeType, now },
+      );
+      const bySigner = new Map<string, VerificationResult>();
+      for (const result of [...chain.history, chain.latest]) {
+        if (result.signerId) bySigner.set(result.signerId, result);
+      }
+      cryptographicResults = signatures.map((signature) =>
+        bySigner.get(signature.signerId) ?? {
+          valid: false,
+          signerId: signature.signerId,
+          contentHash: signature.contentHash,
+          timestamp: signature.timestamp,
+          contentType: signature.contentType,
+          sessionContextHash: signature.sessionContextHash,
+          reason: "No verified revision-chain result exists for this signer",
+        },
+      );
+    } else {
+      const hasUnverifiableRevisionCommitment = signatures.some(
+        (signature) => signature.versionChainHash !== undefined,
+      );
+      const stripped = await MajikSignature.stripFrom(file, {
+        mimeType: options.mimeType,
+      });
+      const content = new Uint8Array(await stripped.arrayBuffer());
+
+      cryptographicResults = signatures.map((signature) => {
+        if (hasUnverifiableRevisionCommitment) {
+          return {
+            valid: false,
+            signerId: signature.signerId,
+            contentHash: signature.contentHash,
+            timestamp: signature.timestamp,
+            contentType: signature.contentType,
+            sessionContextHash: signature.sessionContextHash,
+            reason: "Signature commits to a revision chain, but fileVersions is missing",
+          };
+        }
+        try {
+          const instance = MajikSignature.fromJSON(signature);
+          return MajikSignature.verify(
+            content,
+            instance,
+            instance.extractPublicKeys(),
+            now,
+          );
+        } catch (error) {
+          return {
+            valid: false,
+            signerId: signature.signerId,
+            contentHash: signature.contentHash,
+            timestamp: signature.timestamp,
+            contentType: signature.contentType,
+            sessionContextHash: signature.sessionContextHash,
+            reason: error instanceof Error
+              ? error.message
+              : "Unable to verify participant signature",
+          };
+        }
+      });
+    }
+
+    const results = signatures.map((signature, index) => {
+      const base = cryptographicResults[index];
+      const context = Object.prototype.hasOwnProperty.call(
+        options.expectedSessionContexts,
+        signature.signerId,
+      )
+        ? options.expectedSessionContexts[signature.signerId]
+        : undefined;
+
+      if (!context) {
+        return {
+          ...base,
+          valid: false,
+          sessionContextHash: signature.sessionContextHash,
+          reason: "No authoritative session context was supplied for signer " + signature.signerId,
+        };
+      }
+
+      let expectedHash: string;
+      try {
+        expectedHash = buildSessionContextHash(context);
+      } catch (error) {
+        return {
+          ...base,
+          valid: false,
+          sessionContextHash: signature.sessionContextHash,
+          reason: error instanceof Error
+            ? "Invalid expected session context: " + error.message
+            : "Invalid expected session context",
+        };
+      }
+
+      if (signature.sessionContextHash !== expectedHash) {
+        return {
+          ...base,
+          valid: false,
+          sessionContextHash: signature.sessionContextHash,
+          reason: "Signature session context does not match the authoritative session, challenge, and policy",
+        };
+      }
+
+      return {
+        ...base,
+        sessionContextHash: signature.sessionContextHash,
+      };
+    });
+
+    const tsaResults: SessionFileTsaVerificationResult[] = signatures.map(
+      (signature) => {
+        const instance = MajikSignature.fromJSON(signature);
+        if (!instance.hasTSA) {
+          return {
+            signerId: signature.signerId,
+            present: false,
+            valid: options.requireTSA !== true,
+            trusted: false,
+            ...(options.requireTSA
+              ? { reason: "A TSA attestation is required for this participant" }
+              : {}),
+          };
+        }
+
+        try {
+          const tsaVerification = instance.verifyTSA(
+            options.trustedTsaPublicKeys,
+          );
+          return {
+            signerId: signature.signerId,
+            present: true,
+            valid: tsaVerification.valid,
+            trusted: options.trustedTsaPublicKeys !== undefined &&
+              tsaVerification.valid,
+            ...(tsaVerification.reason
+              ? { reason: tsaVerification.reason }
+              : {}),
+          };
+        } catch (error) {
+          return {
+            signerId: signature.signerId,
+            present: true,
+            valid: false,
+            trusted: false,
+            reason: error instanceof Error
+              ? error.message
+              : "TSA verification failed",
+          };
+        }
+      },
+    );
+
+    const allowlistIntegrity = envelope.verifyAllowlistIntegrity();
+    const versionChainIntegrity = envelope.verifyVersionChainIntegrity();
+    const chainValid = chain ? chain.chainValid : versionChainIntegrity.valid;
+    const tsaValid = tsaResults.every((result) => result.valid);
+    const trustedTsaValid =
+      options.requireTrustedTSA !== true ||
+      tsaResults.every((result) =>
+        result.present && result.valid && result.trusted,
+      );
+
+    const valid =
+      results.every((result) => result.valid) &&
+      allowlistIntegrity.valid &&
+      versionChainIntegrity.valid &&
+      chainValid &&
+      tsaValid &&
+      trustedTsaValid;
+
+    const reason =
+      results.find((result) => !result.valid)?.reason ??
+      allowlistIntegrity.reason ??
+      versionChainIntegrity.reason ??
+      (chain && !chain.chainValid
+        ? "Detached revision chain verification failed"
+        : undefined) ??
+      tsaResults.find((result) => !result.valid)?.reason ??
+      (!trustedTsaValid
+        ? "Every TSA attestation must verify against the trusted TSA public key"
+        : undefined);
+
+    return {
+      valid,
+      results,
+      ...(chain ? { chain } : {}),
+      tsaResults,
+      ...(reason ? { reason } : {}),
+    };
   }
 
   /**

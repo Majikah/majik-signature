@@ -717,6 +717,8 @@ export class MajikSignatureEmbed {
       timestamp?: ISODateString;
       /** ISO 8601 expiry for this signature. Omit for one that never expires. */
       validUntil?: ISODateString;
+      /** Canonical SignRoom context commitment, supplied only by signSessionFile(). */
+      sessionContextHash?: string;
       expectedSigners?: ExpectedSigner[];
       existingEnvelope?: EnvelopeInput;
       tsa?: MajikTimestamp;
@@ -799,6 +801,9 @@ export class MajikSignatureEmbed {
       contentType: options?.contentType,
       timestamp: newVersionEntry?.timestamp ?? options?.timestamp,
       validUntil: options?.validUntil,
+      ...(options?.sessionContextHash !== undefined
+        ? { sessionContextHash: options.sessionContextHash }
+        : {}),
       ...(versionChainHash !== undefined ? { versionChainHash } : {}),
       ...(allowlistHashValue !== undefined
         ? { allowlistHash: allowlistHashValue }

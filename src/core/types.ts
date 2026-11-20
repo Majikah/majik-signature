@@ -11,6 +11,7 @@ import type { ISODateString, MajikKeyFingerprint } from "@majikah/majik-key";
 import type { MajikChainAnchor } from "../anchor/types.js";
 import type { ContentType } from "./constants.js";
 import type { MajikSignatureEnvelope } from "./envelope.js";
+import type { MajikSessionSigningContext } from "./session-context.js";
 
 /** Standard content-type constants exposed by Majik Signature. */
 export type { ContentType };
@@ -1145,6 +1146,86 @@ export interface FileChainVerification {
   history: RevisionCommitmentResult[];
   /** Whether the complete revision commitment chain is internally consistent. */
   chainValid: boolean;
+}
+
+
+/**
+ * Options for signing one detached document inside a SignRoom session.
+ *
+ * A session context is mandatory. The library computes its canonical
+ * commitment and includes it in the participant's hybrid signature payload.
+ * The returned result includes an MJKSIG sidecar for the resulting envelope.
+ */
+export interface SessionFileSignOptions {
+  /** Authoritative session, one-time challenge, and immutable policy context. */
+  sessionContext: MajikSessionSigningContext;
+  /** Advisory content type included in the signed payload. */
+  contentType?: string;
+  /** Optional explicit ISO 8601 signing time. */
+  timestamp?: ISODateString;
+  /** MIME type override used by file-format handlers. */
+  mimeType?: string;
+  /** Allowlist established by the first signer, if this signer is the issuer. */
+  expectedSigners?: ExpectedSigner[];
+  /** Optional signed expiry for this participant's signature. */
+  validUntil?: ISODateString;
+  /** Existing detached envelope to extend for a subsequent participant. */
+  existingEnvelope?: EnvelopeInput;
+  /** Optional TSA token matching this exact signature record. */
+  tsa?: MajikTimestamp;
+  /**
+   * Exact prior document revision before this participant's own visual stamp.
+   * Requires existingEnvelope and activates revision-chain bookkeeping.
+   */
+  priorFile?: FileLike;
+  /** Optional audit note stored in the participant's revision entry. */
+  message?: string;
+}
+
+/**
+ * Options for strict session-bound detached-file verification.
+ *
+ * expectedSessionContexts is keyed by signer fingerprint because each
+ * participant has a different single-use challenge. Every signature in the
+ * envelope must have a corresponding authoritative context.
+ */
+export interface SessionFileVerifyOptions {
+  expectedSessionContexts: Readonly<
+    Record<string, MajikSessionSigningContext>
+  >;
+  /** MIME type override used when canonicalizing the document. */
+  mimeType?: string;
+  /** Clock used for signature-expiry checks. */
+  now?: Date;
+  /** Trusted TSA identity. Omit to validate TSA self-consistency only. */
+  trustedTsaPublicKeys?: MajikSignerPublicKeys;
+  /** Require every participant signature to carry a TSA attestation. */
+  requireTSA?: boolean;
+  /** Require every TSA attestation to verify against trustedTsaPublicKeys. */
+  requireTrustedTSA?: boolean;
+}
+
+/** TSA verification status for one participant's signature record. */
+export interface SessionFileTsaVerificationResult {
+  signerId: MajikKeyFingerprint;
+  present: boolean;
+  valid: boolean;
+  /** True only when verification was pinned to trustedTsaPublicKeys. */
+  trusted: boolean;
+  reason?: string;
+}
+
+/** Complete verification outcome for a session-bound detached document. */
+export interface SessionFileVerificationResult {
+  /** True only when content, signatures, session contexts, and envelope integrity pass. */
+  valid: boolean;
+  /** One result per participant, preserving envelope order. */
+  results: VerificationResult[];
+  /** Present when the document carries an append-only revision chain. */
+  chain?: FileChainVerification;
+  /** TSA status for each participant, including an explicit absent state. */
+  tsaResults: SessionFileTsaVerificationResult[];
+  reason?: string;
 }
 
 /**
