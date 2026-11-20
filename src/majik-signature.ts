@@ -1129,9 +1129,13 @@ export class MajikSignature {
     if (
       !options ||
       !options.expectedSessionContexts ||
-      typeof options.expectedSessionContexts !== "object"
+      typeof options.expectedSessionContexts !== "object" ||
+      !options.expectedSignerPublicKeys ||
+      typeof options.expectedSignerPublicKeys !== "object"
     ) {
-      throw new TypeError("expectedSessionContexts must be a signer-keyed context map");
+      throw new TypeError(
+        "expectedSessionContexts and expectedSignerPublicKeys must be signer-keyed maps",
+      );
     }
     if (options.requireTrustedTSA && !options.trustedTsaPublicKeys) {
       throw new TypeError(
@@ -1164,8 +1168,29 @@ export class MajikSignature {
       for (const result of [...chain.history, chain.latest]) {
         if (result.signerId) bySigner.set(result.signerId, result);
       }
-      cryptographicResults = signatures.map((signature) =>
-        bySigner.get(signature.signerId) ?? {
+      cryptographicResults = signatures.map((signature) => {
+        const trustedKeys =
+          options.expectedSignerPublicKeys[signature.signerId];
+        if (!trustedKeys) {
+          return {
+            valid: false,
+            signerId: signature.signerId,
+            contentHash: signature.contentHash,
+            timestamp: signature.timestamp,
+            contentType: signature.contentType,
+            sessionContextHash: signature.sessionContextHash,
+            reason: "No trusted public keys were supplied for signer " + signature.signerId,
+          };
+        }
+
+        const commitment = MajikSignature.verifyCommitment(
+          signature,
+          trustedKeys,
+          now,
+        );
+        if (!commitment.valid) return commitment;
+
+        return bySigner.get(signature.signerId) ?? {
           valid: false,
           signerId: signature.signerId,
           contentHash: signature.contentHash,
@@ -1173,8 +1198,8 @@ export class MajikSignature {
           contentType: signature.contentType,
           sessionContextHash: signature.sessionContextHash,
           reason: "No verified revision-chain result exists for this signer",
-        },
-      );
+        };
+      });
     } else {
       const hasUnverifiableRevisionCommitment = signatures.some(
         (signature) => signature.versionChainHash !== undefined,
@@ -1196,12 +1221,24 @@ export class MajikSignature {
             reason: "Signature commits to a revision chain, but fileVersions is missing",
           };
         }
+        const trustedKeys =
+          options.expectedSignerPublicKeys[signature.signerId];
+        if (!trustedKeys) {
+          return {
+            valid: false,
+            signerId: signature.signerId,
+            contentHash: signature.contentHash,
+            timestamp: signature.timestamp,
+            contentType: signature.contentType,
+            sessionContextHash: signature.sessionContextHash,
+            reason: "No trusted public keys were supplied for signer " + signature.signerId,
+          };
+        }
         try {
-          const instance = MajikSignature.fromJSON(signature);
           return MajikSignature.verify(
             content,
-            instance,
-            instance.extractPublicKeys(),
+            signature,
+            trustedKeys,
             now,
           );
         } catch (error) {
@@ -1228,6 +1265,24 @@ export class MajikSignature {
       )
         ? options.expectedSessionContexts[signature.signerId]
         : undefined;
+
+      if (envelope.hasAllowlist()) {
+        const isIssuer = signature.signerId === envelope.allowlistSignerId;
+        const allowed = envelope.allowlist?.some(
+          (entry) =>
+            entry.signerId === signature.signerId &&
+            entry.edPublicKey === signature.signerEdPublicKey &&
+            entry.mlDsaPublicKey === signature.signerMlDsaPublicKey,
+        ) ?? false;
+        if (!isIssuer && !allowed) {
+          return {
+            ...base,
+            valid: false,
+            sessionContextHash: signature.sessionContextHash,
+            reason: "Signer is not authorized by the envelope allowlist",
+          };
+        }
+      }
 
       if (!context) {
         return {
@@ -1312,6 +1367,9 @@ export class MajikSignature {
 
     const allowlistIntegrity = envelope.verifyAllowlistIntegrity();
     const versionChainIntegrity = envelope.verifyVersionChainIntegrity();
+    const sealIntegrity = envelope.isSealed()
+      ? envelope.verifySeal()
+      : { valid: true as const };
     const chainValid = chain ? chain.chainValid : versionChainIntegrity.valid;
     const tsaValid = tsaResults.every((result) => result.valid);
     const trustedTsaValid =
@@ -1324,6 +1382,7 @@ export class MajikSignature {
       results.every((result) => result.valid) &&
       allowlistIntegrity.valid &&
       versionChainIntegrity.valid &&
+      sealIntegrity.valid &&
       chainValid &&
       tsaValid &&
       trustedTsaValid;
@@ -1332,6 +1391,7 @@ export class MajikSignature {
       results.find((result) => !result.valid)?.reason ??
       allowlistIntegrity.reason ??
       versionChainIntegrity.reason ??
+      sealIntegrity.reason ??
       (chain && !chain.chainValid
         ? "Detached revision chain verification failed"
         : undefined) ??

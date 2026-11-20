@@ -342,6 +342,9 @@ describe("SignRoom session-bound signature foundation", () => {
           expectedSessionContexts: {
             [issuerKey.fingerprint]: sessionContext,
           },
+          expectedSignerPublicKeys: {
+            [issuerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(issuerKey),
+          },
         },
       );
 
@@ -399,6 +402,10 @@ describe("SignRoom session-bound signature foundation", () => {
             [issuerKey.fingerprint]: issuerContext,
             [signerKey.fingerprint]: signerContext,
           },
+          expectedSignerPublicKeys: {
+            [issuerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(issuerKey),
+            [signerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(signerKey),
+          },
         },
       );
 
@@ -424,7 +431,12 @@ describe("SignRoom session-bound signature foundation", () => {
       const missing = await MajikSignature.verifySessionFile(
         signed.blob,
         signed.mjksig,
-        { expectedSessionContexts: {} },
+        {
+          expectedSessionContexts: {},
+          expectedSignerPublicKeys: {
+            [issuerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(issuerKey),
+          },
+        },
       );
       expect(missing.valid).toBe(false);
       expect(missing.results[0].reason).toMatch(/No authoritative session context/i);
@@ -440,6 +452,9 @@ describe("SignRoom session-bound signature foundation", () => {
               "policy-real",
             ),
           },
+          expectedSignerPublicKeys: {
+            [issuerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(issuerKey),
+          },
         },
       );
       expect(mismatched.valid).toBe(false);
@@ -448,7 +463,7 @@ describe("SignRoom session-bound signature foundation", () => {
 
     it("extends and verifies a session-bound visual-stamp revision chain", async () => {
       const original = new Blob(["original session document revision"], {
-        type: "application/pdf",
+        type: "text/plain",
       });
       const issuerContext = makeContext(
         "session-revisions",
@@ -465,7 +480,7 @@ describe("SignRoom session-bound signature foundation", () => {
         issuerKey,
         {
           sessionContext: issuerContext,
-          contentType: "application/pdf",
+          contentType: "text/plain",
           expectedSigners: [
             MajikSignature.expectedSignerFromKey(issuerKey),
             MajikSignature.expectedSignerFromKey(signerKey),
@@ -474,14 +489,14 @@ describe("SignRoom session-bound signature foundation", () => {
       );
 
       const stamped = new Blob(["original session document revision\nvisual stamp"], {
-        type: "application/pdf",
+        type: "text/plain",
       });
       const participant = await MajikSignature.signSessionFile(
         stamped,
         signerKey,
         {
           sessionContext: participantContext,
-          contentType: "application/pdf",
+          contentType: "text/plain",
           existingEnvelope: issuer.envelope,
           priorFile: issuer.blob,
           message: "Participant added a visual stamp",
@@ -498,6 +513,10 @@ describe("SignRoom session-bound signature foundation", () => {
           expectedSessionContexts: {
             [issuerKey.fingerprint]: issuerContext,
             [signerKey.fingerprint]: participantContext,
+          },
+          expectedSignerPublicKeys: {
+            [issuerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(issuerKey),
+            [signerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(signerKey),
           },
         },
       );
@@ -542,6 +561,9 @@ describe("SignRoom session-bound signature foundation", () => {
         {
           expectedSessionContexts: {
             [issuerKey.fingerprint]: sessionContext,
+          },
+          expectedSignerPublicKeys: {
+            [issuerKey.fingerprint]: MajikSignature.publicKeysFromMajikKey(issuerKey),
           },
           trustedTsaPublicKeys: MajikSignature.publicKeysFromMajikKey(tsaKey),
           requireTSA: true,

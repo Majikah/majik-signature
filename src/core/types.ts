@@ -1193,6 +1193,8 @@ export interface SessionFileVerifyOptions {
   expectedSessionContexts: Readonly<
     Record<string, MajikSessionSigningContext>
   >;
+  /** Trusted Ed25519 + ML-DSA-87 keys, keyed by the same signer fingerprint. */
+  expectedSignerPublicKeys: Readonly<Record<string, MajikSignerPublicKeys>>;
   /** MIME type override used when canonicalizing the document. */
   mimeType?: string;
   /** Clock used for signature-expiry checks. */
