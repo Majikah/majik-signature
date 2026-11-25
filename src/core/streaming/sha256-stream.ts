@@ -129,7 +129,6 @@ export async function hashSource(
   let bytesProcessed = 0;
 
   const consume = (chunk: Uint8Array): void => {
-    throwIfAborted(options.signal);
     if (!(chunk instanceof Uint8Array)) {
       throw new MajikSignatureValidationError(
         "Stream yielded a non-Uint8Array chunk",
@@ -138,26 +137,32 @@ export async function hashSource(
     }
     if (chunk.byteLength === 0) return;
 
-    const next = bytesProcessed + chunk.byteLength;
-    if (!Number.isSafeInteger(next)) {
-      throw new MajikSignatureValidationError(
-        "Input byte count exceeds the safe integer range",
-        "source",
-      );
-    }
-    if (config.maxBytes !== undefined && next > config.maxBytes) {
-      throw new MajikSignatureValidationError(
-        `Input exceeds the configured maximum of ${config.maxBytes} bytes`,
-        "maxBytes",
-      );
-    }
+    // A custom ReadableStream/AsyncIterable may yield a single very large
+    // Uint8Array. Process that value in bounded slices without copying it.
+    for (let offset = 0; offset < chunk.byteLength; offset += config.chunkSize) {
+      throwIfAborted(options.signal);
+      const part = chunk.subarray(offset, Math.min(offset + config.chunkSize, chunk.byteLength));
+      const next = bytesProcessed + part.byteLength;
+      if (!Number.isSafeInteger(next)) {
+        throw new MajikSignatureValidationError(
+          "Input byte count exceeds the safe integer range",
+          "source",
+        );
+      }
+      if (config.maxBytes !== undefined && next > config.maxBytes) {
+        throw new MajikSignatureValidationError(
+          `Input exceeds the configured maximum of ${config.maxBytes} bytes`,
+          "maxBytes",
+        );
+      }
 
-    stream.update(chunk);
-    bytesProcessed = next;
-    options.onProgress?.({
-      bytesProcessed,
-      ...(expectedSize !== undefined ? { totalBytes: expectedSize } : {}),
-    });
+      stream.update(part);
+      bytesProcessed = next;
+      options.onProgress?.({
+        bytesProcessed,
+        ...(expectedSize !== undefined ? { totalBytes: expectedSize } : {}),
+      });
+    }
   };
 
   const processBuffer = async (bytes: Uint8Array): Promise<void> => {

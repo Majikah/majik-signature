@@ -151,3 +151,11 @@ export const MJKSMAP_FILE_EXTENSION = ".mjksmap";
 
 /** Conventional name/location when packaged in a signed batch zip. */
 export const MJKSMAP_DEFAULT_FILENAME = "signatures.mjksmap";
+
+
+// ─── Untrusted envelope parsing limits ──────────────────────────────────────
+export const MAX_ENVELOPE_BYTES = 16 * 1024 * 1024;
+export const MAX_CBOR_INPUT_BYTES = MAX_ENVELOPE_BYTES;
+export const MAX_CHAIN_ANCHORS = 256;
+export const MAX_FILE_VERSIONS = 10_000;
+export const MAX_FILE_VERSION_MESSAGE_CHARS = 4_096;

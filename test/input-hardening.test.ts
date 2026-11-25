@@ -3,7 +3,19 @@ import type { MajikKey } from "@majikah/majik-key";
 import { getTestKey } from "./helpers/crypto";
 import { MajikSignature } from "../src/majik-signature";
 import { MajikSignatureValidator } from "../src/core/validator";
-import { MAX_ALLOWLIST_ENTRIES, MAX_SIGNATURES_PER_ENVELOPE } from "../src/core/constants";
+import { MajikSignatureEnvelope } from "../src/core/envelope";
+import {
+  MAX_ALLOWLIST_ENTRIES,
+  MAX_SIGNATURES_PER_ENVELOPE,
+  MAX_ENVELOPE_BYTES,
+} from "../src/core/constants";
+import { base64ToBytes, bytesToBase64 } from "../src/core/hash";
+
+const ED25519_L = new Uint8Array([
+  0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58,
+  0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10,
+]);
 
 describe("untrusted signature input hardening", () => {
   let key: MajikKey;
@@ -35,7 +47,7 @@ describe("untrusted signature input hardening", () => {
     expect(() => MajikSignatureValidator.validateJSON({
       ...json,
       signerId: "x".repeat(257),
-    })).toThrow(/signerId/i);
+    })).toThrow(/canonical base64/i);
 
     expect(() => MajikSignatureValidator.validateJSON({
       ...json,
@@ -60,7 +72,7 @@ describe("untrusted signature input hardening", () => {
     })).toThrow(/allowlistHash/i);
   });
 
-  it("bounds multi-signature and allowlist collections", () => {
+  it("bounds multi-signature and allowlist collections on both validators", () => {
     const tooManySignatures = {
       version: 1,
       signatures: Array.from(
@@ -71,6 +83,7 @@ describe("untrusted signature input hardening", () => {
     expect(() => MajikSignatureValidator.validateMultiSigEnvelope(
       tooManySignatures,
     )).toThrow(/signatures exceeds/i);
+    expect(() => MajikSignatureEnvelope.fromJSON(tooManySignatures)).toThrow(/signatures exceeds/i);
 
     const signer = MajikSignature.expectedSignerFromKey(key);
     const tooManyAllowlistEntries = {
@@ -85,11 +98,42 @@ describe("untrusted signature input hardening", () => {
     expect(() => MajikSignatureValidator.validateMultiSigEnvelope(
       tooManyAllowlistEntries,
     )).toThrow(/allowlist exceeds/i);
+    expect(() => MajikSignatureEnvelope.fromJSON(tooManyAllowlistEntries)).toThrow(/allowlist exceeds/i);
   });
 
   it("rejects non-hex seal hashes", () => {
     expect(() => MajikSignatureValidator.validateSealHash(
       "z".repeat(128),
     )).toThrow(/hex/i);
+  });
+
+  it("rejects encoded envelopes that exceed the parser byte ceiling", () => {
+    expect(() => MajikSignatureEnvelope.fromJSON(
+      " ".repeat(Math.floor(MAX_ENVELOPE_BYTES / 3) + 1),
+    )).toThrow(/maximum supported size/i);
+    expect(() => MajikSignatureEnvelope.fromCBOR(
+      new Uint8Array(MAX_ENVELOPE_BYTES + 1),
+    )).toThrow(/maximum supported size/i);
+  });
+
+  it("rejects Ed25519 scalar-malleated signatures", () => {
+    const mutated = json.edSignature;
+    const bytes = base64ToBytes(mutated);
+    let carry = 0;
+    for (let i = 0; i < 32; i++) {
+      const sum = bytes[32 + i] + ED25519_L[i] + carry;
+      bytes[32 + i] = sum & 0xff;
+      carry = sum >>> 8;
+    }
+    expect(carry).toBe(0);
+
+    const altered = { ...json, edSignature: bytesToBase64(bytes) };
+    const publicKeys = MajikSignature.publicKeysFromMajikKey(key);
+    const verified = MajikSignature.verify(
+      new TextEncoder().encode("hardening fixture"),
+      altered,
+      publicKeys,
+    );
+    expect(verified.valid).toBe(false);
   });
 });

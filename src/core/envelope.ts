@@ -21,6 +21,13 @@ import {
   MJKSIG_MEDIA_TYPE,
   MJKSIG_SUPPORTED_VERSIONS,
   MJKSIG_VERSION,
+  MAX_ENVELOPE_BYTES,
+  MAX_SIGNATURES_PER_ENVELOPE,
+  MAX_ALLOWLIST_ENTRIES,
+  MAX_CHAIN_ANCHORS,
+  MAX_FILE_VERSIONS,
+  MAX_FILE_VERSION_MESSAGE_CHARS,
+  MAX_TIMESTAMP_CHARS,
 } from "./constants.js";
 import {
   MajikSignatureAllowlistError,
@@ -30,6 +37,7 @@ import {
   MajikSignatureValidationError,
 } from "./errors.js";
 import { hashContent, bytesToBase64 } from "./hash.js";
+import { MajikSignatureValidator } from "./validator.js";
 import type {
   EnvelopeInfo,
   EnvelopeInput,
@@ -1413,7 +1421,18 @@ export class MajikSignatureEnvelope {
   static async fromMJKSIG(
     input: FileLike, // Changed from Blob | Uint8Array
   ): Promise<MajikSignatureEnvelope> {
-    // Replaces the manual `input instanceof Blob` check
+    const inputSize =
+      input instanceof Blob
+        ? input.size
+        : input instanceof ArrayBuffer
+          ? input.byteLength
+          : input.byteLength;
+    if (inputSize > MAX_ENVELOPE_BYTES + MJKSIG_HEADER_LEN) {
+      throw new MajikSignatureSerializationError(
+        `MJKSIG input exceeds the maximum supported size of ${MAX_ENVELOPE_BYTES + MJKSIG_HEADER_LEN} bytes`,
+      );
+    }
+
     const raw = await normalizeToBytes(input);
 
     return MajikSignatureEnvelope.#parseMJKSIGBytes(raw);
@@ -1428,6 +1447,11 @@ export class MajikSignatureEnvelope {
    * Both formats normalize into the same validated envelope class.
    */
   static #parseMJKSIGBytes(raw: Uint8Array): MajikSignatureEnvelope {
+    if (raw.byteLength > MAX_ENVELOPE_BYTES + MJKSIG_HEADER_LEN) {
+      throw new MajikSignatureSerializationError(
+        `MJKSIG input exceeds the maximum supported size of ${MAX_ENVELOPE_BYTES + MJKSIG_HEADER_LEN} bytes`,
+      );
+    }
     if (raw.length < MJKSIG_HEADER_LEN + 1) {
       throw new MajikSignatureSerializationError(
         "Malformed MJKSIG: too short to contain a valid header and payload",
@@ -1645,6 +1669,11 @@ export class MajikSignatureEnvelope {
     json: MajikSignatureEnvelopeJSON | MajikSignatureJSON | string,
   ): MajikSignatureEnvelope {
     let parsed: unknown;
+    if (typeof json === "string" && json.length > Math.floor(MAX_ENVELOPE_BYTES / 3)) {
+      throw new MajikSignatureSerializationError(
+        `Embedded signature JSON exceeds the maximum supported size of ${MAX_ENVELOPE_BYTES} bytes`,
+      );
+    }
     try {
       parsed = typeof json === "string" ? JSON.parse(json) : json;
     } catch (err) {
@@ -1814,6 +1843,8 @@ export class MajikSignatureEnvelope {
   // ── Private validation ───────────────────────────────────────────────────────
 
   static #validateShape(obj: Record<string, unknown>): void {
+    MajikSignatureValidator.validateMultiSigEnvelope(obj);
+
     if (obj.version !== MAJIK_ENVELOPE_VERSION) {
       throw new MajikSignatureValidationError(
         `Unsupported envelope version: ${String(obj.version)}`,
@@ -1878,22 +1909,120 @@ export class MajikSignatureEnvelope {
       );
     }
 
-    if (obj.chainAnchors !== undefined && !Array.isArray(obj.chainAnchors)) {
-      throw new MajikSignatureValidationError(
-        "chainAnchors must be an array when present",
-        "chainAnchors",
-      );
+    if (obj.chainAnchors !== undefined) {
+      if (!Array.isArray(obj.chainAnchors)) {
+        throw new MajikSignatureValidationError(
+          "chainAnchors must be an array when present",
+          "chainAnchors",
+        );
+      }
+      if (obj.chainAnchors.length > MAX_CHAIN_ANCHORS) {
+        throw new MajikSignatureValidationError(
+          `chainAnchors exceeds the limit of ${MAX_CHAIN_ANCHORS}`,
+          "chainAnchors",
+        );
+      }
+      for (const [index, anchor] of obj.chainAnchors.entries()) {
+        const path = `chainAnchors[${index}]`;
+        if (!anchor || typeof anchor !== "object" || Array.isArray(anchor)) {
+          throw new MajikSignatureValidationError(`${path} must be an object`, path);
+        }
+        const a = anchor as Record<string, unknown>;
+        const p = a.payload as Record<string, unknown> | undefined;
+        const d = p?.digest as Record<string, unknown> | undefined;
+        const bounded = (value: unknown, field: string, max: number): void => {
+          if (
+            typeof value !== "string" ||
+            value.trim().length === 0 ||
+            value.length > max ||
+            /[\u0000-\u001f\u007f]/.test(value)
+          ) {
+            throw new MajikSignatureValidationError(
+              `${field} must be a non-empty string of at most ${max} characters`,
+              field,
+            );
+          }
+        };
+        if (a.version !== 1) {
+          throw new MajikSignatureValidationError(`${path}.version must be 1`, `${path}.version`);
+        }
+        bounded(a.id, `${path}.id`, 256);
+        bounded(p?.chain, `${path}.payload.chain`, 64);
+        bounded(p?.network, `${path}.payload.network`, 64);
+        if (d?.algorithm !== "SHA3-512" || typeof d.value !== "string" ||
+            d.value.length !== 128 || !/^[0-9a-fA-F]{128}$/.test(d.value)) {
+          throw new MajikSignatureValidationError(
+            `${path}.payload.digest must be a 128-character SHA3-512 hex digest`,
+            `${path}.payload.digest`,
+          );
+        }
+        bounded(a.memo, `${path}.memo`, 256);
+        bounded(a.txSignature, `${path}.txSignature`, 256);
+        if (
+          (a.slot !== null && (!Number.isSafeInteger(a.slot) || (a.slot as number) < 0)) ||
+          (a.blockTime !== null && (!Number.isFinite(a.blockTime) || (a.blockTime as number) < 0))
+        ) {
+          throw new MajikSignatureValidationError(`${path} slot/blockTime is invalid`, path);
+        }
+        if (
+          a.confirmedAt !== null &&
+          (typeof a.confirmedAt !== "string" ||
+            a.confirmedAt.length > MAX_TIMESTAMP_CHARS ||
+            Number.isNaN(Date.parse(a.confirmedAt)))
+        ) {
+          throw new MajikSignatureValidationError(`${path}.confirmedAt is invalid`, `${path}.confirmedAt`);
+        }
+        if (!["pending", "confirmed", "finalized", "failed"].includes(String(a.status))) {
+          throw new MajikSignatureValidationError(`${path}.status is invalid`, `${path}.status`);
+        }
+      }
     }
 
-    const hasFileVersions = obj.fileVersions !== undefined;
-
-    if (hasFileVersions) {
-      const typedFileVersion = obj.fileVersions as FileVersion[];
-      if (!Array.isArray(typedFileVersion)) {
+    if (obj.fileVersions !== undefined) {
+      if (!Array.isArray(obj.fileVersions)) {
         throw new MajikSignatureValidationError(
           "fileVersions must be an array when present",
           "fileVersions",
         );
+      }
+      if (obj.fileVersions.length > MAX_FILE_VERSIONS) {
+        throw new MajikSignatureValidationError(
+          `fileVersions exceeds the limit of ${MAX_FILE_VERSIONS}`,
+          "fileVersions",
+        );
+      }
+      for (const [index, entry] of obj.fileVersions.entries()) {
+        const path = `fileVersions[${index}]`;
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+          throw new MajikSignatureValidationError(`${path} must be an object`, path);
+        }
+        const f = entry as Record<string, unknown>;
+        if (!Number.isSafeInteger(f.version) || (f.version as number) < 1 || (f.version as number) > MAX_FILE_VERSIONS) {
+          throw new MajikSignatureValidationError(`${path}.version is invalid or exceeds the supported limit`, `${path}.version`);
+        }
+        if (
+          typeof f.timestamp !== "string" ||
+          f.timestamp.length > MAX_TIMESTAMP_CHARS ||
+          Number.isNaN(Date.parse(f.timestamp))
+        ) {
+          throw new MajikSignatureValidationError(`${path}.timestamp is invalid`, `${path}.timestamp`);
+        }
+        MajikSignatureValidator.validateCanonicalBase64(f.contentHash, `${path}.contentHash`, 32);
+        if (f.previousVersionHash !== undefined) {
+          MajikSignatureValidator.validateCanonicalBase64(f.previousVersionHash, `${path}.previousVersionHash`, 32);
+        }
+        if (f.createdBy !== undefined) {
+          MajikSignatureValidator.validateCanonicalBase64(f.createdBy, `${path}.createdBy`, 32);
+        }
+        if (
+          f.message !== undefined &&
+          (typeof f.message !== "string" || f.message.length > MAX_FILE_VERSION_MESSAGE_CHARS)
+        ) {
+          throw new MajikSignatureValidationError(
+            `${path}.message exceeds the limit of ${MAX_FILE_VERSION_MESSAGE_CHARS} characters`,
+            `${path}.message`,
+          );
+        }
       }
     }
   }
