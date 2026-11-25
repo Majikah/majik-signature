@@ -51,7 +51,7 @@ describe("untrusted signature input hardening", () => {
 
     expect(() => MajikSignatureValidator.validateJSON({
       ...json,
-      contentType: "text/plain\\r\\nInjected: value",
+      contentType: "text/plain\r\nInjected: value",
     })).toThrow(/contentType/i);
 
     expect(() => MajikSignatureValidator.validateJSON({
@@ -139,7 +139,7 @@ describe("untrusted signature input hardening", () => {
 
   it("rejects encoded envelopes that exceed the parser byte ceiling", () => {
     expect(() => MajikSignatureEnvelope.fromJSON(
-      " ".repeat(Math.floor(MAX_ENVELOPE_BYTES / 3) + 1),
+      "\u0800".repeat(Math.floor(MAX_ENVELOPE_BYTES / 3) + 1),
     )).toThrow(/maximum supported size/i);
     expect(() => MajikSignatureEnvelope.fromCBOR(
       new Uint8Array(MAX_ENVELOPE_BYTES + 1),
