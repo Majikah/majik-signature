@@ -14,6 +14,17 @@ import {
   CONTENT_HASH_B64_LEN,
   ALLOWLIST_HASH_B64_LEN,
   SEAL_HASH_HEX_LEN,
+  ED25519_PUBLIC_KEY_BYTES,
+  ED25519_SIGNATURE_BYTES,
+  ML_DSA_87_PUBLIC_KEY_BYTES,
+  ML_DSA_87_SIGNATURE_BYTES,
+  SHA256_DIGEST_BYTES,
+  MAX_SIGNER_ID_CHARS,
+  MAX_CONTENT_TYPE_CHARS,
+  MAX_TIMESTAMP_CHARS,
+  MAX_TSA_FIELD_CHARS,
+  MAX_SIGNATURES_PER_ENVELOPE,
+  MAX_ALLOWLIST_ENTRIES,
 } from "./constants.js";
 import {
   MajikSignatureValidationError,
@@ -78,6 +89,71 @@ export class MajikSignatureValidator {
       );
   }
 
+  static validateBoundedString(
+    value: unknown,
+    field: string,
+    maxLength: number,
+  ): asserts value is string {
+    if (
+      typeof value !== "string" ||
+      value.length === 0 ||
+      value.length > maxLength ||
+      /[\\u0000-\\u001f\\u007f]/.test(value)
+    ) {
+      throw new MajikSignatureValidationError(
+        `${field} must be a non-empty string of at most ${maxLength} characters without control characters`,
+        field,
+      );
+    }
+  }
+
+  static validateCanonicalBase64(
+    value: unknown,
+    field: string,
+    expectedBytes: number,
+  ): asserts value is string {
+    const expectedChars = Math.ceil(expectedBytes / 3) * 4;
+    if (typeof value !== "string" || value.length !== expectedChars) {
+      throw new MajikSignatureValidationError(
+        `${field} must be canonical base64 encoding of exactly ${expectedBytes} bytes`,
+        field,
+      );
+    }
+
+    try {
+      const decoded = base64ToBytes(value);
+      if (
+        decoded.length !== expectedBytes ||
+        bytesToBase64(decoded) !== value
+      ) {
+        throw new Error("non-canonical base64");
+      }
+    } catch (err) {
+      throw new MajikSignatureValidationError(
+        `${field} must be canonical base64 encoding of exactly ${expectedBytes} bytes`,
+        field,
+        err,
+      );
+    }
+  }
+
+  static validateTimestamp(
+    value: unknown,
+    field = "timestamp",
+  ): asserts value is string {
+    if (
+      typeof value !== "string" ||
+      value.length === 0 ||
+      value.length > MAX_TIMESTAMP_CHARS ||
+      Number.isNaN(Date.parse(value))
+    ) {
+      throw new MajikSignatureValidationError(
+        `${field} must be a valid ISO 8601 timestamp of at most ${MAX_TIMESTAMP_CHARS} characters`,
+        field,
+      );
+    }
+  }
+
   // ── Content validators ───────────────────────────────────────────────────────
 
   static validateContent(
@@ -111,9 +187,14 @@ export class MajikSignatureValidator {
     field = "contentType",
   ): void {
     if (contentType === undefined || contentType === null) return;
-    if (typeof contentType !== "string" || contentType.trim().length === 0)
+    if (
+      typeof contentType !== "string" ||
+      contentType.trim().length === 0 ||
+      contentType.length > MAX_CONTENT_TYPE_CHARS ||
+      /[\\u0000-\\u001f\\u007f]/.test(contentType)
+    )
       throw new MajikSignatureValidationError(
-        `${field} must be a non-empty string if provided`,
+        `${field} must be a non-empty string of at most ${MAX_CONTENT_TYPE_CHARS} characters without control characters`,
         field,
       );
   }
@@ -166,7 +247,7 @@ export class MajikSignatureValidator {
 
     if (j.version !== MAJIK_SIGNATURE_VERSION)
       throw new MajikSignatureValidationError(
-        `Unsupported signature version: ${j.version}`,
+        "Unsupported signature version",
         "version",
       );
 
@@ -191,65 +272,60 @@ export class MajikSignatureValidator {
         );
     }
 
-    const edPub = j.signerEdPublicKey as string;
-    if (edPub.length < MIN_ED_PUBLIC_KEY_B64_LEN)
-      throw new MajikSignatureValidationError(
-        "signerEdPublicKey is too short to be a valid Ed25519 public key",
-        "signerEdPublicKey",
-      );
-
-    const dsaPub = j.signerMlDsaPublicKey as string;
-    if (dsaPub.length < MIN_DSA_PUBLIC_KEY_B64_LEN)
-      throw new MajikSignatureValidationError(
-        "signerMlDsaPublicKey is too short to be a valid ML-DSA-87 public key",
-        "signerMlDsaPublicKey",
-      );
-
-    const hash = j.contentHash as string;
-    if (hash.length !== CONTENT_HASH_B64_LEN)
-      throw new MajikSignatureValidationError(
-        `contentHash must be exactly ${CONTENT_HASH_B64_LEN} base64 chars (SHA-256)`,
-        "contentHash",
-      );
-
-    const edSig = j.edSignature as string;
-    if (edSig.length < MIN_SIGNATURE_B64_LEN)
-      throw new MajikSignatureValidationError(
-        "edSignature is too short to be a valid Ed25519 signature",
-        "edSignature",
-      );
-
-    const ts = new Date(j.timestamp as string);
-    if (isNaN(ts.getTime()))
-      throw new MajikSignatureValidationError(
-        "timestamp must be a valid ISO 8601 date string",
-        "timestamp",
-      );
+    MajikSignatureValidator.validateBoundedString(
+      j.signerId,
+      "signerId",
+      MAX_SIGNER_ID_CHARS,
+    );
+    MajikSignatureValidator.validateCanonicalBase64(
+      j.signerEdPublicKey,
+      "signerEdPublicKey",
+      ED25519_PUBLIC_KEY_BYTES,
+    );
+    MajikSignatureValidator.validateCanonicalBase64(
+      j.signerMlDsaPublicKey,
+      "signerMlDsaPublicKey",
+      ML_DSA_87_PUBLIC_KEY_BYTES,
+    );
+    MajikSignatureValidator.validateCanonicalBase64(
+      j.contentHash,
+      "contentHash",
+      SHA256_DIGEST_BYTES,
+    );
+    MajikSignatureValidator.validateCanonicalBase64(
+      j.edSignature,
+      "edSignature",
+      ED25519_SIGNATURE_BYTES,
+    );
+    MajikSignatureValidator.validateCanonicalBase64(
+      j.mlDsaSignature,
+      "mlDsaSignature",
+      ML_DSA_87_SIGNATURE_BYTES,
+    );
+    MajikSignatureValidator.validateTimestamp(j.timestamp);
 
     if (j.contentType !== undefined) {
-      if (
-        typeof j.contentType !== "string" ||
-        j.contentType.trim().length === 0
-      )
-        throw new MajikSignatureValidationError(
-          "contentType must be a non-empty string if present",
-          "contentType",
-        );
+      MajikSignatureValidator.validateContentType(j.contentType);
     }
-
+    if (j.validUntil !== undefined) {
+      MajikSignatureValidator.validateValidUntil(j.validUntil as ISODateString);
+    }
+    if (j.versionChainHash !== undefined) {
+      MajikSignatureValidator.validateCanonicalBase64(
+        j.versionChainHash,
+        "versionChainHash",
+        SHA256_DIGEST_BYTES,
+      );
+    }
     if (j.sessionContextHash !== undefined) {
       MajikSignatureValidator.validateSessionContextHash(j.sessionContextHash);
     }
-
     if (j.allowlistHash !== undefined) {
-      if (
-        typeof j.allowlistHash !== "string" ||
-        j.allowlistHash.length !== ALLOWLIST_HASH_B64_LEN
-      )
-        throw new MajikSignatureValidationError(
-          `allowlistHash must be exactly ${ALLOWLIST_HASH_B64_LEN} base64 chars (SHA-256) if present`,
-          "allowlistHash",
-        );
+      MajikSignatureValidator.validateCanonicalBase64(
+        j.allowlistHash,
+        "allowlistHash",
+        SHA256_DIGEST_BYTES,
+      );
     }
   }
 
@@ -270,29 +346,21 @@ export class MajikSignatureValidator {
 
     const e = entry as Record<string, unknown>;
 
-    if (typeof e.signerId !== "string" || e.signerId.trim().length === 0)
-      throw new MajikSignatureValidationError(
-        `${label}.signerId must be a non-empty string`,
-        `${label}.signerId`,
-      );
-
-    if (
-      typeof e.edPublicKey !== "string" ||
-      e.edPublicKey.length < MIN_ED_PUBLIC_KEY_B64_LEN
-    )
-      throw new MajikSignatureValidationError(
-        `${label}.edPublicKey is too short to be a valid Ed25519 public key`,
-        `${label}.edPublicKey`,
-      );
-
-    if (
-      typeof e.mlDsaPublicKey !== "string" ||
-      e.mlDsaPublicKey.length < MIN_DSA_PUBLIC_KEY_B64_LEN
-    )
-      throw new MajikSignatureValidationError(
-        `${label}.mlDsaPublicKey is too short to be a valid ML-DSA-87 public key`,
-        `${label}.mlDsaPublicKey`,
-      );
+    MajikSignatureValidator.validateBoundedString(
+      e.signerId,
+      `${label}.signerId`,
+      MAX_SIGNER_ID_CHARS,
+    );
+    MajikSignatureValidator.validateCanonicalBase64(
+      e.edPublicKey,
+      `${label}.edPublicKey`,
+      ED25519_PUBLIC_KEY_BYTES,
+    );
+    MajikSignatureValidator.validateCanonicalBase64(
+      e.mlDsaPublicKey,
+      `${label}.mlDsaPublicKey`,
+      ML_DSA_87_PUBLIC_KEY_BYTES,
+    );
   }
 
   // ── Seal validator ───────────────────────────────────────────────────────────
@@ -322,7 +390,8 @@ export class MajikSignatureValidator {
 
     if (
       typeof env.sealHash !== "string" ||
-      env.sealHash.length !== SEAL_HASH_HEX_LEN
+      env.sealHash.length !== SEAL_HASH_HEX_LEN ||
+      !/^[0-9a-fA-F]+$/.test(env.sealHash)
     )
       throw new MajikSignatureValidationError(
         `sealHash must be exactly ${SEAL_HASH_HEX_LEN} hex chars (SHA3-512)`,
@@ -331,6 +400,7 @@ export class MajikSignatureValidator {
 
     if (
       typeof env.sealTimestamp !== "string" ||
+      env.sealTimestamp.length > MAX_TIMESTAMP_CHARS ||
       isNaN(new Date(env.sealTimestamp).getTime())
     )
       throw new MajikSignatureValidationError(
@@ -338,7 +408,12 @@ export class MajikSignatureValidator {
         "sealTimestamp",
       );
 
-    if (typeof env.sealedBy !== "string" || env.sealedBy.trim().length === 0)
+    if (
+      typeof env.sealedBy !== "string" ||
+      env.sealedBy.trim().length === 0 ||
+      env.sealedBy.length > MAX_SIGNER_ID_CHARS ||
+      /[\\u0000-\\u001f\\u007f]/.test(env.sealedBy)
+    )
       throw new MajikSignatureValidationError(
         "sealedBy must be a non-empty string",
         "sealedBy",
@@ -346,7 +421,11 @@ export class MajikSignatureValidator {
   }
 
   static validateSealHash(hash: string): void {
-    if (typeof hash !== "string" || hash.length !== SEAL_HASH_HEX_LEN)
+    if (
+      typeof hash !== "string" ||
+      hash.length !== SEAL_HASH_HEX_LEN ||
+      !/^[0-9a-fA-F]+$/.test(hash)
+    )
       throw new MajikSignatureValidationError(
         `sealHash must be exactly ${SEAL_HASH_HEX_LEN} hex chars (SHA3-512)`,
         "sealHash",
@@ -354,30 +433,20 @@ export class MajikSignatureValidator {
   }
 
   static validateSessionContextHash(value: unknown): asserts value is string {
-    if (typeof value !== "string" || value.length !== CONTENT_HASH_B64_LEN) {
-      throw new MajikSignatureValidationError(
-        "sessionContextHash must be a 44-character base64 SHA-256 digest",
-        "sessionContextHash",
-      );
-    }
-
-    try {
-      const decoded = base64ToBytes(value);
-      if (decoded.length !== 32 || bytesToBase64(decoded) !== value) {
-        throw new Error("non-canonical digest");
-      }
-    } catch (err) {
-      throw new MajikSignatureValidationError(
-        "sessionContextHash must be a canonical base64 SHA-256 digest",
-        "sessionContextHash",
-        err,
-      );
-    }
+    MajikSignatureValidator.validateCanonicalBase64(
+      value,
+      "sessionContextHash",
+      SHA256_DIGEST_BYTES,
+    );
   }
 
   static validateValidUntil(value: ISODateString | undefined): void {
     if (value === undefined) return;
-    if (typeof value !== "string" || Number.isNaN(Date.parse(value))) {
+    if (
+      typeof value !== "string" ||
+      value.length > MAX_TIMESTAMP_CHARS ||
+      Number.isNaN(Date.parse(value))
+    ) {
       throw new MajikSignatureValidationError(
         "validUntil must be a valid ISO 8601 timestamp string",
         "validUntil",
@@ -408,6 +477,11 @@ export class MajikSignatureValidator {
         "MultiSigEnvelope.signatures must be an array",
         "signatures",
       );
+    if ((e.signatures as unknown[]).length > MAX_SIGNATURES_PER_ENVELOPE)
+      throw new MajikSignatureValidationError(
+        `MultiSigEnvelope.signatures exceeds the limit of ${MAX_SIGNATURES_PER_ENVELOPE}`,
+        "signatures",
+      );
 
     for (let i = 0; i < (e.signatures as unknown[]).length; i++) {
       try {
@@ -433,6 +507,11 @@ export class MajikSignatureValidator {
           "MultiSigEnvelope.allowlist must not be empty if present — omit the field for open signing",
           "allowlist",
         );
+      if ((e.allowlist as unknown[]).length > MAX_ALLOWLIST_ENTRIES)
+        throw new MajikSignatureValidationError(
+          `MultiSigEnvelope.allowlist exceeds the limit of ${MAX_ALLOWLIST_ENTRIES}`,
+          "allowlist",
+        );
 
       for (let i = 0; i < (e.allowlist as unknown[]).length; i++) {
         MajikSignatureValidator.validateExpectedSigner(
@@ -443,7 +522,9 @@ export class MajikSignatureValidator {
 
       if (
         typeof e.allowlistSignerId !== "string" ||
-        e.allowlistSignerId.trim().length === 0
+        e.allowlistSignerId.trim().length === 0 ||
+        e.allowlistSignerId.length > MAX_SIGNER_ID_CHARS ||
+        /[\\u0000-\\u001f\\u007f]/.test(e.allowlistSignerId)
       )
         throw new MajikSignatureValidationError(
           "MultiSigEnvelope.allowlistSignerId must be a non-empty string when allowlist is present",
@@ -477,22 +558,40 @@ export class MajikSignatureValidator {
         "TSA payload digest scope must be content or signature",
       );
     }
-    if (typeof d.value !== "string" || d.value.length !== CONTENT_HASH_B64_LEN)
-      throw new MajikSignatureValidationError(
-        "TSA payload digest value must be a 44-char base64 string",
-      );
-    if (typeof p.nonce !== "string" || p.nonce.length === 0)
-      throw new MajikSignatureValidationError("TSA payload missing nonce");
-    if (typeof p.timestamp !== "string" || p.timestamp.length === 0)
-      throw new MajikSignatureValidationError("TSA payload missing timestamp");
+    MajikSignatureValidator.validateCanonicalBase64(
+      d.value,
+      "digest.value",
+      SHA256_DIGEST_BYTES,
+    );
+    if (
+      typeof p.nonce !== "string" ||
+      p.nonce.length === 0 ||
+      p.nonce.length > MAX_TSA_FIELD_CHARS ||
+      /[\\u0000-\\u001f\\u007f]/.test(p.nonce)
+    )
+      throw new MajikSignatureValidationError("TSA payload nonce is invalid or too long");
+    if (
+      typeof p.timestamp !== "string" ||
+      p.timestamp.length === 0 ||
+      p.timestamp.length > MAX_TIMESTAMP_CHARS ||
+      Number.isNaN(Date.parse(p.timestamp))
+    )
+      throw new MajikSignatureValidationError("TSA payload timestamp is invalid or too long");
     if (!p.tsa || typeof p.tsa !== "object")
       throw new MajikSignatureValidationError("TSA payload missing tsa");
     const t = p.tsa as Record<string, unknown>;
-    if (typeof t.id !== "string" || t.id.length === 0)
-      throw new MajikSignatureValidationError("TSA payload tsa.id missing");
+    if (
+      typeof t.id !== "string" ||
+      t.id.length === 0 ||
+      t.id.length > MAX_TSA_FIELD_CHARS ||
+      /[\\u0000-\\u001f\\u007f]/.test(t.id)
+    )
+      throw new MajikSignatureValidationError("TSA payload tsa.id is invalid or too long");
     if (
       typeof t.signerFingerprint !== "string" ||
-      t.signerFingerprint.length === 0
+      t.signerFingerprint.length === 0 ||
+      t.signerFingerprint.length > MAX_TSA_FIELD_CHARS ||
+      /[\\u0000-\\u001f\\u007f]/.test(t.signerFingerprint)
     )
       throw new MajikSignatureValidationError(
         "TSA payload tsa.signerFingerprint missing",
@@ -509,8 +608,13 @@ export class MajikSignatureValidator {
       throw new MajikSignatureValidationError(
         "MajikTimestamp version must be 1",
       );
-    if (typeof t.id !== "string" || t.id.length === 0)
-      throw new MajikSignatureValidationError("MajikTimestamp missing id");
+    if (
+      typeof t.id !== "string" ||
+      t.id.length === 0 ||
+      t.id.length > MAX_TSA_FIELD_CHARS ||
+      /[\\u0000-\\u001f\\u007f]/.test(t.id)
+    )
+      throw new MajikSignatureValidationError("MajikTimestamp id is invalid or too long");
     MajikSignatureValidator.validateMajikTSAPayload(t.payload);
     MajikSignatureValidator.validateJSON(t.signature); // reuses existing envelope validation
   }

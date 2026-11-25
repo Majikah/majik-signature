@@ -71,6 +71,21 @@ export const ALLOWLIST_HASH_B64_LEN = 44; // 44 chars
  */
 export const SEAL_HASH_HEX_LEN = 128;
 
+// ─── Input-hardening limits (validation only; raw content size is not capped) ──
+export const ED25519_PUBLIC_KEY_BYTES = 32;
+export const ED25519_SIGNATURE_BYTES = 64;
+export const ML_DSA_87_PUBLIC_KEY_BYTES = 2592;
+export const ML_DSA_87_SIGNATURE_BYTES = 4627;
+export const SHA256_DIGEST_BYTES = 32;
+
+export const MAX_SIGNER_ID_CHARS = 256;
+export const MAX_CONTENT_TYPE_CHARS = 1024;
+export const MAX_TIMESTAMP_CHARS = 64;
+export const MAX_TSA_FIELD_CHARS = 256;
+export const MAX_SIGNATURES_PER_ENVELOPE = 1024;
+export const MAX_ALLOWLIST_ENTRIES = 1024;
+
+
 export const MAJIK_TIMESTAMP_VERSION = 1 as const;
 export const MAJIK_TSA_DOMAIN =
   `majikah-tsa-v-${MAJIK_TIMESTAMP_VERSION}:` as const;

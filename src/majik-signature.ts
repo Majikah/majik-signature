@@ -314,7 +314,22 @@ export class MajikSignature {
     }
     MajikSignatureValidator.assertDefined(key, "key");
     MajikSignatureValidator.validateContentType(options?.contentType);
+    MajikSignatureValidator.validateTimestamp(options?.timestamp ?? new Date().toISOString());
     MajikSignatureValidator.validateValidUntil(options?.validUntil);
+    if (options?.allowlistHash !== undefined) {
+      MajikSignatureValidator.validateCanonicalBase64(
+        options.allowlistHash,
+        "allowlistHash",
+        32,
+      );
+    }
+    if (options?.versionChainHash !== undefined) {
+      MajikSignatureValidator.validateCanonicalBase64(
+        options.versionChainHash,
+        "versionChainHash",
+        32,
+      );
+    }
     if (options?.sessionContextHash !== undefined) {
       MajikSignatureValidator.validateSessionContextHash(options.sessionContextHash);
     }
