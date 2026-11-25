@@ -106,6 +106,36 @@ describe("untrusted signature input hardening", () => {
       "z".repeat(128),
     )).toThrow(/hex/i);
   });
+  it("rejects invalid TSA nonce and signer fingerprint encodings", () => {
+    expect(() => MajikSignatureValidator.validateMajikTSAPayload({
+      digest: { algorithm: "SHA-256", value: json.contentHash },
+      nonce: "A".repeat(40),
+      timestamp: json.timestamp,
+      tsa: { id: "test-tsa", signerFingerprint: "A".repeat(44) },
+    })).toThrow(/canonical base64/i);
+  });
+
+  it("bounds nested TSA signature recursion", () => {
+    let nested: Record<string, unknown> = { ...json };
+    for (let i = 0; i < 10; i++) {
+      nested = {
+        ...json,
+        tsa: {
+          version: 1,
+          id: "nested-tsa",
+          payload: {
+            digest: { algorithm: "SHA-256", value: json.contentHash },
+            nonce: bytesToBase64(new Uint8Array(32)),
+            timestamp: json.timestamp,
+            tsa: { id: "test-tsa", signerFingerprint: json.signerId },
+          },
+          signature: nested,
+        },
+      };
+    }
+    expect(() => MajikSignatureValidator.validateJSON(nested)).toThrow(/nesting/i);
+  });
+
 
   it("rejects encoded envelopes that exceed the parser byte ceiling", () => {
     expect(() => MajikSignatureEnvelope.fromJSON(

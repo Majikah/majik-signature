@@ -351,9 +351,9 @@ export class MajikSignature {
 
     edSecretKeyClone = rawEdKey.slice();
     mlDsaSecretKeyClone = rawMlDsaKey.slice();
-    MajikSignatureValidator.validateEdSecretKey(edSecretKeyClone);
-    MajikSignatureValidator.validateMlDsaSecretKey(mlDsaSecretKeyClone);
     try {
+      MajikSignatureValidator.validateEdSecretKey(edSecretKeyClone);
+      MajikSignatureValidator.validateMlDsaSecretKey(mlDsaSecretKeyClone);
       const edPublicKey = key.edPublicKey!;
       const mlDsaPublicKey = key.mlDsaPublicKey!;
 

@@ -38,6 +38,29 @@ import {
 } from "./errors.js";
 import { hashContent, bytesToBase64 } from "./hash.js";
 import { MajikSignatureValidator } from "./validator.js";
+
+/** Count UTF-8 bytes without allocating a second full-size encoded copy. */
+function exceedsUtf8ByteLimit(value: string, maxBytes: number): boolean {
+  let bytes = 0;
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code <= 0x7f) bytes += 1;
+    else if (code <= 0x7ff) bytes += 2;
+    else if (
+      code >= 0xd800 &&
+      code <= 0xdbff &&
+      i + 1 < value.length &&
+      value.charCodeAt(i + 1) >= 0xdc00 &&
+      value.charCodeAt(i + 1) <= 0xdfff
+    ) {
+      bytes += 4;
+      i++;
+    } else bytes += 3;
+    if (bytes > maxBytes) return true;
+  }
+  return false;
+}
+
 import type {
   EnvelopeInfo,
   EnvelopeInput,
@@ -1422,7 +1445,7 @@ export class MajikSignatureEnvelope {
     input: FileLike, // Changed from Blob | Uint8Array
   ): Promise<MajikSignatureEnvelope> {
     const inputSize =
-      input instanceof Blob
+      typeof Blob !== "undefined" && input instanceof Blob
         ? input.size
         : input instanceof ArrayBuffer
           ? input.byteLength
@@ -1669,7 +1692,7 @@ export class MajikSignatureEnvelope {
     json: MajikSignatureEnvelopeJSON | MajikSignatureJSON | string,
   ): MajikSignatureEnvelope {
     let parsed: unknown;
-    if (typeof json === "string" && json.length > Math.floor(MAX_ENVELOPE_BYTES / 3)) {
+    if (typeof json === "string" && exceedsUtf8ByteLimit(json, MAX_ENVELOPE_BYTES)) {
       throw new MajikSignatureSerializationError(
         `Embedded signature JSON exceeds the maximum supported size of ${MAX_ENVELOPE_BYTES} bytes`,
       );

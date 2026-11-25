@@ -25,6 +25,7 @@ import {
   MAX_TSA_FIELD_CHARS,
   MAX_SIGNATURES_PER_ENVELOPE,
   MAX_ALLOWLIST_ENTRIES,
+  MAX_TSA_SIGNATURE_NESTING,
 } from "./constants.js";
 import {
   MajikSignatureValidationError,
@@ -237,7 +238,13 @@ export class MajikSignatureValidator {
 
   // ── Per-signer envelope validator ────────────────────────────────────────────
 
-  static validateJSON(json: unknown): asserts json is MajikSignatureJSON {
+  static validateJSON(json: unknown, depth = 0): asserts json is MajikSignatureJSON {
+    if (depth > MAX_TSA_SIGNATURE_NESTING) {
+      throw new MajikSignatureValidationError(
+        `TSA signature nesting exceeds the maximum depth of ${MAX_TSA_SIGNATURE_NESTING}`,
+        "tsa",
+      );
+    }
     if (typeof json !== "object" || json === null)
       throw new MajikSignatureValidationError(
         "Signature JSON must be an object",
@@ -332,6 +339,9 @@ export class MajikSignatureValidator {
         "allowlistHash",
         SHA256_DIGEST_BYTES,
       );
+    }
+    if (j.tsa !== undefined) {
+      MajikSignatureValidator.validateMajikTimestamp(j.tsa, depth + 1);
     }
   }
 
@@ -501,7 +511,16 @@ export class MajikSignatureValidator {
       }
     }
 
-    if (e.allowlist !== undefined) {
+    const hasAllowlist = e.allowlist !== undefined;
+    const hasAllowlistSignerId = e.allowlistSignerId !== undefined;
+    if (hasAllowlist !== hasAllowlistSignerId) {
+      throw new MajikSignatureValidationError(
+        "allowlist and allowlistSignerId must be set together",
+        "allowlist",
+      );
+    }
+
+    if (hasAllowlist) {
       if (!Array.isArray(e.allowlist))
         throw new MajikSignatureValidationError(
           "MultiSigEnvelope.allowlist must be an array if present",
@@ -564,20 +583,8 @@ export class MajikSignatureValidator {
       "digest.value",
       SHA256_DIGEST_BYTES,
     );
-    if (
-      typeof p.nonce !== "string" ||
-      p.nonce.length === 0 ||
-      p.nonce.length > MAX_TSA_FIELD_CHARS ||
-      /[\u0000-\u001f\u007f]/.test(p.nonce)
-    )
-      throw new MajikSignatureValidationError("TSA payload nonce is invalid or too long");
-    if (
-      typeof p.timestamp !== "string" ||
-      p.timestamp.length === 0 ||
-      p.timestamp.length > MAX_TIMESTAMP_CHARS ||
-      Number.isNaN(Date.parse(p.timestamp))
-    )
-      throw new MajikSignatureValidationError("TSA payload timestamp is invalid or too long");
+    MajikSignatureValidator.validateCanonicalBase64(p.nonce, "nonce", 32);
+    MajikSignatureValidator.validateTimestamp(p.timestamp, "timestamp");
     if (!p.tsa || typeof p.tsa !== "object")
       throw new MajikSignatureValidationError("TSA payload missing tsa");
     const t = p.tsa as Record<string, unknown>;
@@ -588,18 +595,23 @@ export class MajikSignatureValidator {
       /[\u0000-\u001f\u007f]/.test(t.id)
     )
       throw new MajikSignatureValidationError("TSA payload tsa.id is invalid or too long");
-    if (
-      typeof t.signerFingerprint !== "string" ||
-      t.signerFingerprint.length === 0 ||
-      t.signerFingerprint.length > MAX_TSA_FIELD_CHARS ||
-      /[\u0000-\u001f\u007f]/.test(t.signerFingerprint)
-    )
-      throw new MajikSignatureValidationError(
-        "TSA payload tsa.signerFingerprint missing",
-      );
+    MajikSignatureValidator.validateCanonicalBase64(
+      t.signerFingerprint,
+      "tsa.signerFingerprint",
+      SHA256_DIGEST_BYTES,
+    );
   }
 
-  static validateMajikTimestamp(tsa: unknown): asserts tsa is MajikTimestamp {
+  static validateMajikTimestamp(
+    tsa: unknown,
+    depth = 0,
+  ): asserts tsa is MajikTimestamp {
+    if (depth > MAX_TSA_SIGNATURE_NESTING) {
+      throw new MajikSignatureValidationError(
+        `TSA signature nesting exceeds the maximum depth of ${MAX_TSA_SIGNATURE_NESTING}`,
+        "tsa",
+      );
+    }
     if (!tsa || typeof tsa !== "object")
       throw new MajikSignatureValidationError(
         "MajikTimestamp must be an object",
@@ -615,7 +627,7 @@ export class MajikSignatureValidator {
       MAX_TSA_FIELD_CHARS,
     );
     MajikSignatureValidator.validateMajikTSAPayload(t.payload);
-    MajikSignatureValidator.validateJSON(t.signature); // reuses existing envelope validation
+    MajikSignatureValidator.validateJSON(t.signature, depth + 1); // bounded nested TSA validation
   }
 }
 
