@@ -1950,9 +1950,9 @@ export class MajikSignatureEnvelope {
         if (!anchor || typeof anchor !== "object" || Array.isArray(anchor)) {
           throw new MajikSignatureValidationError(`${path} must be an object`, path);
         }
-        const a = anchor as Record<string, unknown>;
-        const p = a.payload as Record<string, unknown> | undefined;
-        const d = p?.digest as Record<string, unknown> | undefined;
+        const a = anchor;
+        const p = a.payload;
+        const d = p?.digest;
         const bounded = (value: unknown, field: string, max: number): void => {
           if (
             typeof value !== "string" ||
@@ -2019,7 +2019,7 @@ export class MajikSignatureEnvelope {
         if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
           throw new MajikSignatureValidationError(`${path} must be an object`, path);
         }
-        const f = entry as Record<string, unknown>;
+        const f = entry;
         if (!Number.isSafeInteger(f.version) || (f.version as number) < 1 || (f.version as number) > MAX_FILE_VERSIONS) {
           throw new MajikSignatureValidationError(`${path}.version is invalid or exceeds the supported limit`, `${path}.version`);
         }
