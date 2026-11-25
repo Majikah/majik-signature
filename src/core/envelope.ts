@@ -1444,12 +1444,10 @@ export class MajikSignatureEnvelope {
   static async fromMJKSIG(
     input: FileLike, // Changed from Blob | Uint8Array
   ): Promise<MajikSignatureEnvelope> {
-    const inputSize =
-      typeof Blob !== "undefined" && input instanceof Blob
-        ? input.size
-        : input instanceof ArrayBuffer
-          ? input.byteLength
-          : input.byteLength;
+    // Blob and File expose `size`; ArrayBuffer and Uint8Array expose `byteLength`.
+    // Property narrowing also works in runtimes where the global Blob constructor
+    // is unavailable (for example, some non-browser test environments).
+    const inputSize = "size" in input ? input.size : input.byteLength;
     if (inputSize > MAX_ENVELOPE_BYTES + MJKSIG_HEADER_LEN) {
       throw new MajikSignatureSerializationError(
         `MJKSIG input exceeds the maximum supported size of ${MAX_ENVELOPE_BYTES + MJKSIG_HEADER_LEN} bytes`,
@@ -2019,7 +2017,7 @@ export class MajikSignatureEnvelope {
         if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
           throw new MajikSignatureValidationError(`${path} must be an object`, path);
         }
-        const f = entry;
+        const f = entry as Record<string, unknown>;
         if (!Number.isSafeInteger(f.version) || (f.version as number) < 1 || (f.version as number) > MAX_FILE_VERSIONS) {
           throw new MajikSignatureValidationError(`${path}.version is invalid or exceeds the supported limit`, `${path}.version`);
         }
