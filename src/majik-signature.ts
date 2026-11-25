@@ -30,6 +30,8 @@ import {
   buildTSACanonicalBytes,
 } from "./core/payload.js";
 import { hashContent, bytesToBase64, base64ToBytes } from "./core/hash.js";
+import { hashSource } from "./core/streaming/index.js";
+import type { StreamingByteSource, StreamingHashOptions } from "./core/streaming/types.js";
 import { buildSessionContextHash } from "./core/session-context.js";
 import type {
   BatchFileInput,
@@ -270,6 +272,46 @@ export class MajikSignature {
     debug: boolean = false,
   ): Promise<MajikSignature> {
     MajikSignatureValidator.validateContent(content);
+    return MajikSignature._signDigest(hashContent(content), key, options, debug);
+  }
+
+  /**
+   * Sign an arbitrary byte stream without materializing the complete input.
+   * This produces the same canonical contentHash as sign() for identical bytes.
+   *
+   * This is a raw-content/detached signing primitive. Format-aware embedded
+   * signing still uses the existing format handlers and is not implicitly
+   * converted to streaming by this API.
+   */
+  static async signStream(
+    source: StreamingByteSource,
+    key: MajikKey,
+    options?: SignOptions & {
+      allowlistHash?: string;
+      versionChainHash?: string;
+      streaming?: StreamingHashOptions;
+    },
+    debug: boolean = false,
+  ): Promise<MajikSignature> {
+    const result = await hashSource(source, options?.streaming);
+    if (result.bytesProcessed === 0) {
+      MajikSignatureValidator.validateContent(new Uint8Array());
+    }
+    return MajikSignature._signDigest(result.digest, key, options, debug);
+  }
+
+  private static async _signDigest(
+    contentHashBytes: Uint8Array,
+    key: MajikKey,
+    options?: SignOptions & {
+      allowlistHash?: string;
+      versionChainHash?: string;
+    },
+    debug: boolean = false,
+  ): Promise<MajikSignature> {
+    if (contentHashBytes.byteLength !== 32) {
+      throw new MajikSignatureError("Internal SHA-256 digest must be exactly 32 bytes");
+    }
     MajikSignatureValidator.assertDefined(key, "key");
     MajikSignatureValidator.validateContentType(options?.contentType);
     MajikSignatureValidator.validateValidUntil(options?.validUntil);
@@ -300,14 +342,12 @@ export class MajikSignature {
       const edPublicKey = key.edPublicKey!;
       const mlDsaPublicKey = key.mlDsaPublicKey!;
 
-      const contentHashBytes = hashContent(content);
       const contentHash = bytesToBase64(contentHashBytes);
       const timestamp = options?.timestamp ?? new Date().toISOString();
       const signerId = key.fingerprint;
       const contentType = options?.contentType;
       const allowlistHash = options?.allowlistHash;
-      const validUntil = options?.validUntil; // NEW
-
+      const validUntil = options?.validUntil;
       const versionChainHash = options?.versionChainHash;
       const sessionContextHash = options?.sessionContextHash;
       const payload = buildSigningPayload({
@@ -324,19 +364,6 @@ export class MajikSignature {
       if (debug) console.log("Signing Payload:", payload);
 
       const edSigBytes = ed25519.sign(edSecretKeyClone, payload);
-
-      if (debug) {
-        console.log(
-          "mlDsaSecretKey type:",
-          mlDsaSecretKeyClone?.constructor?.name,
-        );
-        console.log("mlDsaSecretKey length:", mlDsaSecretKeyClone?.length);
-        console.log(
-          "is Uint8Array:",
-          mlDsaSecretKeyClone instanceof Uint8Array,
-        );
-      }
-
       const mlDsaSigBytes = ml_dsa87.sign(payload, mlDsaSecretKeyClone);
 
       const envelope: MajikSignatureJSON = {
@@ -361,7 +388,6 @@ export class MajikSignature {
       if (err instanceof MajikSignatureError) throw err;
       throw new MajikSignatureError("Failed to sign content", err);
     } finally {
-      // 3. Securely wipe the clones, leaving the originals in MajikKey safe
       if (edSecretKeyClone) {
         secureFill.call(edSecretKeyClone, 0);
         edSecretKeyClone = undefined;
@@ -397,13 +423,49 @@ export class MajikSignature {
     publicKeys: MajikSignerPublicKeys,
     now: Date = new Date(),
   ): VerificationResult {
+    MajikSignatureValidator.validateContent(content);
+    return MajikSignature._verifyDigest(hashContent(content), signature, publicKeys, now);
+  }
+
+  /**
+   * Verify arbitrary streamed bytes against a detached signature.
+   * The resulting SHA-256 digest is identical to verify() over the same bytes.
+   */
+  static async verifyStream(
+    source: StreamingByteSource,
+    signature: MajikSignature | MajikSignatureJSON,
+    publicKeys: MajikSignerPublicKeys,
+    options?: { now?: Date; streaming?: StreamingHashOptions },
+  ): Promise<VerificationResult> {
+    const result = await hashSource(source, options?.streaming);
+    if (result.bytesProcessed === 0) {
+      MajikSignatureValidator.validateContent(new Uint8Array());
+    }
+    return MajikSignature._verifyDigest(
+      result.digest,
+      signature,
+      publicKeys,
+      options?.now ?? new Date(),
+    );
+  }
+
+  private static _verifyDigest(
+    digest: Uint8Array,
+    signature: MajikSignature | MajikSignatureJSON,
+    publicKeys: MajikSignerPublicKeys,
+    now: Date,
+  ): VerificationResult {
     try {
-      MajikSignatureValidator.validateContent(content);
+      if (digest.byteLength !== 32) {
+        throw new MajikSignatureError("Internal SHA-256 digest must be exactly 32 bytes");
+      }
+      if (!Number.isFinite(now.getTime())) {
+        throw new MajikSignatureError("Verification time must be a valid Date");
+      }
       MajikSignatureValidator.validateSignerPublicKeys(publicKeys);
 
       const env: MajikSignatureJSON =
         signature instanceof MajikSignature ? signature.toJSON() : signature;
-
       MajikSignatureValidator.validateJSON(env);
 
       const invalid = (reason?: string): VerificationResult =>
@@ -426,10 +488,9 @@ export class MajikSignature {
         return invalid("Supplied signer public keys do not match the signature record");
       }
 
-      const recomputedHash = bytesToBase64(hashContent(content));
+      const recomputedHash = bytesToBase64(digest);
       if (recomputedHash !== env.contentHash) return invalid();
 
-      // allowlistHash omitted when undefined — preserves backward compat
       const payload = buildSigningPayload({
         signerId: env.signerId,
         timestamp: env.timestamp,
@@ -448,8 +509,7 @@ export class MajikSignature {
           payload,
           base64ToBytes(env.edSignature),
         );
-      } catch (e) {
-        console.error(e);
+      } catch {
         return invalid("Failed to verify Ed25519 signature");
       }
       if (!edOk) return invalid("Invalid Ed25519 signature");
@@ -461,13 +521,11 @@ export class MajikSignature {
           payload,
           publicKeys.mlDsaPublicKey,
         );
-      } catch (e) {
-        console.error(e);
+      } catch {
         return invalid("Failed to verify ML-DSA-87 signature");
       }
       if (!mlDsaOk) return invalid("Invalid ML-DSA-87 signature");
 
-      // NEW — expiry check, only after crypto has checked out
       if (
         env.validUntil !== undefined &&
         now.getTime() > Date.parse(env.validUntil)
