@@ -22,6 +22,7 @@ import {
   MJKSIG_SUPPORTED_VERSIONS,
   MJKSIG_VERSION,
   MAX_ENVELOPE_BYTES,
+  MAX_CBOR_INPUT_BYTES,
   MAX_SIGNATURES_PER_ENVELOPE,
   MAX_ALLOWLIST_ENTRIES,
   MAX_CHAIN_ANCHORS,
@@ -1846,6 +1847,13 @@ export class MajikSignatureEnvelope {
    * Accepts raw CBOR only, not an MJKSIG container.
    */
   static fromCBOR(input: Uint8Array | ArrayBuffer): MajikSignatureEnvelope {
+    // Reject oversized input before decoder work or error wrapping.
+    if (input.byteLength > MAX_CBOR_INPUT_BYTES) {
+      throw new MajikSignatureSerializationError(
+        `CBOR input exceeds the maximum supported size of ${MAX_CBOR_INPUT_BYTES} bytes`,
+      );
+    }
+
     try {
       const decoded = decodeCBOR(input);
       const json = envelopeFromCBOR(decoded);
