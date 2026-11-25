@@ -71,6 +71,21 @@ export const ALLOWLIST_HASH_B64_LEN = 44; // 44 chars
  */
 export const SEAL_HASH_HEX_LEN = 128;
 
+// ─── Input-hardening limits (validation only; raw content size is not capped) ──
+export const ED25519_PUBLIC_KEY_BYTES = 32;
+export const ED25519_SIGNATURE_BYTES = 64;
+export const ML_DSA_87_PUBLIC_KEY_BYTES = 2592;
+export const ML_DSA_87_SIGNATURE_BYTES = 4627;
+export const SHA256_DIGEST_BYTES = 32;
+
+export const MAX_SIGNER_ID_CHARS = 256;
+export const MAX_CONTENT_TYPE_CHARS = 1024;
+export const MAX_TIMESTAMP_CHARS = 64;
+export const MAX_TSA_FIELD_CHARS = 256;
+export const MAX_SIGNATURES_PER_ENVELOPE = 1024;
+export const MAX_ALLOWLIST_ENTRIES = 1024;
+
+
 export const MAJIK_TIMESTAMP_VERSION = 1 as const;
 export const MAJIK_TSA_DOMAIN =
   `majikah-tsa-v-${MAJIK_TIMESTAMP_VERSION}:` as const;
@@ -136,3 +151,13 @@ export const MJKSMAP_FILE_EXTENSION = ".mjksmap";
 
 /** Conventional name/location when packaged in a signed batch zip. */
 export const MJKSMAP_DEFAULT_FILENAME = "signatures.mjksmap";
+
+
+// ─── Untrusted envelope parsing limits ──────────────────────────────────────
+export const MAX_ENVELOPE_BYTES = 16 * 1024 * 1024;
+export const MAX_CBOR_INPUT_BYTES = MAX_ENVELOPE_BYTES;
+export const MAX_CHAIN_ANCHORS = 256;
+export const MAX_FILE_VERSIONS = 10_000;
+export const MAX_FILE_VERSION_MESSAGE_CHARS = 4_096;
+
+export const MAX_TSA_SIGNATURE_NESTING = 8;

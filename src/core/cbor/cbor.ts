@@ -7,6 +7,7 @@
  */
 
 import { decode, encode } from "cbor-x";
+import { MAX_CBOR_INPUT_BYTES } from "../constants.js";
 
 /**
  * Encode a value as CBOR bytes.
@@ -15,6 +16,11 @@ import { decode, encode } from "cbor-x";
  */
 export function encodeCBOR(value: unknown): Uint8Array {
   const encoded = encode(value);
+  if (encoded.byteLength > MAX_CBOR_INPUT_BYTES) {
+    throw new TypeError(
+      `CBOR output exceeds the maximum supported size of ${MAX_CBOR_INPUT_BYTES} bytes`,
+    );
+  }
   return Uint8Array.from(encoded);
 }
 
@@ -28,6 +34,13 @@ export function decodeCBOR(input: Uint8Array | ArrayBuffer): unknown {
   const inputBytes =
     input instanceof Uint8Array ? input : new Uint8Array(input);
 
+  if (inputBytes.byteLength > MAX_CBOR_INPUT_BYTES) {
+    throw new TypeError(
+      `CBOR input exceeds the maximum supported size of ${MAX_CBOR_INPUT_BYTES} bytes`,
+    );
+  }
+
+  // Copy the exact view so bytes outside a caller-provided subarray are never decoded.
   const bytes = Uint8Array.from(inputBytes);
 
   if (bytes.length === 0) {

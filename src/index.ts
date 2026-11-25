@@ -46,3 +46,6 @@ export {
 export * from "./core/session-context.js";
 export { hashContent, bytesToBase64, base64ToBytes } from "./core/hash.js";
 export { MajikSignatureValidator } from "./core/validator.js";
+
+// ── Streaming content hashing ────────────────────────────────────────────────
+export * from "./core/streaming/index.js";

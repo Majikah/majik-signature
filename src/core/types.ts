@@ -41,7 +41,7 @@ export type ED25519Signature = string;
  * Base64-encoded ML-DSA-87 signature produced for a Majik Signature payload.
  *
  * @remarks
- * The decoded signature is 4,595 bytes. This remains a `string` on the wire so
+ * The decoded signature is 4,627 bytes. This remains a `string` on the wire so
  * envelopes can be represented directly as JSON.
  */
 export type MLDSA87Signature = string;
@@ -144,7 +144,7 @@ export interface MajikSignatureJSON {
    * Base64-encoded ML-DSA-87 signature over the same canonical payload.
    *
    * @remarks
-   * The decoded signature is 4,595 bytes. This is the post-quantum half of
+   * The decoded signature is 4,627 bytes. This is the post-quantum half of
    * Majik Signature's hybrid signing model.
    */
   mlDsaSignature: MLDSA87Signature;
