@@ -30,6 +30,7 @@ const MSIX_MIME_TYPES = ["application/msix", "application/appx"] as const;
 
 const MSIX_REQUIRED_ENTRIES = new Set(["AppxManifest.xml", "AppxBlockMap.xml"]);
 
+/** Handle embedding/extraction of signature metadata in MSIX package contents. */
 export class MsixHandler implements FormatHandler {
   readonly name = "MSIX / AppX";
 
