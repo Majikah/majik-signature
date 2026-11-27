@@ -19,6 +19,8 @@ import {
 } from "./errors.js";
 import { hashContent, bytesToBase64 } from "./hash.js";
 import { MajikSignatureEnvelope } from "./envelope.js";
+import { decodeCBOR, encodeCBOR } from "./cbor.js";
+import { mjksMapFromCBOR, mjksMapToCBOR } from "./cbor-wire.js";
 import {
   MAX_MJKSMAP_BYTES,
   MAX_MJKSMAP_ENTRIES,
@@ -318,31 +320,30 @@ export class MajikSignatureMap {
 
   // ── MJKSMAP binary format ─────────────────────────────────────────────────
   //
-  // Same rationale as MJKSIG: length-prefixed JSON behind a versioned,
-  // self-identifying header. toMJKSMAP() returns a Blob for direct use in
-  // zip packaging / downloads; toMJKSMAPBytes() is the sync Uint8Array
-  // escape hatch for non-Blob contexts (Node scripts, direct fs writes).
+  // The fixed header dispatches the payload encoding. Version 1 remains
+  // readable as UTF-8 JSON; all new output uses version 2 CBOR.
 
   toMJKSMAPBytes(): Uint8Array {
-    const payloadJson = new TextEncoder().encode(JSON.stringify(this.toJSON()));
-    if (payloadJson.byteLength > MAX_MJKSMAP_BYTES) {
+    const payloadCbor = encodeCBOR(mjksMapToCBOR(this.toJSON()));
+    if (payloadCbor.byteLength > MAX_MJKSMAP_BYTES) {
       throw new MajikSignatureSerializationError(
         `MJKSMAP payload exceeds the maximum supported size of ${MAX_MJKSMAP_BYTES} bytes`,
       );
     }
-    const out = new Uint8Array(MJKSMAP_HEADER_LEN + payloadJson.length);
+    const out = new Uint8Array(MJKSMAP_HEADER_LEN + payloadCbor.length);
 
     out.set(MJKSMAP_MAGIC, 0);
     out[MJKSMAP_MAGIC_LEN] = MJKSMAP_VERSION;
-    out[MJKSMAP_MAGIC_LEN + 1] = 0x00; // reserved — always 0 in v1
+    out[MJKSMAP_MAGIC_LEN + 1] = 0x00; // reserved — always 0
 
     const lenOffset = MJKSMAP_MAGIC_LEN + 2;
-    out[lenOffset] = (payloadJson.length >>> 24) & 0xff;
-    out[lenOffset + 1] = (payloadJson.length >>> 16) & 0xff;
-    out[lenOffset + 2] = (payloadJson.length >>> 8) & 0xff;
-    out[lenOffset + 3] = payloadJson.length & 0xff;
+    new DataView(out.buffer, out.byteOffset, out.byteLength).setUint32(
+      lenOffset,
+      payloadCbor.length,
+      false,
+    );
 
-    out.set(payloadJson, MJKSMAP_HEADER_LEN);
+    out.set(payloadCbor, MJKSMAP_HEADER_LEN);
     return out;
   }
 
@@ -410,11 +411,11 @@ export class MajikSignatureMap {
     }
 
     const lenOffset = MJKSMAP_MAGIC_LEN + 2;
-    const payloadLen =
-      (raw[lenOffset] << 24) |
-      (raw[lenOffset + 1] << 16) |
-      (raw[lenOffset + 2] << 8) |
-      raw[lenOffset + 3];
+    const payloadLen = new DataView(
+      raw.buffer,
+      raw.byteOffset,
+      raw.byteLength,
+    ).getUint32(lenOffset, false);
 
     if (payloadLen <= 0 || payloadLen > MAX_MJKSMAP_BYTES) {
       throw new MajikSignatureSerializationError(
@@ -435,18 +436,29 @@ export class MajikSignatureMap {
       );
     }
 
-    let json: string;
+    const payload = raw.subarray(payloadStart, payloadEnd);
+    if (version === MJKSMAP_JSON_VERSION) {
+      let json: string;
+      try {
+        json = new TextDecoder("utf-8", { fatal: true }).decode(payload);
+      } catch (error) {
+        throw new MajikSignatureSerializationError(
+          "Malformed MJKSMAP: payload is not valid UTF-8",
+          error,
+        );
+      }
+      return MajikSignatureMap.fromJSON(json);
+    }
+
     try {
-      json = new TextDecoder("utf-8", { fatal: true }).decode(
-        raw.subarray(payloadStart, payloadEnd),
-      );
+      const decoded = decodeCBOR(payload);
+      return MajikSignatureMap.fromJSON(mjksMapFromCBOR(decoded));
     } catch (error) {
       throw new MajikSignatureSerializationError(
-        "Malformed MJKSMAP: payload is not valid UTF-8",
+        "Malformed MJKSMAP: payload is not a valid CBOR manifest",
         error,
       );
     }
-    return MajikSignatureMap.fromJSON(json);
   }
 
   static async isMJKSMAP(input: Blob | Uint8Array): Promise<boolean> {
@@ -466,7 +478,7 @@ export class MajikSignatureMap {
 
   static empty(): MajikSignatureMap {
     return new MajikSignatureMap({
-      version: MJKSMAP_VERSION as 1,
+      version: MJKSMAP_SCHEMA_VERSION,
       createdAt: new Date().toISOString(),
       entries: [],
     });
@@ -573,7 +585,7 @@ export class MajikSignatureMap {
       );
     }
 
-    if (obj.version !== MJKSMAP_VERSION) {
+    if (obj.version !== MJKSMAP_SCHEMA_VERSION) {
       throw new MajikSignatureValidationError(
         `Unsupported MJKSMAP schema version: ${String(obj.version)}`,
         "version",
