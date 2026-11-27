@@ -115,6 +115,44 @@ describe("streaming large-input stress and allocation boundaries", () => {
     expect(cancelCalled).toBe(false);
   });
 
+  it("validates callback and signal options before reading input", async () => {
+    const bytes = new Uint8Array(128 * 1024);
+    await expect(
+      hashSource(bytes, { onProgress: "not-a-function" as any }),
+    ).rejects.toThrow(/onProgress must be a function/i);
+    await expect(
+      hashSource(bytes, { signal: {} as AbortSignal }),
+    ).rejects.toThrow(/AbortSignal-like/i);
+    await expect(hashSource(bytes, null as any)).rejects.toThrow(/options must be an object/i);
+  });
+
+  it("yields between slices of an oversized iterable chunk so timers can cancel it", async () => {
+    const controller = new AbortController();
+    const bytes = new Uint8Array(4 * MiB);
+    let bytesReported = 0;
+
+    const source = {
+      async *[Symbol.asyncIterator]() {
+        yield bytes;
+      },
+    };
+    const abortTimer = setTimeout(
+      () => controller.abort("timer-cancelled-large-chunk"),
+      0,
+    );
+
+    await expect(hashSource(source, {
+      chunkSize: MIN_HASH_CHUNK_SIZE,
+      signal: controller.signal,
+      onProgress: ({ bytesProcessed }) => {
+        bytesReported = bytesProcessed;
+      },
+    })).rejects.toThrow(/cancel/i);
+    clearTimeout(abortTimer);
+    expect(bytesReported).toBeGreaterThan(0);
+    expect(bytesReported).toBeLessThan(bytes.byteLength);
+  });
+
   it("actively cancels a ReadableStream after AbortSignal cancellation", async () => {
     const controller = new AbortController();
     let cancelCalled = false;
