@@ -529,7 +529,7 @@ export class MajikSignatureMap {
   // ── Private validation ───────────────────────────────────────────────────────
 
   static #validateShape(obj: Record<string, unknown>): void {
-    let serialized: string;
+    let serialized: string | undefined;
     try {
       serialized = JSON.stringify(obj);
     } catch (error) {
@@ -610,7 +610,9 @@ export class MajikSignatureMap {
     );
     if (
       obj.size !== undefined &&
-      (!Number.isSafeInteger(obj.size) || (obj.size as number) < 0)
+      (typeof obj.size !== "number" ||
+        !Number.isSafeInteger(obj.size) ||
+        obj.size < 0)
     ) {
       throw new MajikSignatureValidationError(
         `entries[${index}].size must be a non-negative safe integer when present`,
