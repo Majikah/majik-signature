@@ -1,3 +1,4 @@
+/** Typed logical and CBOR wire-level structures used by the CBOR adapters. */
 export type * from "./types.js";
 
 export * from "./cbor.js";
