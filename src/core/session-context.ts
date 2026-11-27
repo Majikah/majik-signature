@@ -3,6 +3,7 @@
  */
 import { bytesToBase64, base64ToBytes, sha256Bytes } from "./hash.js";
 
+/** Authoritative session, one-time challenge, and immutable policy identifiers committed by a SignRoom participant. */
 export interface MajikSessionSigningContext {
   /** Stable session identifier assigned by the session service. */
   sessionId: string;
@@ -12,6 +13,7 @@ export interface MajikSessionSigningContext {
   policyHash: string;
 }
 
+/** Domain separator for the version-1 SignRoom session-context hash. Changing it breaks existing session-bound signatures. */
 export const MAJIK_SESSION_CONTEXT_DOMAIN =
   "majik-signature-session-context-v1:" as const;
 
