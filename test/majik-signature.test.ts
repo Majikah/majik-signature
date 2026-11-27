@@ -1156,7 +1156,7 @@ describe("MajikSignature Class Unit Tests", () => {
         });
 
         expect(map.size).toBe(1);
-        expect(map.getEntry("a.txt")?.contentHash).toBe("hash2");
+        expect(map.getEntry("a.txt")?.contentHash).toBe(testHash(3));
       });
 
       it("removes an entry via withoutEntry", () => {
