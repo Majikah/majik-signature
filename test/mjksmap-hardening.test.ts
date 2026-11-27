@@ -57,8 +57,8 @@ describe("MJKSMAP parser and input hardening", () => {
     for (const path of [
       "../secret.txt",
       "docs/../../secret.txt",
-      "docs\\u0000/report.txt",
-      "docs\\u202e/report.txt",
+      "docs\u0000/report.txt",
+      "docs\u202e/report.txt",
     ]) {
       expect(() => MajikSignatureMap.empty().withEntry(entry(path))).toThrow();
     }
@@ -84,7 +84,7 @@ describe("MJKSMAP parser and input hardening", () => {
       { ...entry(), size: -1 },
       { ...entry(), size: Number.MAX_SAFE_INTEGER + 1 },
       { ...entry(), size: 1.5 },
-      { ...entry(), mimeType: "text/plain\\r\\nInjected: yes" },
+      { ...entry(), mimeType: "text/plain\r\nInjected: yes" },
     ]) {
       expect(() => MajikSignatureMap.fromJSON(mapJson([bad]))).toThrow();
     }
