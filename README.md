@@ -346,7 +346,7 @@ See [Supported File Formats](#supported-file-formats) for the full handler table
 - **Idempotent re-signing** — safely re-sign or re-embed any file without accumulating stacked or orphaned envelopes
 - **Immutable envelope model** — `MajikSignatureEnvelope` and `MajikSignatureMap` are both immutable; every mutation returns a new instance
 - **Typed error hierarchy** — precise, catchable error classes instead of generic exceptions
-- **Isomorphic** — Node.js, browsers, Tauri, Deno, and Bun; no native bindings
+- **Modern JavaScript runtimes** — the core APIs use standard byte/binary and Web APIs. Automated CI validates Node.js 22 and 24; browser, Tauri, Deno, and Bun integrations should be tested in their target host. No native binding is required for the core API; CBOR acceleration packages may be used optionally when available.
 
 ### Serialization & Portability
 
@@ -1648,42 +1648,17 @@ Order and batch verification methods follow the same philosophy: `SignatureOrder
 
 ## The Majikah Ecosystem
 
-Majik Signature is the cryptographic signing layer shared across Majikah's product suite. Each product uses this SDK for a different job:
+This repository contains the **TypeScript SDK**, not the standalone desktop/web application or Majikah's hosted services. Separate products in the ecosystem may use this SDK as one of their cryptographic components. Their application features, account entitlements, online services, and quotas are outside this package and are documented by the respective products.
 
-### [Majik Signature](https://majikah.solutions/products/majik-signature) — Standalone App
-
-[![Majik Signature Hero](https://github.com/user-attachments/assets/781bb778-9535-4b1f-bbc5-820550ecc864)](https://signature.majikah.solutions)
-
-The standalone desktop and web application built on top of this SDK. It's the fastest way to sign and verify files without writing any code:
-
-- Sign virtually any file — documents, PDFs, Office files, images, audio, video, source code, archives, and more — entirely **locally on your device**. No account, no upload, no internet connection required for offline signing and verification.
-- **Visual Stamping** — signature appearances drawn or imported, with fonts, colors, templates, placement, rotation, transparency, and multi-page layouts for PDF, DOCX, and XLSX.
-- **Audio Stamping** — embed producer tags, voice tags, or audio watermarks directly into signed audio, with a full mixing timeline (volume, pan, pitch, EQ, trim, loop).
-- **Trusted Timestamps** — every account gets 5 free Trusted Timestamps every 24 hours; local timestamps remain fully supported offline.
-- **Batch processing** — drag-and-drop folders, recursive ZIP processing, individual or bulk sealing, per-file verification results.
-- **Multi-party workflows** — signing allowlists, open or restricted modes, progress tracking for pending vs. completed signatures, and chronological signing-order verification.
-- Built with Tauri for a lightweight, fast, secure desktop experience — available on the **Microsoft Store**, with a full-featured **web app** as well.
-
-### 🧾 Majik Buwiz
-
-BIR-compliant invoicing and financial management for the Philippines. Every `MajikInvoice` is encrypted and signed using this SDK before it ever leaves the client — the backend stores it as an opaque, signed blob and never sees the decrypted contents. Multi-signature support means invoices can carry independent approvals from multiple parties, and sealing finalizes a document once all required approvals are in.
-
-### 💬 Majik Message
-
-Secure messaging built on Majik Keys and Majik Signatures, binding every message to a verifiable identity.
-
-[Read Docs](https://majikah.solutions/products/majik-message/docs) · [Microsoft Store](https://apps.microsoft.com/detail/9pmjgvzzjspn) · [Web App](https://message.majikah.solutions)
-
-### 🪪 Majik Universal ID
-
-The identity layer of the Majikah ecosystem, using the same Majik Key + Majik Signature foundation to bind verifiable credentials to a cryptographic identity rather than a centralized account.
-
----
+- **[Majik Signature](https://majikah.solutions/products/majik-signature)** — standalone desktop/web application built on the SDK.
+- **Majik Buwiz** — invoicing and financial-management product in the Majikah ecosystem.
+- **[Majik Message](https://message.majikah.solutions)** — messaging product in the Majikah ecosystem.
+- **Majik Universal ID** — identity and credential product in the Majikah ecosystem.
 
 ## Related Projects
 
 ### [Majik Key](https://www.npmjs.com/package/@majikah/majik-key)
-Seed phrase account library — installed automatically as a runtime dependency. Install it directly only when your application imports Majik Key itself.
+Seed phrase/key-management library — installed automatically as a runtime dependency. Install it directly only when your application imports Majik Key itself.
 
 ### [Majik Message](https://message.majikah.solutions)
 Secure messaging platform using Majik Keys and Majik Signatures for identity-bound communication.
