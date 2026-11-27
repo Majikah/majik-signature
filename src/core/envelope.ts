@@ -904,12 +904,26 @@ export class MajikSignatureEnvelope {
         "An allowlist can only be established by the first signer on a file.",
       );
     }
-    if (!allowlist || allowlist.length === 0) {
+    if (!Array.isArray(allowlist) || allowlist.length === 0) {
       throw new MajikSignatureValidationError(
         "Allowlist must contain at least one entry.",
         "allowlist",
       );
     }
+    if (allowlist.length > MAX_ALLOWLIST_ENTRIES) {
+      throw new MajikSignatureValidationError(
+        `Allowlist exceeds the limit of ${MAX_ALLOWLIST_ENTRIES}`,
+        "allowlist",
+      );
+    }
+    for (let index = 0; index < allowlist.length; index += 1) {
+      MajikSignatureValidator.validateExpectedSigner(allowlist[index], index);
+    }
+    MajikSignatureValidator.validateCanonicalBase64(
+      signerId,
+      "allowlistSignerId",
+      SHA256_DIGEST_BYTES,
+    );
 
     return new MajikSignatureEnvelope({
       ...this.toJSON(),
@@ -953,6 +967,12 @@ export class MajikSignatureEnvelope {
     }
 
     const ts = sealTimestamp ?? new Date().toISOString();
+    MajikSignatureValidator.validateBoundedString(
+      sealedBy,
+      "sealedBy",
+      MAX_SIGNER_ID_CHARS,
+    );
+    MajikSignatureValidator.validateTimestamp(ts, "sealTimestamp");
     const sealHash = this.computeSealHash(ts);
 
     return new MajikSignatureEnvelope({
