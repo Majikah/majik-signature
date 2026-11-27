@@ -167,7 +167,7 @@ Most "digital signature" libraries only sign raw bytes and leave you to figure o
 - **Multi-party signing is a first-class concept** — not bolted on. Allowlists, sealing, issuer semantics, and chronological order verification are part of the core envelope model.
 - **Batch-aware** — sign or verify an entire folder or zip's contents against a single manifest (`.mjksmap`) instead of tracking one signature file per asset.
 - **Deterministic by design** — the library goes out of its way to guarantee that signing and verifying the same content always produces the same canonical bytes (see [Signature & Envelope Structure](#signature--envelope-structure)).
-- **No native dependencies** — pure TypeScript/WASM-free cryptography, works identically in Node.js, browsers, Tauri, Deno, and Bun.
+- **No native bindings** — the TypeScript implementation uses JavaScript/TypeScript cryptographic dependencies and Web-standard binary APIs. Runtime support depends on the host providing the APIs used by the selected feature; the CLI runs on Node.js 22.12+.
 
 ---
 
@@ -232,7 +232,7 @@ This binding means a valid signature cannot be reused on different content, tran
 
 ### 3. Content-Agnostic Hashing
 
-Content is never embedded in the envelope — only its SHA-256 hash is signed. A 500 MB video signs at the same speed as a 10-byte string, and every content type is supported identically.
+Content is never embedded in the envelope — only its SHA-256 hash is signed. Hashing remains linear in the number of input bytes. Once the SHA-256 digest is available, the hybrid signature operation works on that fixed-size digest, so its cryptographic cost does not grow with the original file size. Use the streaming APIs to bound memory while hashing large inputs.
 
 ### 4. File Embedding & Detachment Integrity
 
@@ -366,11 +366,11 @@ See [Supported File Formats](#supported-file-formats) for the full handler table
 ```bash
 npm install @majikah/majik-signature
 
-# Required peer dependency
+# Optional: add this only when your application imports Majik Key directly
 npm install @majikah/majik-key
 ```
 
-No native bindings. Works in Node.js 18+, modern browsers, Deno, Bun, and Tauri.
+No native bindings. The core API targets modern JavaScript runtimes with standard binary and Web APIs. The CLI is Node.js-only and requires Node.js 22.12 or newer. The CI matrix validates Node.js 22 and 24.
 
 ---
 
