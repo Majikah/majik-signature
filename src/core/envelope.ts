@@ -29,6 +29,8 @@ import {
   MAX_FILE_VERSIONS,
   MAX_FILE_VERSION_MESSAGE_CHARS,
   MAX_TIMESTAMP_CHARS,
+  MAX_SIGNER_ID_CHARS,
+  SHA256_DIGEST_BYTES,
 } from "./constants.js";
 import {
   MajikSignatureAllowlistError,
