@@ -182,30 +182,39 @@ export class MajikSignature {
 
   // ── Getters ─────────────────────────────────────────────────────────────────
 
+  /** Per-signer canonical signature schema version. */
   get version(): 1 {
     return this._version;
   }
+  /** Majik Key fingerprint identifying the signer represented by this record. */
   get signerId(): MajikKeyFingerprint {
     return this._signerId;
   }
+  /** Base64-encoded Ed25519 public key embedded in this signature record. */
   get signerEdPublicKey(): string {
     return this._signerEdPublicKey;
   }
+  /** Base64-encoded ML-DSA-87 public key embedded in this signature record. */
   get signerMlDsaPublicKey(): string {
     return this._signerMlDsaPublicKey;
   }
+  /** Canonical Base64 SHA-256 digest of the signed content bytes. */
   get contentHash(): string {
     return this._contentHash;
   }
+  /** Optional advisory content type included in the signed canonical payload. */
   get contentType(): string | undefined {
     return this._contentType;
   }
+  /** Signer's ISO 8601 timestamp; it is signed, but is not independently time-attested. */
   get timestamp(): ISODateString {
     return this._timestamp;
   }
+  /** Base64-encoded Ed25519 signature over the canonical signing payload. */
   get edSignature(): ED25519Signature {
     return this._edSignature;
   }
+  /** Base64-encoded ML-DSA-87 signature over the same canonical signing payload. */
   get mlDsaSignature(): MLDSA87Signature {
     return this._mlDsaSignature;
   }
@@ -228,6 +237,7 @@ export class MajikSignature {
     return this._validUntil;
   }
 
+  /** Optional signed commitment to the revision-chain prefix current when this signer signed. */
   get versionChainHash(): string | undefined {
     return this._versionChainHash;
   }
@@ -237,6 +247,7 @@ export class MajikSignature {
     return this._sessionContextHash;
   }
 
+  /** Optional TSA token attached to this per-signer record. Presence alone does not establish TSA trust. */
   get tsa(): MajikTimestamp | undefined {
     return this._tsa;
   }
@@ -579,6 +590,15 @@ export class MajikSignature {
     }
   }
 
+  /**
+   * Verify the Ed25519 and ML-DSA-87 commitments in a signature record without
+   * comparing its content hash to file bytes. Use this for archived revision
+   * commitments; it cannot prove that the historical bytes matched that hash.
+   * Expiry is still enforced against `now`.
+   * @param signature Signature object or JSON record to verify.
+   * @param publicKeys Independently trusted public keys expected for the signer.
+   * @param now Verification clock used for expiry enforcement; defaults to now.
+   */
   static verifyCommitment(
     signature: MajikSignature | MajikSignatureJSON,
     publicKeys: MajikSignerPublicKeys,
@@ -765,10 +785,12 @@ export class MajikSignature {
 
 
 
+  /** Re-run structural validation of this in-memory signature record; does not perform cryptographic verification. */
   validate(): void {
     MajikSignatureValidator.validateJSON(this.toJSON());
   }
 
+  /** Return whether this instance passes structural validation; no signature math or content comparison is performed. */
   isValid(): boolean {
     try {
       this.validate();
@@ -780,6 +802,7 @@ export class MajikSignature {
 
   // ── EXTRACT PUBLIC KEYS ─────────────────────────────────────────────────────
 
+  /** Decode and validate the public keys carried by this record. Authenticate them separately before trusting the signer identity. */
   extractPublicKeys(): MajikSignerPublicKeys {
     try {
       const edPublicKey = base64ToBytes(this._signerEdPublicKey);
@@ -808,6 +831,7 @@ export class MajikSignature {
 
   // ── SERIALIZATION ────────────────────────────────────────────────────────────
 
+  /** Return a detached JSON-compatible snapshot of this signature record. */
   toJSON(): MajikSignatureJSON {
     return {
       version: this._version,
@@ -837,6 +861,7 @@ export class MajikSignature {
     };
   }
 
+  /** Serialize the JSON record as the library's legacy Base64 transport representation. */
   serialize(): string {
     try {
       const bytes = new TextEncoder().encode(JSON.stringify(this.toJSON()));
@@ -852,12 +877,14 @@ export class MajikSignature {
     }
   }
 
+  /** Return the same Base64 representation as `serialize()`. */
   toString(): string {
     return this.serialize();
   }
 
   // ── DESERIALIZATION ──────────────────────────────────────────────────────────
 
+  /** Parse and structurally validate a JSON object or JSON string; cryptographic validity is not checked. */
   static fromJSON(json: MajikSignatureJSON | string): MajikSignature {
     try {
       const parsed: unknown =
@@ -873,6 +900,7 @@ export class MajikSignature {
     }
   }
 
+  /** Decode the legacy Base64 JSON representation and validate the resulting signature record. */
   static deserialize(base64: string): MajikSignature {
     try {
       MajikSignatureValidator.assertNonEmptyString(base64, "base64");
@@ -930,6 +958,7 @@ export class MajikSignature {
 
   // ── STATIC KEY HELPERS ───────────────────────────────────────────────────────
 
+  /** Extract a MajikKey's signing public keys and fingerprint without unlocking the key. */
   static publicKeysFromMajikKey(key: MajikKey): MajikSignerPublicKeys {
     MajikSignatureValidator.assertDefined(key, "key");
     if (!key.hasSigningKeys)
@@ -947,6 +976,7 @@ export class MajikSignature {
     return { signerId: key.fingerprint, edPublicKey, mlDsaPublicKey };
   }
 
+  /** Verify content with the public signing keys carried by a MajikKey; the key need not be unlocked. */
   static verifyWithKey(
     content: Uint8Array | string,
     signature: MajikSignature | MajikSignatureJSON,
@@ -1457,6 +1487,11 @@ export class MajikSignature {
     return results;
   }
 
+  /**
+   * Verify every embedded signer record against the file's canonical unsigned bytes.
+   * Returns one result per signer; a present signature is not trusted until its
+   * corresponding result is valid and its public key identity is trusted.
+   */
   static async verifyFile(
     file: FileLike,
     keyOrPublicKeys: MajikKey | MajikSignerPublicKeys,
@@ -1909,6 +1944,7 @@ export class MajikSignature {
     );
   }
 
+  /** Verify a batch manifest using the public keys extracted from a MajikKey. */
   static async verifyFilesFromMjksMapWithKey(
     map: MajikSignatureMap,
     files: BatchVerifyInput[],
@@ -1926,6 +1962,7 @@ export class MajikSignature {
     );
   }
 
+  /** Aggregate per-file batch results into counts and an overall validity summary. */
   static summarizeBatchVerification(
     results: FileVerifyResult[],
   ): ReturnType<typeof MajikSignatureEmbed.summarizeBatchVerification> {
@@ -1976,6 +2013,7 @@ export class MajikSignature {
     );
   }
 
+  /** Verify the embedded signature set and the structural/cryptographic commitments of its revision chain. */
   static async verifyFileChain(
     file: FileLike,
     options?: { mimeType?: string; now?: Date },
@@ -1983,6 +2021,7 @@ export class MajikSignature {
     return MajikSignatureEmbed.verifyFileChain(file, MajikSignature, options);
   }
 
+  /** Verify a final file and the supplied historical revisions against a file's revision metadata. */
   static async verifyFileRevisions(
     finalFile: FileLike,
     revisions: FileLike[],
@@ -2002,6 +2041,7 @@ export class MajikSignature {
     );
   }
 
+  /** Verify supplied historical revisions against a detached envelope and its recorded revision chain. */
   static async verifyFileRevisionsDetached(
     finalFile: FileLike,
     revisions: FileLike[],
@@ -2023,6 +2063,7 @@ export class MajikSignature {
     );
   }
 
+  /** Verify a file and its detached envelope's revision-chain commitments without requiring every historical revision's bytes. */
   static async verifyFileDetachedChain(
     file: FileLike,
     envelope: EnvelopeInput,
@@ -2041,6 +2082,7 @@ export class MajikSignature {
    * into a plain ExpectedSigner[]. Exposed standalone in case you want to
    * cache/store the normalized order without immediately verifying.
    */
+  /** Normalize an ordered mixture of MajikKey objects and ExpectedSigner records into the order verifier's expected-key shape. */
   static normalizeExpectedOrder(
     expectedOrder: readonly (MajikKey | ExpectedSigner)[],
   ): ExpectedSigner[] {
@@ -2339,6 +2381,7 @@ export class MajikSignature {
 
   // ── TRUSTED TIMESTAMPS ───────────────────────────────────────────────────────
 
+  /** Build the legacy content-scoped TSA request for this signature record. */
   buildTSARequestPayload(
     scope: TSADigestScope = "content",
   ): MajikTSARequest {
@@ -2364,6 +2407,12 @@ export class MajikSignature {
     };
   }
 
+  /**
+   * Attach a TSA token after digest and signature checks. When trusted public
+   * keys are supplied, also pin the token to that TSA identity; without them,
+   * internal consistency does not establish an external trust relationship.
+   * The attachment is one-shot.
+   */
   addTSA(tsa: MajikTimestamp, trustedTsaPublicKeys?: MajikSignerPublicKeys): void {
     if (this._tsa !== undefined)
       throw new MajikSignatureError(
@@ -2478,6 +2527,7 @@ export class MajikSignature {
     );
   }
 
+  /** Whether this signature record currently contains a TSA token. */
   get hasTSA(): boolean {
     return this._tsa !== undefined;
   }
@@ -2521,6 +2571,7 @@ export class MajikSignature {
   // ── CHAIN ANCHOR METHODS ──────────────────────────────────────────────────
 
   // majik-signature — core/anchor (or wherever the anchor-related statics live)
+  /** Build the versioned chain-anchor memo for a previously verified seal hash. This method does not submit a blockchain transaction. */
   static buildChainAnchorMemo(sealHash: string): MajikChainAnchorMemo {
     MajikSignatureValidator.validateSealHash(sealHash);
 
