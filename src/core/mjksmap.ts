@@ -98,6 +98,14 @@ function validateAndNormalizePath(path: unknown, field: string): string {
 
 // ─── MajikSignatureMap ─────────────────────────────────────────────────────────
 
+/**
+ * Immutable, path-indexed manifest of detached signature envelopes for a batch.
+ *
+ * The map resolves files and checks their recorded SHA-256 content hashes; it
+ * does not authenticate the manifest's paths or cryptographically verify the
+ * nested envelopes. Use the normal MajikSignature verification APIs after
+ * resolving an entry. New binary output is MJKSMAP v2 CBOR; v1 JSON remains readable.
+ */
 export class MajikSignatureMap {
   private readonly _version: 1;
   private readonly _createdAt: string;
@@ -148,15 +156,19 @@ export class MajikSignatureMap {
 
   // ── Getters ─────────────────────────────────────────────────────────────────
 
+  /** Logical manifest schema version (independent of the binary container version). */
   get version(): 1 {
     return this._version;
   }
+  /** ISO 8601 creation timestamp carried by the logical manifest. */
   get createdAt(): string {
     return this._createdAt;
   }
+  /** Read-only entries in insertion order; each entry contains a detached envelope snapshot. */
   get entries(): readonly MjksMapEntry[] {
     return this._entries;
   }
+  /** Number of file entries in this manifest. */
   get size(): number {
     return this._entries.length;
   }
@@ -267,6 +279,7 @@ export class MajikSignatureMap {
     }));
   }
 
+  /** Check whether a normalized path is present; this does not verify file content. */
   hasEntry(path: string): boolean {
     return this._byPath.has(normalizePath(path));
   }
@@ -312,6 +325,7 @@ export class MajikSignatureMap {
     return new MajikSignatureMap(data);
   }
 
+  /** Return a new map without the entry at `path`; the current instance is unchanged. */
   withoutEntry(path: string): MajikSignatureMap {
     const normalized = normalizePath(path);
     return new MajikSignatureMap({
@@ -323,6 +337,7 @@ export class MajikSignatureMap {
 
   // ── Serialization ─────────────────────────────────────────────────────────────
 
+  /** Return a detached JSON-compatible manifest snapshot using the schema-v1 representation. */
   toJSON(): MjksMapJSON {
     const snapshot: MjksMapJSON = {
       version: this._version,
@@ -337,6 +352,7 @@ export class MajikSignatureMap {
   // The fixed header dispatches the payload encoding. Version 1 remains
   // readable as UTF-8 JSON; all new output uses version 2 CBOR.
 
+  /** Serialize this map as a version-2 MJKSMAP container with CBOR-native byte strings. */
   toMJKSMAPBytes(): Uint8Array {
     const payloadCbor = encodeCBOR(mjksMapToCBOR(this.toJSON()));
     if (payloadCbor.byteLength > MAX_MJKSMAP_BYTES) {
@@ -361,11 +377,16 @@ export class MajikSignatureMap {
     return out;
   }
 
+  /** Serialize this map as an `.mjksmap` Blob using the registered media type. */
   toMJKSMAP(): Blob {
     const bytes = this.toMJKSMAPBytes();
     return new Blob([bytes as BlobPart], { type: MJKSMAP_MEDIA_TYPE });
   }
 
+  /**
+   * Parse a binary MJKSMAP Blob or byte array. Dispatches strictly by container
+   * version (v1 JSON or v2 CBOR) and enforces header and payload bounds.
+   */
   static async fromMJKSMAP(
     input: Blob | Uint8Array,
   ): Promise<MajikSignatureMap> {
@@ -475,6 +496,7 @@ export class MajikSignatureMap {
     }
   }
 
+  /** Check only the MJKSMAP magic prefix; this does not validate the header or payload. */
   static async isMJKSMAP(input: Blob | Uint8Array): Promise<boolean> {
     const header =
       input instanceof Blob
@@ -490,6 +512,7 @@ export class MajikSignatureMap {
 
   // ── Creation / parsing ───────────────────────────────────────────────────────
 
+  /** Create an empty immutable manifest with the current logical schema version. */
   static empty(): MajikSignatureMap {
     return new MajikSignatureMap({
       version: MJKSMAP_SCHEMA_VERSION,
@@ -498,6 +521,7 @@ export class MajikSignatureMap {
     });
   }
 
+  /** Parse and structurally validate a schema-v1 JSON model or JSON string. */
   static fromJSON(json: MjksMapJSON | string): MajikSignatureMap {
     let parsed: unknown;
     try {
@@ -561,12 +585,14 @@ export class MajikSignatureMap {
     return MajikSignatureMap.fromJSON(input);
   }
 
+  /** Re-run structural/path/envelope validation of this map; does not verify file signatures. */
   validate(): void {
     MajikSignatureMap.#validateShape(
       this.toJSON() as unknown as Record<string, unknown>,
     );
   }
 
+  /** Return whether this map passes structural validation without throwing. */
   isValid(): boolean {
     try {
       this.validate();
