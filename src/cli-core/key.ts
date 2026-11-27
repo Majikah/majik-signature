@@ -14,6 +14,7 @@ import { MajikKey } from "@majikah/majik-key";
 
 import { readJsonFile, resolveCliPath } from "./io.js";
 
+/** Loaded MajikKey handle used by CLI operations after password/mnemonic import. */
 export type LoadedMajikKey = MajikKey;
 
 /**
