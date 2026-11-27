@@ -162,6 +162,22 @@ describe("untrusted signature input hardening", () => {
     );
   });
 
+  it("validates builder-supplied revision metadata and snapshots nested inputs", () => {
+    expect(() => MajikSignatureEnvelope.empty().withFileVersion({
+      version: 1,
+      timestamp: json.timestamp,
+      contentHash: json.contentHash,
+      message: "x".repeat(4_097),
+    })).toThrow(/message exceeds/i);
+
+    const signatureInput = { ...json };
+    const envelope = MajikSignatureEnvelope.empty().withSignature(signatureInput);
+    signatureInput.contentType = "application/x-mutated-after-build";
+    expect(envelope.signatures[0]?.contentType).not.toBe(
+      "application/x-mutated-after-build",
+    );
+  });
+
   it("rejects Ed25519 scalar-malleated signatures", () => {
     const mutated = json.edSignature;
     const bytes = base64ToBytes(mutated);
