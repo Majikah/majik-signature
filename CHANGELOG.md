@@ -12,5 +12,6 @@
 - Add regression tests for declared stream lengths, chunk boundaries, cross-path verification, and streaming batch results.
 - Bound MJKSMAP payloads to 16 MiB, entries to 10,000, and normalized paths to 4,096 UTF-16 code units; reject traversal, spoofing controls, duplicate normalized paths, malformed UTF-8, trailing bytes, and invalid header fields.
 - Apply the 16 MiB envelope ceiling to object inputs and immutable builders; reject oversized Base64 before decoding and validate builder-supplied signatures, allowlists, seals, anchors, and revision metadata.
+- Deep-freeze envelope and MJKSMAP instances plus nested JSON snapshots; `toJSON()` returns detached mutable copies so post-validation mutation cannot alter stored state.
 - Add virtual 32 MiB multi-chunk stress tests and an opt-in 10 GiB streaming stress test; exercise timer cancellation, stream errors, malformed chunks, and option validation.
 
