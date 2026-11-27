@@ -39,6 +39,7 @@ export interface ImageSigningPayloadFields {
 
 // ─── Sign options ─────────────────────────────────────────────────────────────
 
+/** Options controlling the experimental dual-layer image-stamp output. */
 export interface ImageSignOptions {
   /** Override timestamp (ISO string). Defaults to now. */
   timestamp?: string;
@@ -57,6 +58,7 @@ export interface ImageSignOptions {
 
 // ─── Verification result ──────────────────────────────────────────────────────
 
+/** Verification summary for the compact DCT proof and/or full pixel-row envelope. */
 export interface ImageVerificationResult {
   /** True only if stub was extracted AND pHash matches AND Ed25519 verifies */
   valid: boolean;
@@ -78,6 +80,7 @@ export interface ImageVerificationResult {
 
 // ─── DCT embedding internals ──────────────────────────────────────────────────
 
+/** Result of embedding the compact proof into DCT coefficients. */
 export interface DctEmbedResult {
   /** Modified pixel data (RGBA, width*height*4 bytes) */
   pixels: Uint8ClampedArray;
@@ -89,6 +92,7 @@ export interface DctEmbedResult {
   capacity: number;
 }
 
+/** Extracted compact proof and decode metadata from DCT coefficients. */
 export interface DctExtractResult {
   /** Raw bits extracted from DCT coefficients */
   bits: Uint8Array;
