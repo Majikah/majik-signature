@@ -22,6 +22,7 @@ import {
   MajikSignatureKeyError,
   MajikSignatureVerificationError,
   MajikSignatureSerializationError,
+  MajikSignatureValidationError,
 } from "./core/errors.js";
 import { MajikSignatureValidator } from "./core/validator.js";
 import {
@@ -36,6 +37,7 @@ import { buildSessionContextHash } from "./core/session-context.js";
 import type {
   BatchFileInput,
   BatchSignOptions,
+  BatchSignFailure,
   BatchSignResult,
   BatchStreamingOptions,
   StreamingBatchFileInput,
