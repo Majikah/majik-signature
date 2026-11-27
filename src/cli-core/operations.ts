@@ -816,6 +816,7 @@ async function cosignFolderMap(
   );
 }
 
+/** Execute the CLI signing workflow for a file or selected batch and return a structured result. */
 export async function runSign(options: SignCliOptions): Promise<CliResult> {
   const inputPath = resolveCliPath(options.input);
   const kind = await getPathKind(inputPath);
@@ -1377,6 +1378,7 @@ async function verifyMapFolder(
   );
 }
 
+/** Execute CLI verification and return per-file signer results and an aggregate summary. */
 export async function runVerify(options: VerifyCliOptions): Promise<CliResult> {
   const inputPath = resolveCliPath(options.input);
 
@@ -1435,6 +1437,7 @@ export async function runVerify(options: VerifyCliOptions): Promise<CliResult> {
   }
 }
 
+/** Seal the embedded envelope in the requested file and return the updated output metadata. */
 export async function runSeal(options: SealCliOptions): Promise<CliResult> {
   const inputPath = resolveCliPath(options.input);
 
@@ -1510,6 +1513,7 @@ export async function runSeal(options: SealCliOptions): Promise<CliResult> {
   }
 }
 
+/** Evaluate a key against the embedded envelope's signing policy without creating a signature. */
 export async function runCanSign(
   options: CanSignCliOptions,
 ): Promise<CliResult> {
@@ -1545,6 +1549,7 @@ export async function runCanSign(
   }
 }
 
+/** Extract and summarize envelope metadata without treating presence as cryptographic verification. */
 export async function runInspect(
   options: InspectCliOptions,
 ): Promise<CliResult> {
