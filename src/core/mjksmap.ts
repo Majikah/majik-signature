@@ -112,7 +112,14 @@ export class MajikSignatureMap {
   private constructor(data: MjksMapJSON) {
     // Enforce the binary-format ceiling against the actual CBOR-native
     // representation, not the larger Base64 JSON model.
-    encodeCBOR(mjksMapToCBOR(data));
+    try {
+      encodeCBOR(mjksMapToCBOR(data));
+    } catch (error) {
+      throw new MajikSignatureSerializationError(
+        `MJKSMAP CBOR payload exceeds the maximum supported size of ${MAX_MJKSMAP_BYTES} bytes or contains invalid binary fields`,
+        error,
+      );
+    }
 
     // Clone first so freezing our internal state never freezes caller-owned
     // entry/envelope objects and later caller mutation cannot alter a map.
