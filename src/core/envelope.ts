@@ -1290,6 +1290,12 @@ export class MajikSignatureEnvelope {
    * has an invalid envelope shape.
    */
   static deserialize(base64: string): MajikSignatureEnvelope {
+    const maxEncodedLength = Math.ceil(MAX_ENVELOPE_BYTES / 3) * 4;
+    if (typeof base64 !== "string" || base64.length > maxEncodedLength) {
+      throw new MajikSignatureSerializationError(
+        `Base64 envelope exceeds the maximum supported encoded size of ${maxEncodedLength} characters`,
+      );
+    }
     try {
       const binary = atob(base64);
       const bytes = new Uint8Array(binary.length);
@@ -1697,8 +1703,29 @@ export class MajikSignatureEnvelope {
       );
     }
     try {
-      parsed = typeof json === "string" ? JSON.parse(json) : json;
+      if (typeof json === "string") {
+        parsed = JSON.parse(json);
+      } else {
+        const serialized = JSON.stringify(json);
+        if (
+          typeof serialized !== "string" ||
+          exceedsUtf8ByteLimit(serialized, MAX_ENVELOPE_BYTES)
+        ) {
+          throw new MajikSignatureSerializationError(
+            `Embedded signature payload exceeds the maximum supported size of ${MAX_ENVELOPE_BYTES} bytes`,
+          );
+        }
+        // Normalize to inert JSON data so getters/proxies cannot change shape
+        // between the byte-budget check and structural validation.
+        parsed = JSON.parse(serialized);
+      }
     } catch (err) {
+      if (
+        err instanceof MajikSignatureSerializationError &&
+        /maximum supported size/i.test(err.message)
+      ) {
+        throw err;
+      }
       throw new MajikSignatureSerializationError(
         "Embedded signature payload is not valid JSON",
         err,
