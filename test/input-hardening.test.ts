@@ -193,6 +193,7 @@ describe("untrusted signature input hardening", () => {
     expect(envelope.signatures[0]?.contentType).not.toBe(
       "application/x-mutated-after-build",
     );
+    expect(Object.isFrozen(envelope)).toBe(true);
     expect(Object.isFrozen(envelope.signatures)).toBe(true);
     expect(Object.isFrozen(envelope.signatures[0])).toBe(true);
 
