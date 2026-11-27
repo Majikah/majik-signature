@@ -23,7 +23,7 @@ describe("streaming SHA-256", () => {
   it("uses bounded chunk defaults", () => {
     expect(DEFAULT_HASH_CHUNK_SIZE).toBe(MIB);
     expect(MIN_HASH_CHUNK_SIZE).toBe(64 * 1024);
-    expect(MAX_HASH_CHUNK_SIZE).toBe(256 * MIB);
+    expect(MAX_HASH_CHUNK_SIZE).toBe(64 * MIB);
   });
 
   it("selects buffered and streaming strategies from known sizes", () => {
