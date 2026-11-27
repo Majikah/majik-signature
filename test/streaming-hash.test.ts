@@ -183,6 +183,25 @@ describe("streaming detached batch signing", () => {
     expect(tampered[0]?.status).toBe("tampered");
   });
 
+  it("emits separate MJKSIG blobs when requested", async () => {
+    const first = new TextEncoder().encode("separate streamed result one");
+    const second = new TextEncoder().encode("separate streamed result two");
+    const result = await MajikSignature.signBatchDetachedStream(
+      [
+        { path: "one.txt", source: chunks(first, 4), totalBytes: first.length },
+        { path: "two.txt", source: chunks(second, 6), totalBytes: second.length },
+      ],
+      key,
+      { mode: "separate" },
+    );
+
+    expect(result.mode).toBe("separate");
+    if (result.mode !== "separate") throw new Error("Expected separate mode");
+    expect(result.signatures).toHaveLength(2);
+    expect(result.signatures.map((item) => item.path)).toEqual(["one.txt", "two.txt"]);
+    expect(result.signatures.every((item) => item.blob.size > 0)).toBe(true);
+  });
+
   it("does not continue a batch after explicit cancellation", async () => {
     const controller = new AbortController();
     controller.abort();
