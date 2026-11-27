@@ -8,8 +8,6 @@ import { MajikKey } from "@majikah/majik-key";
 import { MajikSignature } from "../src/majik-signature";
 import { MajikSignatureMap } from "../src/core/mjksmap";
 import {
-  MJKSMAP_BYTES,
-  MJKSMAP_ENTRIES,
   MJKSMAP_MAGIC,
   MAX_MJKSMAP_BYTES,
   MAX_MJKSMAP_ENTRIES,
