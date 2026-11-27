@@ -274,6 +274,7 @@ export class MajikSignatureEnvelope {
     this._sealedBy = immutable.sealedBy;
     this._chainAnchors = immutable.chainAnchors;
     this._fileVersions = immutable.fileVersions;
+    Object.freeze(this);
   }
 
   // ── Getters ─────────────────────────────────────────────────────────────────
