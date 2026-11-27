@@ -7,7 +7,14 @@ import { MajikKey } from "@majikah/majik-key";
 
 import { MajikSignature } from "../src/majik-signature";
 import { MajikSignatureMap } from "../src/core/mjksmap";
-import { MJKSMAP_MAGIC } from "../src/core/constants";
+import {
+  MJKSMAP_BYTES,
+  MJKSMAP_ENTRIES,
+  MJKSMAP_MAGIC,
+  MAX_MJKSMAP_BYTES,
+  MAX_MJKSMAP_ENTRIES,
+} from "../src/core/constants";
+import { bytesToBase64 } from "../src/core/hash";
 
 import { getTestKey } from "./helpers/crypto";
 
@@ -138,6 +145,10 @@ const FILE_FIXTURES: readonly FileFixture[] = [
 /**
  * Load a real fixture from test/fixtures as raw bytes.
  */
+function fakeHash(byte: number): string {
+  return bytesToBase64(new Uint8Array(32).fill(byte));
+}
+
 function loadFixture(filename: string): Uint8Array {
   return new Uint8Array(readFileSync(join(FIXTURES_DIR, filename)));
 }
@@ -355,7 +366,7 @@ describe("MajikSignatureMap (.mjksmap)", () => {
     it("upserts an entry when the normalized path already exists", () => {
       let map = MajikSignatureMap.empty().withEntry({
         path: "docs/report.txt",
-        contentHash: "hash-1",
+        contentHash: fakeHash(1),
         envelope: {
           version: 1,
           signatures: [],
@@ -364,7 +375,7 @@ describe("MajikSignatureMap (.mjksmap)", () => {
 
       map = map.withEntry({
         path: "docs/report.txt",
-        contentHash: "hash-2",
+        contentHash: fakeHash(2),
         envelope: {
           version: 1,
           signatures: [],
@@ -372,13 +383,13 @@ describe("MajikSignatureMap (.mjksmap)", () => {
       });
 
       expect(map.size).toBe(1);
-      expect(map.getEntry("docs/report.txt")?.contentHash).toBe("hash-2");
+      expect(map.getEntry("docs/report.txt")?.contentHash).toBe(fakeHash(2));
     });
 
     it("normalizes Windows drive letters and path separators", () => {
       const map = MajikSignatureMap.empty().withEntry({
         path: "C:\\docs\\reports\\report.pdf",
-        contentHash: "deadbeef",
+        contentHash: fakeHash(3),
         envelope: {
           version: 1,
           signatures: [],
@@ -421,7 +432,7 @@ describe("MajikSignatureMap (.mjksmap)", () => {
       const map = MajikSignatureMap.empty()
         .withEntry({
           path: "a.txt",
-          contentHash: "hash-a",
+          contentHash: fakeHash(4),
           envelope: {
             version: 1,
             signatures: [],
@@ -429,7 +440,7 @@ describe("MajikSignatureMap (.mjksmap)", () => {
         })
         .withEntry({
           path: "b.txt",
-          contentHash: "hash-b",
+          contentHash: fakeHash(5),
           envelope: {
             version: 1,
             signatures: [],
