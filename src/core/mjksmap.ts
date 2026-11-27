@@ -47,7 +47,8 @@ import type {
  * fs:scope globs (backslashes silently fail) — applied here proactively
  * rather than waiting to hit it again in batch workflows.
  */
-function normalizePath(path: string): string {
+function normalizePath(path: unknown): string {
+  if (typeof path !== "string") return "";
   let p = path.replace(/\\/g, "/").trim();
   p = p.replace(/^[a-zA-Z]:/, ""); // strip drive letters (C:, D:, ...)
   p = p.replace(/^\/+/, ""); // strip leading slashes
@@ -269,12 +270,13 @@ export class MajikSignatureMap {
     MajikSignatureEnvelope.fromJSON(normalized.envelope);
 
     const filtered = this._entries.filter((e) => e.path !== normalized.path);
-
-    return new MajikSignatureMap({
+    const data: MjksMapJSON = {
       version: this._version,
       createdAt: this._createdAt,
       entries: [...filtered, normalized],
-    });
+    };
+    MajikSignatureMap.#validateShape(data as unknown as Record<string, unknown>);
+    return new MajikSignatureMap(data);
   }
 
   withoutEntry(path: string): MajikSignatureMap {
@@ -475,7 +477,7 @@ export class MajikSignatureMap {
             `MJKSMAP payload exceeds the maximum supported size of ${MAX_MJKSMAP_BYTES} bytes`,
           );
         }
-        parsed = json;
+        parsed = JSON.parse(serialized);
       }
     } catch (err) {
       throw new MajikSignatureSerializationError(
@@ -527,6 +529,26 @@ export class MajikSignatureMap {
   // ── Private validation ───────────────────────────────────────────────────────
 
   static #validateShape(obj: Record<string, unknown>): void {
+    let serialized: string;
+    try {
+      serialized = JSON.stringify(obj);
+    } catch (error) {
+      throw new MajikSignatureSerializationError(
+        "MJKSMAP payload cannot be safely serialized",
+        error,
+      );
+    }
+    if (
+      typeof serialized !== "string" ||
+      serialized.length > MAX_MJKSMAP_BYTES ||
+      new TextEncoder().encode(serialized).byteLength > MAX_MJKSMAP_BYTES
+    ) {
+      throw new MajikSignatureValidationError(
+        `MJKSMAP payload exceeds the maximum supported size of ${MAX_MJKSMAP_BYTES} bytes`,
+        "payload",
+      );
+    }
+
     if (obj.version !== MJKSMAP_VERSION) {
       throw new MajikSignatureValidationError(
         `Unsupported MJKSMAP schema version: ${String(obj.version)}`,
