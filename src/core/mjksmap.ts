@@ -55,6 +55,17 @@ function normalizePath(path: unknown): string {
   return p;
 }
 
+/** Recursively freeze JSON snapshots before exposing manifest entry references. */
+function deepFreezeJson<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const child of Object.values(value as Record<string, unknown>)) {
+      deepFreezeJson(child);
+    }
+    Object.freeze(value);
+  }
+  return value;
+}
+
 /** Validate untrusted logical paths before using them as manifest keys. */
 function validateAndNormalizePath(path: unknown, field: string): string {
   if (typeof path !== "string" || path.trim().length === 0) {
@@ -94,12 +105,17 @@ export class MajikSignatureMap {
   private readonly _byHash: ReadonlyMap<string, readonly MjksMapEntry[]>;
 
   private constructor(data: MjksMapJSON) {
-    this._version = data.version;
-    this._createdAt = data.createdAt;
-    this._entries = data.entries.map((e) => ({
-      ...e,
-      path: normalizePath(e.path),
-    }));
+    // Clone first so freezing our internal state never freezes caller-owned
+    // entry/envelope objects and later caller mutation cannot alter a map.
+    const snapshot = JSON.parse(JSON.stringify(data)) as MjksMapJSON;
+    this._version = snapshot.version;
+    this._createdAt = snapshot.createdAt;
+    this._entries = deepFreezeJson(
+      snapshot.entries.map((entry) => ({
+        ...entry,
+        path: normalizePath(entry.path),
+      })),
+    );
 
     const byPath = new Map<string, MjksMapEntry>();
     const byHash = new Map<string, MjksMapEntry[]>();
@@ -291,11 +307,12 @@ export class MajikSignatureMap {
   // ── Serialization ─────────────────────────────────────────────────────────────
 
   toJSON(): MjksMapJSON {
-    return {
+    const snapshot: MjksMapJSON = {
       version: this._version,
       createdAt: this._createdAt,
       entries: [...this._entries],
     };
+    return JSON.parse(JSON.stringify(snapshot)) as MjksMapJSON;
   }
 
   // ── MJKSMAP binary format ─────────────────────────────────────────────────
