@@ -162,6 +162,25 @@ describe("streaming detached batch signing", () => {
       MajikSignature.publicKeysFromMajikKey(key),
     );
     expect(verified.valid).toBe(true);
+
+    const mapResults = await MajikSignature.verifyFilesFromMjksMapStream(
+      result.map,
+      [
+        { path: "docs/first.txt", source: chunks(first, 4), totalBytes: first.length },
+        { path: "moved/second.txt", source: chunks(second, 7), totalBytes: second.length },
+      ],
+      MajikSignature.publicKeysFromMajikKey(key),
+    );
+    expect(mapResults.map((item) => item.status)).toEqual(["verified", "verified"]);
+    expect(mapResults[1]?.relocatedFrom).toBe("docs/second.txt");
+
+    const modified = new TextEncoder().encode("modified content");
+    const tampered = await MajikSignature.verifyFilesFromMjksMapStream(
+      result.map,
+      [{ path: "docs/first.txt", source: chunks(modified, 3), totalBytes: modified.length }],
+      MajikSignature.publicKeysFromMajikKey(key),
+    );
+    expect(tampered[0]?.status).toBe("tampered");
   });
 
   it("continues after per-file failures when requested", async () => {
