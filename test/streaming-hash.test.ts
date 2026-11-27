@@ -23,7 +23,7 @@ describe("streaming SHA-256", () => {
   it("uses bounded chunk defaults", () => {
     expect(DEFAULT_HASH_CHUNK_SIZE).toBe(MIB);
     expect(MIN_HASH_CHUNK_SIZE).toBe(64 * 1024);
-    expect(MAX_HASH_CHUNK_SIZE).toBe(8 * MIB);
+    expect(MAX_HASH_CHUNK_SIZE).toBe(256 * MIB);
   });
 
   it("selects buffered and streaming strategies from known sizes", () => {
@@ -72,6 +72,42 @@ describe("streaming SHA-256", () => {
     await expect(
       hashSource(chunks(bytes, 128), { signal: controller.signal }),
     ).rejects.toThrow(/cancel/i);
+  });
+
+  it("validates expected total bytes for unknown-length streams", async () => {
+    const bytes = new Uint8Array(4097);
+    const exact = await hashSource(chunks(bytes, 113), {
+      totalBytes: bytes.byteLength,
+    });
+    expect(exact.bytesProcessed).toBe(bytes.byteLength);
+    expect(exact.totalBytes).toBe(bytes.byteLength);
+
+    await expect(
+      hashSource(chunks(bytes, 113), { totalBytes: bytes.byteLength - 1 }),
+    ).rejects.toThrow(/length mismatch/i);
+
+    async function* truncated(): AsyncGenerator<Uint8Array> {
+      yield bytes.subarray(0, 1000);
+    }
+    await expect(
+      hashSource(truncated(), { totalBytes: bytes.byteLength }),
+    ).rejects.toThrow(/length mismatch/i);
+  });
+
+  it("rejects a declared size that disagrees with a known source", async () => {
+    const bytes = new Uint8Array(32);
+    await expect(
+      hashSource(bytes, { totalBytes: bytes.byteLength + 1 }),
+    ).rejects.toThrow(/source length mismatch/i);
+  });
+
+  it("accepts the aligned maximum chunk-size override", async () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    const result = await hashSource(chunks(bytes, 2), {
+      chunkSize: MAX_HASH_CHUNK_SIZE,
+      totalBytes: bytes.byteLength,
+    });
+    expect(result.bytesProcessed).toBe(bytes.byteLength);
   });
 
   it("hashes Blob inputs incrementally when they exceed the threshold", async () => {
