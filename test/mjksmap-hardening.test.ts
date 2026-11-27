@@ -136,6 +136,7 @@ describe("MJKSMAP parser and input hardening", () => {
     source.path = "docs/changed-after-build.txt";
     source.envelope.signatures.push({} as any);
 
+    expect(Object.isFrozen(map)).toBe(true);
     const stored = map.getEntry("docs/immutable.txt");
     expect(stored).toBeDefined();
     expect(Object.isFrozen(stored)).toBe(true);
