@@ -94,7 +94,7 @@ export interface PayloadFields {
    * Do not pass `null` to represent absence. Omitting this property entirely is
    * required for signatures that do not carry an allowlist commitment and is
    * essential for backward compatibility with older signatures. `sch` is the
- * SignRoom session-context commitment and is omitted for standalone signatures.
+   * SignRoom session-context commitment and is omitted for standalone signatures.
    */
   allowlistHash?: string;
 
@@ -231,7 +231,9 @@ export function buildSigningPayload(fields: PayloadFields): Uint8Array {
  * });
  * ```
  */
-export function buildSignatureAttestationBytes(signature: MajikSignatureJSON): Uint8Array {
+export function buildSignatureAttestationBytes(
+  signature: MajikSignatureJSON,
+): Uint8Array {
   // TSA is excluded to avoid a circular commitment.
   const meta = JSON.stringify({
     v: signature.version,
@@ -243,10 +245,16 @@ export function buildSignatureAttestationBytes(signature: MajikSignatureJSON): U
     ts: signature.timestamp,
     ed: signature.edSignature,
     ml: signature.mlDsaSignature,
-    ...(signature.allowlistHash !== undefined ? { alh: signature.allowlistHash } : {}),
+    ...(signature.allowlistHash !== undefined
+      ? { alh: signature.allowlistHash }
+      : {}),
     ...(signature.validUntil !== undefined ? { vu: signature.validUntil } : {}),
-    ...(signature.versionChainHash !== undefined ? { vch: signature.versionChainHash } : {}),
-    ...(signature.sessionContextHash !== undefined ? { sch: signature.sessionContextHash } : {}),
+    ...(signature.versionChainHash !== undefined
+      ? { vch: signature.versionChainHash }
+      : {}),
+    ...(signature.sessionContextHash !== undefined
+      ? { sch: signature.sessionContextHash }
+      : {}),
   });
   const prefix = new TextEncoder().encode(MAJIK_SIGNATURE_ATTESTATION_DOMAIN);
   const body = new TextEncoder().encode(meta);
@@ -262,7 +270,9 @@ export function buildTSACanonicalBytes(payload: MajikTSAPayload): Uint8Array {
     digest: {
       algorithm: payload.digest.algorithm,
       value: payload.digest.value,
-      ...(payload.digest.scope !== undefined ? { scope: payload.digest.scope } : {}),
+      ...(payload.digest.scope !== undefined
+        ? { scope: payload.digest.scope }
+        : {}),
     },
     nonce: payload.nonce,
     timestamp: payload.timestamp,

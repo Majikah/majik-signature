@@ -32,7 +32,10 @@ import {
 } from "./core/payload.js";
 import { hashContent, bytesToBase64, base64ToBytes } from "./core/hash.js";
 import { hashSource } from "./core/streaming/index.js";
-import type { StreamingByteSource, StreamingHashOptions } from "./core/streaming/types.js";
+import type {
+  StreamingByteSource,
+  StreamingHashOptions,
+} from "./core/streaming/types.js";
 import { buildSessionContextHash } from "./core/session-context.js";
 import type {
   BatchFileInput,
@@ -290,7 +293,12 @@ export class MajikSignature {
     debug: boolean = false,
   ): Promise<MajikSignature> {
     MajikSignatureValidator.validateContent(content);
-    return MajikSignature._signDigest(hashContent(content), key, options, debug);
+    return MajikSignature._signDigest(
+      hashContent(content),
+      key,
+      options,
+      debug,
+    );
   }
 
   /**
@@ -328,11 +336,15 @@ export class MajikSignature {
     debug: boolean = false,
   ): Promise<MajikSignature> {
     if (contentHashBytes.byteLength !== 32) {
-      throw new MajikSignatureError("Internal SHA-256 digest must be exactly 32 bytes");
+      throw new MajikSignatureError(
+        "Internal SHA-256 digest must be exactly 32 bytes",
+      );
     }
     MajikSignatureValidator.assertDefined(key, "key");
     MajikSignatureValidator.validateContentType(options?.contentType);
-    MajikSignatureValidator.validateTimestamp(options?.timestamp ?? new Date().toISOString());
+    MajikSignatureValidator.validateTimestamp(
+      options?.timestamp ?? new Date().toISOString(),
+    );
     MajikSignatureValidator.validateValidUntil(options?.validUntil);
     if (options?.allowlistHash !== undefined) {
       MajikSignatureValidator.validateCanonicalBase64(
@@ -349,7 +361,9 @@ export class MajikSignature {
       );
     }
     if (options?.sessionContextHash !== undefined) {
-      MajikSignatureValidator.validateSessionContextHash(options.sessionContextHash);
+      MajikSignatureValidator.validateSessionContextHash(
+        options.sessionContextHash,
+      );
     }
 
     if (key.isLocked)
@@ -457,7 +471,12 @@ export class MajikSignature {
     now: Date = new Date(),
   ): VerificationResult {
     MajikSignatureValidator.validateContent(content);
-    return MajikSignature._verifyDigest(hashContent(content), signature, publicKeys, now);
+    return MajikSignature._verifyDigest(
+      hashContent(content),
+      signature,
+      publicKeys,
+      now,
+    );
   }
 
   /**
@@ -490,7 +509,9 @@ export class MajikSignature {
   ): VerificationResult {
     try {
       if (digest.byteLength !== 32) {
-        throw new MajikSignatureError("Internal SHA-256 digest must be exactly 32 bytes");
+        throw new MajikSignatureError(
+          "Internal SHA-256 digest must be exactly 32 bytes",
+        );
       }
       if (!Number.isFinite(now.getTime())) {
         throw new MajikSignatureError("Verification time must be a valid Date");
@@ -512,13 +533,17 @@ export class MajikSignature {
         }) as VerificationResult;
 
       if (publicKeys.signerId !== env.signerId) {
-        return invalid("Signer key fingerprint does not match signature signerId");
+        return invalid(
+          "Signer key fingerprint does not match signature signerId",
+        );
       }
       if (
         bytesToBase64(publicKeys.edPublicKey) !== env.signerEdPublicKey ||
         bytesToBase64(publicKeys.mlDsaPublicKey) !== env.signerMlDsaPublicKey
       ) {
-        return invalid("Supplied signer public keys do not match the signature record");
+        return invalid(
+          "Supplied signer public keys do not match the signature record",
+        );
       }
 
       const recomputedHash = bytesToBase64(digest);
@@ -621,13 +646,17 @@ export class MajikSignature {
       });
 
       if (publicKeys.signerId !== env.signerId) {
-        return invalid("Signer key fingerprint does not match signature signerId");
+        return invalid(
+          "Signer key fingerprint does not match signature signerId",
+        );
       }
       if (
         bytesToBase64(publicKeys.edPublicKey) !== env.signerEdPublicKey ||
         bytesToBase64(publicKeys.mlDsaPublicKey) !== env.signerMlDsaPublicKey
       ) {
-        return invalid("Supplied signer public keys do not match the signature record");
+        return invalid(
+          "Supplied signer public keys do not match the signature record",
+        );
       }
 
       const payload = buildSigningPayload({
@@ -747,14 +776,20 @@ export class MajikSignature {
         digestBytes.length !== 32 ||
         bytesToBase64(digestBytes) !== expectedContentHash
       ) {
-        return invalid("Expected content hash is not a canonical SHA-256 digest");
+        return invalid(
+          "Expected content hash is not a canonical SHA-256 digest",
+        );
       }
     } catch {
-      return invalid("Expected content hash is not a valid base64 SHA-256 digest");
+      return invalid(
+        "Expected content hash is not a valid base64 SHA-256 digest",
+      );
     }
 
     if (env.contentHash !== expectedContentHash) {
-      return invalid("Signature contentHash does not match the expected digest");
+      return invalid(
+        "Signature contentHash does not match the expected digest",
+      );
     }
 
     if (options.expectedSessionContextHash !== undefined) {
@@ -766,14 +801,20 @@ export class MajikSignature {
         return invalid("Expected session context hash is invalid");
       }
       if (env.sessionContextHash !== options.expectedSessionContextHash) {
-        return invalid("Signature session context does not match the expected session");
+        return invalid(
+          "Signature session context does not match the expected session",
+        );
       }
     } else if (env.sessionContextHash !== undefined) {
-      return invalid("Expected session context hash is required for session-bound signatures");
+      return invalid(
+        "Expected session context hash is required for session-bound signatures",
+      );
     }
 
     if (publicKeys.signerId !== env.signerId) {
-      return invalid("Signer key fingerprint does not match signature signerId");
+      return invalid(
+        "Signer key fingerprint does not match signature signerId",
+      );
     }
 
     return MajikSignature.verifyCommitment(
@@ -782,8 +823,6 @@ export class MajikSignature {
       options.now ?? new Date(),
     );
   }
-
-
 
   /** Re-run structural validation of this in-memory signature record; does not perform cryptographic verification. */
   validate(): void {
@@ -1059,7 +1098,6 @@ export class MajikSignature {
     );
   }
 
-
   /**
    * Sign one detached document as part of a SignRoom session.
    *
@@ -1081,11 +1119,7 @@ export class MajikSignature {
     key: MajikKey,
     options: SessionFileSignOptions,
   ) {
-    const {
-      sessionContext,
-      fileVersion,
-      ...signingOptions
-    } = options;
+    const { sessionContext, fileVersion, ...signingOptions } = options;
     const sessionContextHash = buildSessionContextHash(sessionContext);
     const sessionEnvelope = signingOptions.existingEnvelope
       ? await MajikSignatureEnvelope.from(signingOptions.existingEnvelope)
@@ -1110,7 +1144,8 @@ export class MajikSignature {
         fileVersion.previousVersionHash !== expectedPreviousVersionHash ||
         typeof fileVersion.timestamp !== "string" ||
         !Number.isFinite(Date.parse(fileVersion.timestamp)) ||
-        new Date(Date.parse(fileVersion.timestamp)).toISOString() !== fileVersion.timestamp ||
+        new Date(Date.parse(fileVersion.timestamp)).toISOString() !==
+          fileVersion.timestamp ||
         typeof fileVersion.contentHash !== "string" ||
         !/^[A-Za-z0-9+/]{43}=$/.test(fileVersion.contentHash)
       ) {
@@ -1413,7 +1448,9 @@ export class MajikSignature {
       }
 
       if (!entry) {
-        entry = map.entries.find((candidate) => candidate.contentHash === contentHash);
+        entry = map.entries.find(
+          (candidate) => candidate.contentHash === contentHash,
+        );
         if (entry) relocatedFrom = entry.path;
       }
 
@@ -1516,7 +1553,6 @@ export class MajikSignature {
     );
   }
 
-
   /**
    * Verify a detached document and every participant signature against
    * authoritative SignRoom contexts.
@@ -1572,11 +1608,10 @@ export class MajikSignature {
     let cryptographicResults: VerificationResult[];
 
     if (envelope.fileVersions.length > 0) {
-      chain = await MajikSignature.verifyFileDetachedChain(
-        file,
-        envelope,
-        { mimeType: options.mimeType, now },
-      );
+      chain = await MajikSignature.verifyFileDetachedChain(file, envelope, {
+        mimeType: options.mimeType,
+        now,
+      });
       const bySigner = new Map<string, VerificationResult>();
       for (const result of [...chain.history, chain.latest]) {
         if (result.signerId) bySigner.set(result.signerId, result);
@@ -1592,7 +1627,9 @@ export class MajikSignature {
             timestamp: signature.timestamp,
             contentType: signature.contentType,
             sessionContextHash: signature.sessionContextHash,
-            reason: "No trusted public keys were supplied for signer " + signature.signerId,
+            reason:
+              "No trusted public keys were supplied for signer " +
+              signature.signerId,
           };
         }
 
@@ -1603,15 +1640,17 @@ export class MajikSignature {
         );
         if (!commitment.valid) return commitment;
 
-        return bySigner.get(signature.signerId) ?? {
-          valid: false,
-          signerId: signature.signerId,
-          contentHash: signature.contentHash,
-          timestamp: signature.timestamp,
-          contentType: signature.contentType,
-          sessionContextHash: signature.sessionContextHash,
-          reason: "No verified revision-chain result exists for this signer",
-        };
+        return (
+          bySigner.get(signature.signerId) ?? {
+            valid: false,
+            signerId: signature.signerId,
+            contentHash: signature.contentHash,
+            timestamp: signature.timestamp,
+            contentType: signature.contentType,
+            sessionContextHash: signature.sessionContextHash,
+            reason: "No verified revision-chain result exists for this signer",
+          }
+        );
       });
     } else {
       const hasUnverifiableRevisionCommitment = signatures.some(
@@ -1631,7 +1670,8 @@ export class MajikSignature {
             timestamp: signature.timestamp,
             contentType: signature.contentType,
             sessionContextHash: signature.sessionContextHash,
-            reason: "Signature commits to a revision chain, but fileVersions is missing",
+            reason:
+              "Signature commits to a revision chain, but fileVersions is missing",
           };
         }
         const trustedKeys =
@@ -1644,16 +1684,13 @@ export class MajikSignature {
             timestamp: signature.timestamp,
             contentType: signature.contentType,
             sessionContextHash: signature.sessionContextHash,
-            reason: "No trusted public keys were supplied for signer " + signature.signerId,
+            reason:
+              "No trusted public keys were supplied for signer " +
+              signature.signerId,
           };
         }
         try {
-          return MajikSignature.verify(
-            content,
-            signature,
-            trustedKeys,
-            now,
-          );
+          return MajikSignature.verify(content, signature, trustedKeys, now);
         } catch (error) {
           return {
             valid: false,
@@ -1662,9 +1699,10 @@ export class MajikSignature {
             timestamp: signature.timestamp,
             contentType: signature.contentType,
             sessionContextHash: signature.sessionContextHash,
-            reason: error instanceof Error
-              ? error.message
-              : "Unable to verify participant signature",
+            reason:
+              error instanceof Error
+                ? error.message
+                : "Unable to verify participant signature",
           };
         }
       });
@@ -1681,7 +1719,9 @@ export class MajikSignature {
           : undefined,
       }))
       .filter(
-        (entry): entry is {
+        (
+          entry,
+        ): entry is {
           signerId: string;
           context: NonNullable<typeof entry.context>;
         } => entry.context !== undefined,
@@ -1716,12 +1756,13 @@ export class MajikSignature {
 
       if (envelope.hasAllowlist()) {
         const isIssuer = signature.signerId === envelope.allowlistSignerId;
-        const allowed = envelope.allowlist?.some(
-          (entry) =>
-            entry.signerId === signature.signerId &&
-            entry.edPublicKey === signature.signerEdPublicKey &&
-            entry.mlDsaPublicKey === signature.signerMlDsaPublicKey,
-        ) ?? false;
+        const allowed =
+          envelope.allowlist?.some(
+            (entry) =>
+              entry.signerId === signature.signerId &&
+              entry.edPublicKey === signature.signerEdPublicKey &&
+              entry.mlDsaPublicKey === signature.signerMlDsaPublicKey,
+          ) ?? false;
         if (!isIssuer && !allowed) {
           return {
             ...base,
@@ -1746,7 +1787,9 @@ export class MajikSignature {
           ...base,
           valid: false,
           sessionContextHash: signature.sessionContextHash,
-          reason: "No authoritative session context was supplied for signer " + signature.signerId,
+          reason:
+            "No authoritative session context was supplied for signer " +
+            signature.signerId,
         };
       }
 
@@ -1758,9 +1801,10 @@ export class MajikSignature {
           ...base,
           valid: false,
           sessionContextHash: signature.sessionContextHash,
-          reason: error instanceof Error
-            ? "Invalid expected session context: " + error.message
-            : "Invalid expected session context",
+          reason:
+            error instanceof Error
+              ? "Invalid expected session context: " + error.message
+              : "Invalid expected session context",
         };
       }
 
@@ -1769,7 +1813,8 @@ export class MajikSignature {
           ...base,
           valid: false,
           sessionContextHash: signature.sessionContextHash,
-          reason: "Signature session context does not match the authoritative session, challenge, and policy",
+          reason:
+            "Signature session context does not match the authoritative session, challenge, and policy",
         };
       }
 
@@ -1802,7 +1847,8 @@ export class MajikSignature {
             signerId: signature.signerId,
             present: true,
             valid: tsaVerification.valid,
-            trusted: options.trustedTsaPublicKeys !== undefined &&
+            trusted:
+              options.trustedTsaPublicKeys !== undefined &&
               tsaVerification.valid,
             ...(tsaVerification.reason
               ? { reason: tsaVerification.reason }
@@ -1814,9 +1860,10 @@ export class MajikSignature {
             present: true,
             valid: false,
             trusted: false,
-            reason: error instanceof Error
-              ? error.message
-              : "TSA verification failed",
+            reason:
+              error instanceof Error
+                ? error.message
+                : "TSA verification failed",
           };
         }
       },
@@ -1831,8 +1878,8 @@ export class MajikSignature {
     const tsaValid = tsaResults.every((result) => result.valid);
     const trustedTsaValid =
       options.requireTrustedTSA !== true ||
-      tsaResults.every((result) =>
-        result.present && result.valid && result.trusted,
+      tsaResults.every(
+        (result) => result.present && result.valid && result.trusted,
       );
 
     const valid =
@@ -2382,9 +2429,7 @@ export class MajikSignature {
   // ── TRUSTED TIMESTAMPS ───────────────────────────────────────────────────────
 
   /** Build the legacy content-scoped TSA request for this signature record. */
-  buildTSARequestPayload(
-    scope: TSADigestScope = "content",
-  ): MajikTSARequest {
+  buildTSARequestPayload(scope: TSADigestScope = "content"): MajikTSARequest {
     if (scope === "signature") {
       const digest = bytesToBase64(
         hashContent(buildSignatureAttestationBytes(this.toJSON())),
@@ -2413,7 +2458,10 @@ export class MajikSignature {
    * internal consistency does not establish an external trust relationship.
    * The attachment is one-shot.
    */
-  addTSA(tsa: MajikTimestamp, trustedTsaPublicKeys?: MajikSignerPublicKeys): void {
+  addTSA(
+    tsa: MajikTimestamp,
+    trustedTsaPublicKeys?: MajikSignerPublicKeys,
+  ): void {
     if (this._tsa !== undefined)
       throw new MajikSignatureError(
         "TSA is already set and cannot be replaced",
@@ -2511,7 +2559,8 @@ export class MajikSignature {
     if (trustedTsaPublicKeys !== undefined) {
       MajikSignatureValidator.validateSignerPublicKeys(trustedTsaPublicKeys);
       if (
-        this._tsa.payload.tsa.signerFingerprint !== trustedTsaPublicKeys.signerId ||
+        this._tsa.payload.tsa.signerFingerprint !==
+          trustedTsaPublicKeys.signerId ||
         this._tsa.signature.signerId !== trustedTsaPublicKeys.signerId
       ) {
         throw new MajikSignatureVerificationError(
@@ -2520,11 +2569,7 @@ export class MajikSignature {
       }
     }
 
-    return MajikSignature.verify(
-      canonicalBytes,
-      tsaSig,
-      verificationKeys,
-    );
+    return MajikSignature.verify(canonicalBytes, tsaSig, verificationKeys);
   }
 
   /** Whether this signature record currently contains a TSA token. */

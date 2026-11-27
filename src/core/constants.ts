@@ -100,7 +100,6 @@ export const MAX_SIGNATURES_PER_ENVELOPE = 1024;
 /** Maximum number of signer public-key entries accepted in an allowlist. */
 export const MAX_ALLOWLIST_ENTRIES = 1024;
 
-
 /** Version of the timestamp-token payload schema. */
 export const MAJIK_TIMESTAMP_VERSION = 1 as const;
 /** Domain separator included in canonical TSA-signed payload bytes. */
@@ -198,7 +197,6 @@ export const MJKSMAP_FILE_EXTENSION = ".mjksmap";
 
 /** Conventional name/location when packaged in a signed batch zip. */
 export const MJKSMAP_DEFAULT_FILENAME = "signatures.mjksmap";
-
 
 // ─── Untrusted envelope parsing limits ──────────────────────────────────────
 /** Maximum serialized envelope/CBOR payload size accepted by the parser. */

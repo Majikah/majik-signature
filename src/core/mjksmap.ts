@@ -63,7 +63,9 @@ function normalizePath(path: unknown): string {
 /** Recursively freeze JSON snapshots before exposing manifest entry references. */
 function deepFreezeJson<T>(value: T): T {
   if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-    for (const child of Object.values(value as unknown as Record<string, unknown>)) {
+    for (const child of Object.values(
+      value as unknown as Record<string, unknown>,
+    )) {
       deepFreezeJson(child);
     }
     Object.freeze(value);
@@ -74,7 +76,10 @@ function deepFreezeJson<T>(value: T): T {
 /** Validate untrusted logical paths before using them as manifest keys. */
 function validateAndNormalizePath(path: unknown, field: string): string {
   if (typeof path !== "string" || path.trim().length === 0) {
-    throw new MajikSignatureValidationError(`${field} must be a non-empty string`, field);
+    throw new MajikSignatureValidationError(
+      `${field} must be a non-empty string`,
+      field,
+    );
   }
   if (
     path.length > MAX_MJKSMAP_PATH_CHARS ||
@@ -87,7 +92,10 @@ function validateAndNormalizePath(path: unknown, field: string): string {
   }
 
   const normalized = normalizePath(path);
-  if (!normalized || normalized.split("/").some((segment) => segment === "..")) {
+  if (
+    !normalized ||
+    normalized.split("/").some((segment) => segment === "..")
+  ) {
     throw new MajikSignatureValidationError(
       `${field} must resolve to a non-traversing relative path`,
       field,
@@ -311,7 +319,10 @@ export class MajikSignatureMap {
       );
     }
     if (normalized.mimeType !== undefined) {
-      MajikSignatureValidator.validateContentType(normalized.mimeType, "mimeType");
+      MajikSignatureValidator.validateContentType(
+        normalized.mimeType,
+        "mimeType",
+      );
     }
     MajikSignatureEnvelope.fromJSON(normalized.envelope);
 
@@ -321,7 +332,9 @@ export class MajikSignatureMap {
       createdAt: this._createdAt,
       entries: [...filtered, normalized],
     };
-    MajikSignatureMap.#validateShape(data as unknown as Record<string, unknown>);
+    MajikSignatureMap.#validateShape(
+      data as unknown as Record<string, unknown>,
+    );
     return new MajikSignatureMap(data);
   }
 
@@ -539,7 +552,8 @@ export class MajikSignatureMap {
         const serialized = JSON.stringify(json);
         if (
           typeof serialized !== "string" ||
-          new TextEncoder().encode(serialized).byteLength > MAX_MJKSMAP_JSON_BYTES
+          new TextEncoder().encode(serialized).byteLength >
+            MAX_MJKSMAP_JSON_BYTES
         ) {
           throw new MajikSignatureSerializationError(
             `MJKSMAP JSON model exceeds the maximum supported size of ${MAX_MJKSMAP_JSON_BYTES} bytes`,

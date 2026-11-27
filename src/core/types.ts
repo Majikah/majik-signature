@@ -12,7 +12,10 @@ import type { MajikChainAnchor } from "../anchor/types.js";
 import type { ContentType } from "./constants.js";
 import type { MajikSignatureEnvelope } from "./envelope.js";
 import type { MajikSessionSigningContext } from "./session-context.js";
-import type { StreamingByteSource, StreamingHashOptions } from "./streaming/types.js";
+import type {
+  StreamingByteSource,
+  StreamingHashOptions,
+} from "./streaming/types.js";
 
 /** Standard content-type constants exposed by Majik Signature. */
 export type { ContentType };
@@ -761,8 +764,6 @@ export interface VerifyEmbeddedOptions extends ExtractOptions {
   expectedSignerId?: string;
 }
 
-
-
 /**
  * Detached signature entry for one file inside a {@link MjksMapJSON} batch manifest.
  *
@@ -1214,7 +1215,6 @@ export interface FileChainVerification {
   chainValid: boolean;
 }
 
-
 /**
  * Options for signing one detached document inside a SignRoom session.
  *
@@ -1258,9 +1258,7 @@ export interface SessionFileSignOptions {
  * envelope must have a corresponding authoritative context.
  */
 export interface SessionFileVerifyOptions {
-  expectedSessionContexts: Readonly<
-    Record<string, MajikSessionSigningContext>
-  >;
+  expectedSessionContexts: Readonly<Record<string, MajikSessionSigningContext>>;
   /** Trusted Ed25519 + ML-DSA-87 keys, keyed by the same signer fingerprint. */
   expectedSignerPublicKeys: Readonly<Record<string, MajikSignerPublicKeys>>;
   /** MIME type override used when canonicalizing the document. */
