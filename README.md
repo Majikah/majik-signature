@@ -1151,7 +1151,7 @@ The default chunk is 1 MiB. Supported overrides range from 64 KiB to 64 MiB; the
 ### Resource and untrusted-input limits
 
 - Hash workers accept chunk sizes from **64 KiB to 64 MiB**. The default remains 1 MiB. The streaming hash API does not impose an implicit file-size ceiling; set `maxBytes` when the application needs one.
-- MJKSMAP v2 CBOR payloads are capped at **16 MiB**; the JSON compatibility API allows up to **24 MiB** to account for Base64 expansion, while legacy v1 JSON containers retain the **16 MiB** wire limit. The manifest is capped at **10,000 entries**, and each normalized path at **4,096 UTF-16 code units**. Traversal segments, control/bidirectional override characters, normalized-path collisions, malformed JSON/CBOR, trailing data, and nonzero reserved header values are rejected.
+- MJKSMAP v2 CBOR payloads are capped at **16 MiB**; the JSON compatibility API allows up to **24 MiB** to account for Base64 expansion, while legacy v1 JSON containers retain the **16 MiB** wire limit. The manifest is capped at **10,000 entries**, and each original input path at **4,096 UTF-16 code units before normalization**. Traversal segments, control/bidirectional override characters, normalized-path collisions, malformed JSON/CBOR, trailing data, and nonzero reserved header values are rejected.
 - MJKSMAP content hashes must be canonical Base64 SHA-256 digests. Optional sizes must be non-negative safe integers, MIME metadata is bounded and rejects control characters, and every embedded envelope is validated.
 - Envelope JSON/CBOR and MJKSIG inputs retain the **16 MiB** parser ceiling. Builder methods validate the resulting envelope too, so malformed values cannot bypass parser checks by using a `with*()` method.
 
