@@ -16,6 +16,7 @@ import type {
   MajikSignatureEnvelopeCBOR,
   MajikTimestampCBOR,
   MajikChainAnchorCBOR,
+  MjksMapCBOR,
 } from "./types.js";
 
 import type { MajikChainAnchor } from "../../anchor/types.js";
@@ -25,6 +26,8 @@ import {
   MajikSignatureEnvelopeJSON,
   MajikSignatureJSON,
   MajikTimestamp,
+  MjksMapEntry,
+  MjksMapJSON,
 } from "../types.js";
 
 // Prevent pathological recursion through nested TSA signature records.
