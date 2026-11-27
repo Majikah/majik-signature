@@ -48,9 +48,9 @@ import type {
 
 /**
  * Normalize a path for use as a map key: forward slashes, no leading slash,
- * no drive letters. Same normalization lesson already hit with Tauri
- * fs:scope globs (backslashes silently fail) — applied here proactively
- * rather than waiting to hit it again in batch workflows.
+ * no drive letters. Leading/trailing whitespace follows ECMAScript
+ * String.prototype.trim() semantics; the Rust port mirrors that exact set.
+ * Same normalization lesson already hit with Tauri fs:scope globs.
  */
 function normalizePath(path: unknown): string {
   if (typeof path !== "string") return "";
