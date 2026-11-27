@@ -31,6 +31,8 @@ import {
   MJKSMAP_MEDIA_TYPE,
   MJKSMAP_SUPPORTED_VERSIONS,
   MJKSMAP_VERSION,
+  MJKSMAP_JSON_VERSION,
+  MJKSMAP_SCHEMA_VERSION,
 } from "./constants.js";
 import { MajikSignatureValidator } from "./validator.js";
 import type {
