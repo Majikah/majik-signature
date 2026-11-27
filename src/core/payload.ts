@@ -93,7 +93,8 @@ export interface PayloadFields {
    *
    * Do not pass `null` to represent absence. Omitting this property entirely is
    * required for signatures that do not carry an allowlist commitment and is
-   * essential for backward compatibility with older signatures.
+   * essential for backward compatibility with older signatures. `sch` is the
+ * SignRoom session-context commitment and is omitted for standalone signatures.
    */
   allowlistHash?: string;
 
@@ -118,7 +119,13 @@ export interface PayloadFields {
    * chain metadata.
    */
   versionChainHash?: string;
-  /** Optional SHA-256 commitment to a SignRoom session context. */
+  /**
+   * Optional Base64 SHA-256 commitment to a SignRoom session/challenge/policy context.
+   *
+   * @remarks
+   * Serialized as `sch` only when defined. SignRoom verifiers must supply and
+   * check the expected session context for session-bound signatures.
+   */
   sessionContextHash?: string;
 }
 
@@ -132,9 +139,9 @@ export interface PayloadFields {
  * 2. A UTF-8 encoded JSON object containing the canonical signing metadata.
  *
  * The JSON field names are intentionally compact and stable:
- * `v`, `id`, `ts`, `ct`, `hash`, `alh`, `vu`, and `vch`.
+ * `v`, `id`, `ts`, `ct`, `hash`, `alh`, `vu`, `vch`, and `sch`.
  *
- * `alh`, `vu`, and `vch` are conditionally included only when their
+ * `alh`, `vu`, `vch`, and `sch` are conditionally included only when their
  * corresponding properties are defined. They must not be introduced as
  * `null` placeholders because omission is part of the on-wire compatibility
  * contract. In particular, older signatures did not contain these fields and
