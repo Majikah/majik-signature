@@ -17,6 +17,7 @@ export interface MajikSessionSigningContext {
 export const MAJIK_SESSION_CONTEXT_DOMAIN =
   "majik-signature-session-context-v1:" as const;
 
+/** Validate identifiers using ECMAScript String.prototype.trim() whitespace semantics. */
 function validateIdentifier(
   value: unknown,
   field: string,
