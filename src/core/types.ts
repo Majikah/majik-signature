@@ -994,6 +994,28 @@ export interface BatchVerifyInput {
 }
 
 /**
+ * One file supplied to streaming MJKSMAP verification.
+ *
+ * The byte source is consumed once and is never materialized as a complete file.
+ */
+export interface StreamingBatchVerifyInput {
+  /** Current path of the file; may differ from the original manifest path. */
+  path: string;
+  /** Stream or in-memory byte source for the exact canonical unsigned content. */
+  source: StreamingByteSource;
+  /** Optional expected length for truncation/overrun detection. */
+  totalBytes?: number;
+}
+
+/** Options for streaming batch verification against an MJKSMAP manifest. */
+export interface BatchStreamingVerifyOptions extends BatchVerifyOptions {
+  /** Hashing options shared by each file; totalBytes and progress are per-file. */
+  streaming?: Omit<StreamingHashOptions, "onProgress" | "totalBytes">;
+  /** Batch-aware per-file streaming progress callback. */
+  onProgress?: (progress: BatchStreamingProgress) => void;
+}
+
+/**
  * Per-file batch verification outcome.
  *
  * @remarks
