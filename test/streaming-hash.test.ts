@@ -142,7 +142,7 @@ describe("streaming detached batch signing", () => {
         mode: "map",
         onProgress: (progress) => {
           expect(progress.totalFiles).toBe(2);
-          expect(progress.path).toMatch(/^docs\\//);
+          expect(progress.path.startsWith("docs/")).toBe(true);
         },
       },
     );
