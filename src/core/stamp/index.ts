@@ -34,12 +34,14 @@
 
 // ── Primary class ─────────────────────────────────────────────────────────────
 
+/** Lower-level experimental image-signature API and its typed errors. */
 export {
   MajikImageSignature,
   MajikImageSignatureError,
   MajikImageCapacityError,
 } from "./image-signature.js";
 
+/** Verification summary types for the experimental image-stamp pipeline. */
 export type {
   ImageVerificationResult,
   VerificationLayer,
@@ -47,6 +49,7 @@ export type {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/** Compact DCT stub and dual-layer signing options. */
 export type { ImageSignatureStub, ImageSignOptions } from "./core/types.js";
 
 // ── Advanced / testing primitives ─────────────────────────────────────────────
