@@ -1166,6 +1166,18 @@ Verify a batch of extracted files against a `MajikSignatureMap`. Never throws pe
 }
 ```
 
+#### `MajikSignature.verifyFilesFromMjksMapStream(map, files, publicKeys, options?)`
+
+Verify files against a MJKSMAP manifest using one streaming pass per file.
+
+- `files: { path: string; source: StreamingByteSource; totalBytes?: number }[]`
+- Preserves the existing path-first resolution rules: a path match with a different digest is `tampered`; a missing path can resolve by digest as `relocated`.
+- Validates every selected envelope signature against the streamed SHA-256 digest.
+- `options?.expectedSignerId`, `options?.requireAllPresent`, and `options?.now` have the same meaning as buffered batch verification.
+- `options?.streaming` sets the shared chunk and memory-limit policy; `options?.onProgress` reports per-file byte progress.
+
+**Returns:** `Promise<FileVerifyResult[]>`.
+
 #### `MajikSignature.verifyFilesFromMjksMapWithKey(map, files, key, options?)`
 Convenience overload — resolves public keys from a `MajikKey` instead of requiring `MajikSignerPublicKeys` directly.
 
