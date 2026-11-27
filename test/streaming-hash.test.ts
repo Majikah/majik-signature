@@ -122,6 +122,68 @@ describe("streaming SHA-256", () => {
   });
 });
 
+describe("streaming detached batch signing", () => {
+  let key: MajikKey;
+
+  beforeAll(async () => {
+    key = await getTestKey();
+  }, 120000);
+
+  it("signs multiple streams into a compatible MJKSMAP manifest", async () => {
+    const first = new TextEncoder().encode("first streamed batch file");
+    const second = new TextEncoder().encode("second streamed batch file");
+    const result = await MajikSignature.signBatchDetachedStream(
+      [
+        { path: "docs/first.txt", source: chunks(first, 3), totalBytes: first.length, mimeType: "text/plain" },
+        { path: "docs/second.txt", source: chunks(second, 5), totalBytes: second.length, mimeType: "text/plain" },
+      ],
+      key,
+      {
+        mode: "map",
+        onProgress: (progress) => {
+          expect(progress.totalFiles).toBe(2);
+          expect(progress.path).toMatch(/^docs\\//);
+        },
+      },
+    );
+
+    expect(result.mode).toBe("map");
+    if (result.mode !== "map") throw new Error("Expected map mode");
+    expect(result.map.size).toBe(2);
+    expect(result.map.getEntry("docs/first.txt")?.contentHash).toBe(
+      bytesToBase64(hashContent(first)),
+    );
+    expect(result.map.getEntry("docs/second.txt")?.size).toBe(second.length);
+
+    const signature = result.map.getEntry("docs/first.txt")!.envelope.signatures[0]!;
+    const verified = await MajikSignature.verifyStream(
+      chunks(first, 2),
+      signature,
+      MajikSignature.publicKeysFromMajikKey(key),
+    );
+    expect(verified.valid).toBe(true);
+  });
+
+  it("continues after per-file failures when requested", async () => {
+    const valid = new TextEncoder().encode("valid item");
+    const invalid = new TextEncoder().encode("invalid length");
+    const result = await MajikSignature.signBatchDetachedStream(
+      [
+        { path: "valid.txt", source: chunks(valid, 2), totalBytes: valid.length },
+        { path: "invalid.txt", source: chunks(invalid, 2), totalBytes: invalid.length + 1 },
+      ],
+      key,
+      { continueOnError: true },
+    );
+
+    expect(result.mode).toBe("map");
+    if (result.mode !== "map") throw new Error("Expected map mode");
+    expect(result.map.size).toBe(1);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]?.path).toBe("invalid.txt");
+  });
+});
+
 describe("MajikSignature streaming APIs", () => {
   let key: MajikKey;
 
