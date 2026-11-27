@@ -3,7 +3,7 @@
 [![Static Badge](https://img.shields.io/badge/IANA-vnd.majikah.mjksig-green)](https://www.iana.org/assignments/media-types/application/vnd.majikah.mjksig)
 
 **File Extension:** `.mjksig`
-**Proposed Media Type:** `application/vnd.majikah.mjksig`
+**Registered Media Type:** `application/vnd.majikah.mjksig`
 **Category:** Secure digital signature envelope
 **Specification Version:** 1.2
 **Current Format Version Byte:** `0x02` (CBOR; `0x01` JSON is legacy)
@@ -44,39 +44,14 @@ Where:
 *   `hash`: SHA-256 hash of the original detached file's content, base64 encoded.
 *   `alh`: SHA-256 hash of the canonical allowlist JSON, base64 encoded. This key is completely omitted (not set to `null`) if an allowlist is not established, preserving backward compatibility.
 *   `vu`:  Optional ISO 8601 expiry. When present, verify() treats the signature as invalid once the current time is past this value. Absent = never expires (matches all pre-existing signatures — fully backward compatible). Covered by the canonical signing payload when present, so it cannot be stripped or extended post-hoc without breaking both signatures.
-*   `vch`: Optional SHA-256 hash of the `fileVersions` revision chain, base64 encoded, as it stood when this signer signed (including their own new entry). Present only on files using file versioning (see §2.5). Omitted entirely, never `null`, on any signature that predates or doesn't use this feature — preserves the same backward-compatibility guarantee as `alh`/`vu`.
-*   `sch`: Optional base64 SHA-256 commitment to canonical SignRoom context containing version `1`, session ID, one-time challenge ID, and immutable policy hash. Omitted for standalone signatures, preserving legacy payload bytes. Produced by `buildSessionContextHash()`.
+*   `vch`: Optional SHA-256 hash of the `fileVersions` revision chain, base64 encoded, as it stood when this signer signed (including their own new entry). Present only on files using file versioning (see §2.4). Omitted entirely, never `null`, on any signature that predates or doesn't use this feature — preserves the same backward-compatibility guarantee as `alh`/`vu`.
+*   `sch`: Optional base64 SHA-256 commitment to a SignRoom session context. It is included only when present and is omitted for standalone/legacy signatures. The commitment is computed as `SHA256("majik-signature-session-context-v1:" || UTF8(JSON.stringify({ v: 1, sessionId, challengeId, policyHash })))`, where `policyHash` is a canonical base64 SHA-256 digest of the immutable policy snapshot. The exact field order is part of the protocol. See §2.5.
 
 ### 2.3 Allowlist and Sealing
 *   **Allowlist:** The first signer may optionally restrict future signers by embedding an `ExpectedSigner` array. The establisher commits to this allowlist cryptographically via the `allowlistHash` in their canonical payload.
 *   **Seal:** The issuer (allowlist establisher) can permanently lock the envelope against further signatures. Sealing computes a SHA3-512 hash over the current signatories and a seal timestamp. The seal hash domain prefix is `majik-seal-v1:`. 
   
-### 2.4 SignRoom Session Context
-
-SignRoom signatures may include `sessionContextHash` (`sch` in the canonical payload). It is the base64 SHA-256 hash of a domain-separated canonical JSON object:
-
-```json
-{"v":1,"sessionId":"...","challengeId":"...","policyHash":"..."}
-```
-
-The domain prefix is `majik-signature-session-context-v1:`. The policy hash is itself a base64 SHA-256 digest of the immutable session-policy snapshot. The helper `buildSessionContextHash()` validates the supplied identifiers and policy digest before producing the commitment.
-
-Both Ed25519 and ML-DSA-87 sign `sch` as part of the canonical payload. The server must reconstruct the commitment from authoritative session, challenge, and policy data and compare it during verification. This library does not authorize participants, issue challenges, or enforce one-time challenge consumption; those are application responsibilities.
-
-Standalone signatures omit `sch` entirely. This preserves their historical canonical payload bytes.
-
-### 2.4.1 SignRoom Signature-Scoped TSA
-
-A TSA digest may optionally include `scope`:
-
-- Omitted or `content`: legacy behavior; the digest is the signer's document `contentHash`.
-- `signature`: the digest is SHA-256 over `buildSignatureAttestationBytes(signature)`, which uses the domain prefix `majik-signature-attestation-v1:` followed by canonical JSON of the unsigned per-signer record. The record includes the signer identity and public keys, document hash, signature timestamp, both hybrid signature values, and optional signed metadata (`alh`, `vu`, `vch`, `sch`). The TSA property is excluded to prevent a circular commitment.
-
-The TSA payload's `digest.scope`, when present, is included in the TSA's own canonical signed payload. CBOR v2 stores this scope as a text field and preserves its absence for legacy timestamps.
-
-For SignRoom, the API should verify the participant signature first, request a new signature-scoped TSA for that record, and verify the returned timestamp against the authoritative TSA public-key bundle before attaching it. A digest cache must not cause one participant's token to be reused for another signature record.
-
-### 2.5 File Versioning & Revision Chains
+### 2.4 File Versioning & Revision Chains
 
 MJKSIG supports an append-only revision chain (`fileVersions`) for workflows where a signer visually mutates the document itself (e.g. a drawn signature stamp) before signing — which changes the file's byte content on every hand-off, not just its metadata.
 
@@ -112,6 +87,30 @@ Verifiers should treat a file as chain-valid only when **both** checks pass for 
 
 ---
 
+
+### 2.5 SignRoom Session Context and Digest-Only Verification
+
+A SignRoom participant may bind their signature to an immutable signing attempt. The session context consists of:
+
+- `sessionId`: stable session identifier, non-empty, at most 256 UTF-16 code units, with no surrounding whitespace.
+- `challengeId`: single-use challenge identifier issued for that signing attempt, with the same identifier constraints.
+- `policyHash`: canonical padded Base64 encoding of a 32-byte SHA-256 digest of the immutable session policy snapshot.
+
+The context commitment is the Base64 SHA-256 digest of the domain prefix `majik-signature-session-context-v1:` followed by UTF-8 compact JSON with properties in this exact order: `v`, `sessionId`, `challengeId`, `policyHash`. The resulting `sessionContextHash` is included as `sch` in the canonical signature payload, so changing the session, challenge, or policy commitment invalidates both hybrid signatures.
+
+Implementations may verify against an independently trusted Base64 SHA-256 content digest without retaining plaintext. Such digest-only verification must validate the canonical digest, verify both hybrid signatures, and require the expected session-context hash whenever the signature carries `sessionContextHash`. It proves the signer's cryptographic commitment to the supplied digest and context; it does not authorize the signer or prove that a challenge was issued or consumed. Those remain application/session-service responsibilities.
+
+### 2.6 Trusted Timestamp Digest Scope
+
+A TSA digest descriptor may optionally include `scope`, with values `content` or `signature`:
+
+- Omitted scope (legacy) and `content` scope both bind the TSA to the signature's `contentHash`.
+- `signature` scope binds the TSA to the SHA-256 digest of the domain-separated canonical unsigned signer record: `majik-signature-attestation-v1:` followed by compact JSON `{ v, id, edpk, mlpk, hash, ct, ts, ed, ml[, alh][, vu][, vch][, sch] }`. The optional fields are omitted when absent, except `ct`, which is always serialized as its string value or `null`. The `tsa` property is excluded to prevent a circular commitment.
+
+The TSA signs its normal canonical TSA payload including the digest scope. Attaching/verifying a TSA must recompute the scoped digest and ensure the TSA identity fingerprint equals the embedded TSA-signature signer ID. Applications should additionally pin that identity to an independently trusted TSA public-key fingerprint; embedded keys alone do not establish trust.
+
+For a SignRoom workflow, verify the participant's hybrid signature before requesting a signature-scoped timestamp, then verify the returned token against the authoritative TSA public-key bundle before attaching it. Do not reuse a cached signature-scoped token for a different participant record: the attested digest is specific to the unsigned signer record, including that participant's identity, keys, timestamp, and signed metadata. This library defines the digest and verification operations; TSA request transport, challenge issuance/consumption, participant authorization, and trust-bundle distribution belong to the application/service layer.
+
 ## 3. Binary Layout
 
 All multi-byte integer fields are **big-endian**.
@@ -142,7 +141,7 @@ Offset  Length  Field
 
 ## 4. Payload Schema
 
-The payload section located at byte offset `12` represents the `MultiSigEnvelope` schema. The interfaces below describe its logical, JSON-compatible form. Version 1 serializes this form as UTF-8 JSON. Version 2 serializes it as CBOR as described in §4.4.
+The payload section located at byte offset `12` represents the `MultiSigEnvelope` schema. The interfaces below describe its logical, JSON-compatible form. Version 1 serializes this form as UTF-8 JSON. Version 2 serializes it as CBOR as described in §4.5.
 
 The container version is independent of the `version` fields within the envelope and per-signer records. Those schema versions remain `1` in both payload encodings.
 
@@ -231,7 +230,7 @@ interface MajikSignatureJSON {
    */
   versionChainHash?: string;
 
-  /** Optional base64 SHA-256 SignRoom session/challenge/policy commitment. */
+  /** Base64 SHA-256 commitment to the SignRoom session, challenge, and policy. */
   sessionContextHash?: string;
 
   /** Trusted Timestamp Authority metadata and signature */
@@ -239,7 +238,21 @@ interface MajikSignatureJSON {
 }
 ```
 
-### 4.3 ExpectedSigner
+### 4.3 Trusted Timestamp Digest Scope
+
+```typescript
+type TSADigestScope = "content" | "signature";
+
+interface TSADigest {
+  algorithm: "SHA-256";
+  value: string; // canonical Base64 SHA-256 digest
+  scope?: TSADigestScope; // omitted means legacy content scope
+}
+```
+
+The optional `scope` field remains CBOR text when present. The digest value is encoded as a native CBOR byte string in container version 2. `sessionContextHash` is also a native 32-byte CBOR byte string, while its JSON representation is canonical Base64.
+
+### 4.4 ExpectedSigner
 
 Used within the `allowlist` array to mandate exact key matches.
 
@@ -252,15 +265,15 @@ interface ExpectedSigner {
 ```
 *Note: All three fields must match during the signing-eligibility gate to prevent spoofing by a different key pair sharing the same fingerprint.*
 
-### 4.4 CBOR Payload Encoding (Container Version 2)
+### 4.5 CBOR Payload Encoding (Container Version 2)
 
-Version 2 encodes the envelope as a CBOR map using ordinary CBOR maps and byte strings (no CBOR record extensions). Map keys use the field names shown in §§4.1–4.3; nested objects and arrays retain their schema structure.
+Version 2 encodes the envelope as a CBOR map using ordinary CBOR maps and byte strings (no CBOR record extensions). Map keys use the field names shown in §§4.1–4.4; nested objects and arrays retain their schema structure.
 
-Binary values represented as Base64 or hexadecimal strings in the logical schema are encoded as native CBOR byte strings in v2. This includes fingerprints, public keys, signatures, content hashes, allowlist hashes, version-chain hashes, session-context hashes, and seal hashes. TSA digest scope is a text field when present. Timestamps, content types, messages, and other textual fields remain CBOR text strings; numeric and boolean values retain their corresponding CBOR types. Optional fields remain absent when not set.
+Binary values represented as Base64 or hexadecimal strings in the logical schema are encoded as native CBOR byte strings in v2. This includes fingerprints, public keys, signatures, content hashes, allowlist hashes, version-chain hashes, SignRoom session-context hashes, and seal hashes. Timestamps, content types, digest-scope strings, messages, and other textual fields remain CBOR text strings; numeric and boolean values retain their corresponding CBOR types. Optional fields remain absent when not set.
 
 This encoding change affects only container serialization. It does not change the canonical signing payload, signature algorithms, or verification rules in §2. A reader chooses the decoder from the container version byte: v1 JSON or v2 CBOR. Reading legacy v1 containers does not mean older implementations can read v2 containers.
 
-### 4.5 Payload Size Comparison and Improvements
+### 4.6 Payload Size Comparison and Improvements
 
 CBOR reduces envelope payload size by representing cryptographic values as binary byte strings instead of Base64 or hexadecimal text, and by avoiding JSON syntax and textual number encoding. The logical envelope fields and signing semantics are unchanged.
 
@@ -288,7 +301,7 @@ xychart-beta
 | 3       | 30,082 B      | 22,644 B | 7,438 B     | 24.73%    |
 | 5       | 50,118 B      | 37,724 B | 12,394 B    | 24.73%    |
 
-Across all 15 fixture-and-signer-count samples (three fixtures and signer counts 1–5), the average payload was **30,082 B as JSON** and **22,644 B as CBOR**, a **24.73% reduction**. These byte counts were captured from a benchmark run on 2026-10-19; they are serialization-size measurements, not timing statistics. Results are specific to this envelope schema and benchmark fixtures; applications should measure their own envelopes if exact storage estimates matter. Re-run with `npm run benchmark:serialization` to reproduce the measurements.
+Across all 15 fixture-and-signer-count samples (three fixtures and signer counts 1–5), the average payload was **30,082 B as JSON** and **22,644 B as CBOR**, a **24.73% reduction**. These byte counts were captured from a benchmark run on 2026-10-19; they are serialization-size measurements, not timing statistics. Results are specific to this envelope schema and benchmark fixtures; applications should measure their own envelopes if exact storage estimates matter. These figures are serialization-size measurements from the TypeScript implementation's benchmark fixtures. The reproducible benchmark command is maintained in the TypeScript repository (`npm run benchmark:serialization`); this is not a Cargo command or a Rust timing benchmark.
 
 **Improvements in v2:** smaller payloads; native binary representation for cryptographic fields; the same fixed 12-byte header with an explicit encoding version; and a versioned migration path that preserves read compatibility with v1 JSON. CBOR is binary and is not directly human-readable like JSON; tools must select the decoder from the version byte.
 
@@ -318,7 +331,7 @@ Across all 15 fixture-and-signer-count samples (three fixtures and signer counts
     *   Reconstruct the deterministic canonical byte payload.
     *   Verify the classical `edSignature` against `signerEdPublicKey`.
     *   Verify the post-quantum `mlDsaSignature` against `signerMlDsaPublicKey`.
-6.  **Version Chain Verification (if `fileVersions` is present):** Walk the chain confirming each entry's `previousVersionHash` matches the hash of the prior entry (§2.5.1), then for each signature carrying a `versionChainHash`, recompute the hash of the chain prefix up to and including its corresponding entry and confirm it matches.
+6.  **Version Chain Verification (if `fileVersions` is present):** Walk the chain confirming each entry's `previousVersionHash` matches the hash of the prior entry (§2.4.1), then for each signature carrying a `versionChainHash`, recompute the hash of the chain prefix up to and including its corresponding entry and confirm it matches.
 
 If all checks pass, the detached signature securely correlates to the file.
 
