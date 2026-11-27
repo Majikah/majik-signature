@@ -166,8 +166,8 @@ Most "digital signature" libraries only sign raw bytes and leave you to figure o
 - **Signatures live inside the file, or travel detached** — embed directly into the file's native format, or produce a portable envelope as JSON, Base64, raw CBOR bytes, or a versioned `.mjksig` binary container. Legacy JSON representations remain supported for backward compatibility.
 - **Multi-party signing is a first-class concept** — not bolted on. Allowlists, sealing, issuer semantics, and chronological order verification are part of the core envelope model.
 - **Batch-aware** — sign or verify an entire folder or zip's contents against a single manifest (`.mjksmap`) instead of tracking one signature file per asset.
-- **Deterministic by design** — the library goes out of its way to guarantee that signing and verifying the same content always produces the same canonical bytes (see [Signature & Envelope Structure](#signature--envelope-structure)).
-- **No native bindings** — the TypeScript implementation uses JavaScript/TypeScript cryptographic dependencies and Web-standard binary APIs. Runtime support depends on the host providing the APIs used by the selected feature; the CLI runs on Node.js 22.12+.
+- **Deterministic by design** — canonical payload construction is deterministic for the same signer and signed metadata (including timestamp and optional policy fields) (see [Signature & Envelope Structure](#signature--envelope-structure)).
+- **TypeScript-first API** — core workflows use JavaScript/TypeScript dependencies and Web-standard binary APIs; no native add-on is required for the core signing path. `cbor-x` may use optional platform-specific acceleration when available. The CLI runs on Node.js 22.12+.
 
 ---
 
@@ -209,7 +209,7 @@ Verification requires **both** to pass. This means:
 Both signatures cover a **domain-separated canonical payload**:
 
 ```
-"majik-signature-v1:" + JSON({ v, id, ts, ct, hash[, alh][, vu][, vch] })
+"majik-signature-v1:" + JSON({ v, id, ts, ct, hash[, alh][, vu][, vch][, sch] })
 ```
 
 | Field  | Description                                                                                                                                                                                                                                                                                                                                                 |
@@ -221,7 +221,7 @@ Both signatures cover a **domain-separated canonical payload**:
 | `hash` | SHA-256 of the original content, base64                                                                                                                                                                                                                                                                                                                     |
 | `alh`  | SHA-256 of the canonical allowlist, base64 — **present only** when this signer is establishing an allowlist                                                                                                                                                                                                                                                 |
 | `vu`   | Optional ISO 8601 expiry. When present, verify() treats the signature as invalid once the current time is past this value. Absent = never expires (matches all pre-existing signatures — fully backward compatible). Covered by the canonical signing payload when present, so it cannot be stripped or extended post-hoc without breaking both signatures. |
-| `vch`  | SHA-256 of the `fileVersions` revision chain, base64 — present only when file versioning is in use; covers the chain state as of this signer's own entry, so a rewritten chain breaks their signature.                                                                                                                                                      |
+| `vch`  | SHA-256 of the `fileVersions` revision chain, base64 — present only when file versioning is in use; covers the chain state as of this signer's own entry, so a rewritten chain breaks their signature.                                                                                                                                                      |\n| `sch`  | SHA-256 commitment to a SignRoom session, one-time challenge, and immutable policy snapshot; present only for session-bound signing.                                                                                                                               |
 
 `alh` is *omitted entirely* (not set to `null`) on every signature that isn't establishing an allowlist. This is a deliberate backward-compatibility guarantee: every signature produced before multi-sig support existed still verifies today, because its payload bytes are unchanged.
 
@@ -262,7 +262,7 @@ Ordinary multi-sig assumes every signer signs the *same* underlying bytes. That 
 
 ### 7. Trusted Timestamps (TSA)
 
-A `MajikSignature` can optionally carry a `MajikTimestamp` — a signature from a timestamp authority over a canonical payload (`"majikah-tsa-v-1:"` domain) binding a digest, a server-generated nonce, and a server-authoritative timestamp. The TSA signature is itself a full Majik Signature (Ed25519 + ML-DSA-87), so it inherits the same hybrid guarantees. TSA timestamps are also what power *attested* [signing-order verification](#verifying-signing-order) — see below.
+A `MajikSignature` can optionally carry a `MajikTimestamp` signed by a timestamp authority over the `majikah-tsa-v-1:` canonical payload, which binds a digest, nonce, and TSA timestamp. Legacy/content-scoped tokens attest to the document `contentHash`; signature-scoped tokens use `buildTSARequestPayload("signature")` to attest to the specific unsigned signer record, including its keys and signed metadata. The TSA token is itself a hybrid Majik Signature. When TSA provenance matters, pass an independently trusted TSA public-key bundle to `addTSA()` and `verifyTSA()`; verification against the token's embedded key alone proves internal consistency, not authoritative TSA identity. TSA timestamps can support *attested* [signing-order verification](#verifying-signing-order).
 
 ### 8. Chain Anchoring
 
@@ -274,7 +274,7 @@ A sealed envelope's seal hash can be committed to an external blockchain (handle
 
 ### What is a Majik Signature?
 
-A Majik Signature is cryptographic proof that a specific piece of content was produced or approved by the holder of a specific **Majik Key**, that the content has not been modified since it was signed, and that the signature remains valid against future quantum computing threats.
+A Majik Signature is cryptographic evidence that a specific content digest was signed by the private keys corresponding to a specific **Majik Key**. It combines Ed25519 with the NIST-standardized post-quantum ML-DSA-87 algorithm. This hybrid design is intended to retain forgery resistance if one algorithm is weakened, provided the other remains secure; it cannot guarantee security against every future cryptanalytic advance.
 
 Verification is fully **public** — anyone with the signer's public keys can verify. No private key is ever needed for verification.
 
@@ -298,7 +298,7 @@ Verification is fully **public** — anyone with the signer's public keys can ve
 
 - **Hybrid signatures** — Ed25519 (classical) + ML-DSA-87 (post-quantum, FIPS-204, Category 5); both must verify
 - **Tamper detection** — SHA-256 content hash is bound inside the signed payload; any byte change invalidates both signatures
-- **Domain separation** — distinct prefixes for signing (`majik-signature-v1:`), sealing (`majik-seal-v1:`), timestamping (`majikah-tsa-v-1:`), and chain anchoring (`majik-notary-v-1:`) prevent cross-protocol signature reuse
+- **Domain separation** — distinct prefixes for signing (`majik-signature-v1:`), sealing (`majik-seal-v1:`), TSA payloads (`majikah-tsa-v-1:`), signature-scoped TSA digests (`majik-signature-attestation-v1:`), SignRoom context hashes (`majik-signature-session-context-v1:`), and chain anchoring (`majik-notary-v-1:`) separate protocol purposes
 - **Signer & timestamp binding** — both are part of the signed payload; neither can be altered or transferred after signing
 - **No private key for verification** — pure public-key verification, safe to run anywhere
 
@@ -594,14 +594,15 @@ const sigResults = await MajikSignature.verifyFile(sealed, aliceKey);
 
 ### Trusted Timestamps (TSA)
 
-TSA support works at the signature-object level, independent of file embedding. A TSA server signs a canonical payload binding your content's digest to a server-issued timestamp; you attach the resulting `MajikTimestamp` to your own signature.
+TSA support works at the signature-object level, independent of file embedding. A TSA server signs a canonical payload binding either the document digest (legacy/content scope) or the canonical unsigned signer record (signature scope) to a nonce and TSA timestamp; you attach the resulting `MajikTimestamp` to your own signature.
 
 ```typescript
 import { MajikSignature } from '@majikah/majik-signature';
 
 // Client side — build the request payload from an existing signature
 const signature = await MajikSignature.sign(document, key);
-const tsaRequest = signature.buildTSARequestPayload();
+// Choose "signature" to bind this TSA token to the complete signer record.
+const tsaRequest = signature.buildTSARequestPayload("signature");
 
 // Send tsaRequest to your TSA server, receive back a MajikTimestamp...
 // (server side, using a TSA-controlled MajikKey)
@@ -612,7 +613,7 @@ const timestamp = await MajikSignature.signTSA(
 );
 
 // Client attaches and validates the timestamp
-signature.addTSA(timestamp); // throws if the TSA signature or digest doesn't match
+signature.addTSA(timestamp, trustedTsaPublicKeys); // pin the TSA identity, as well as checking token/digest
 
 console.log('Has TSA:', signature.hasTSA);
 console.log('TSA still valid:', signature.verifyTSA().valid);
@@ -1600,24 +1601,24 @@ Order and batch verification methods follow the same philosophy: `SignatureOrder
 - **Signer binding** — the signature is cryptographically bound to a specific `MajikKey` fingerprint
 - **Timestamp binding** — the signing timestamp cannot be altered after signing
 - **Forgery resistance (classical)** — Ed25519 provides 128-bit classical security
-- **Forgery resistance (post-quantum)** — ML-DSA-87 provides NIST Category 5 post-quantum security
-- **Hybrid downgrade resistance** — both algorithms must be broken simultaneously to forge a signature
+- **Post-quantum component** — ML-DSA-87 is standardized in FIPS 204 with NIST Category 5 parameter-set security estimates; this is not a guarantee against unknown future attacks
+- **Hybrid construction** — a break in one algorithm alone should not enable forgery while the other algorithm remains secure
 - **Allowlist integrity** — tampering with a restricted file's allowlist invalidates the issuer's own signature
 - **Seal integrity** — sealed envelopes reject all further signing attempts, including from the issuer
 - **Embed integrity** — file embedding always signs original bytes; the container format is never part of what's signed
 - **Detachment integrity** — detached verification always strips the target file first, so a stray embedded envelope never interferes with verifying against a separately-supplied envelope
-- **Batch relocation resistance** — `MajikSignatureMap` resolves files by content hash when a path lookup misses, so renaming/moving a signed batch after the fact doesn't break verification
+- **Batch relocation lookup** — `MajikSignatureMap` can find files by content hash when a path lookup misses. The manifest's paths and mapping are not cryptographically signed by the per-file envelopes; protect the manifest with trusted storage/transport when its metadata matters
 - **Order-check independence** — signing-order verification checks each expected signer against the public keys **you supplied**, not the keys self-asserted inside their own envelope entry, so a forged identity claim can't also forge its way into a valid order result
-- **Revision chain integrity** — a signer's `versionChainHash` commits to the exact `fileVersions` state as of their turn; rewriting any earlier revision's metadata (even without touching content bytes) is detectable via `verifyFileChain()`, without needing archived copies of earlier revisions.
+- **Revision chain integrity** — a signer's `versionChainHash` commits to the exact `fileVersions` state as of their turn. `verifyFileChain()` detects rewritten commitments without archived copies, but only retained historical bytes allow `verifyFileRevisions()` to prove that earlier content hashes matched actual files.
 
 ### What is Your Responsibility
 
 - **Signer identity verification** — the library proves content was signed by a specific key. It does not prove who owns that key in the real world. Maintain the mapping between `signerId` and a real-world identity through your own means.
 - **Byte-for-byte content consistency** — the same bytes must be passed to both `sign()` and `verify()`. For strings, both sides must use UTF-8; for JSON, both sides must use the same `JSON.stringify()` output.
 - **Key upgrade** — legacy `MajikKey` accounts without signing keys must be re-imported via `importFromMnemonicBackup()` before signing. Check with `key.hasSigningKeys`.
-- **TSA trust** — the library verifies a TSA signature cryptographically, but trusting *which* TSA identity to accept is your application's decision.
+- **TSA trust** — the library verifies a TSA token cryptographically, but you must pin a trusted TSA public-key fingerprint when authoritative TSA identity matters. Embedded keys alone do not establish trust.
 - **Timestamp trust level in order verification** — a self-reported (non-TSA) timestamp is tamper-evident but not independently attested; a signer could set their local clock to anything. Always check `result.usesUnattestedTimestamp` before treating an order result as strong proof rather than a claim.
-- **Chain anchor submission and confirmation** — this SDK never talks to a blockchain itself. Submitting the memo from `buildChainAnchorMemo()` and confirming the transaction is entirely your (or a companion product's) responsibility before calling `registerChainAnchor()`.
+- **Chain anchor submission and confirmation** — this SDK never talks to a blockchain itself. Submit the memo from `buildChainAnchorMemo()`, independently confirm the transaction, and only then register the returned anchor metadata. `registerChainAnchor()` does not query or prove on-chain finality.
 - **Revision archival, if full proof is needed** — `verifyFileChain()` proves every signer's commitment is genuine and the chain hasn't been rewritten, self-contained from the final file alone. It cannot independently prove an earlier `contentHash` ever corresponded to real bytes — that requires `verifyFileRevisions()` against retained copies of each revision, which your application is responsible for archiving if that stronger guarantee matters to your workflow.
 
 ### What NOT to Do
