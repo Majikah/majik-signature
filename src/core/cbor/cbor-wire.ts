@@ -16,6 +16,7 @@ import type {
   MajikSignatureEnvelopeCBOR,
   MajikTimestampCBOR,
   MajikChainAnchorCBOR,
+  MjksMapCBOR,
 } from "./types.js";
 
 import type { MajikChainAnchor } from "../../anchor/types.js";
@@ -25,6 +26,8 @@ import {
   MajikSignatureEnvelopeJSON,
   MajikSignatureJSON,
   MajikTimestamp,
+  MjksMapEntry,
+  MjksMapJSON,
 } from "../types.js";
 
 // Prevent pathological recursion through nested TSA signature records.
@@ -644,5 +647,89 @@ export function envelopeFromCBOR(input: unknown): MajikSignatureEnvelopeJSON {
     ...(obj.fileVersions !== undefined
       ? { fileVersions: obj.fileVersions.map(fileVersionFromCBOR) }
       : {}),
+  };
+}
+
+
+// ─── MJKSMAP manifest ────────────────────────────────────────────────────────
+
+/**
+ * Convert the JSON-compatible MJKSMAP model into its CBOR-native form.
+ * SHA-256 content hashes and all envelope binary fields become CBOR byte
+ * strings; logical metadata remains text or unsigned integers.
+ */
+export function mjksMapToCBOR(map: MjksMapJSON): MjksMapCBOR {
+  assertVersionOne(map.version, "map.version");
+  if (!Array.isArray(map.entries)) {
+    throw new TypeError("map.entries must be an array");
+  }
+
+  return {
+    version: 1,
+    createdAt: requiredString(map.createdAt, "map.createdAt"),
+    entries: map.entries.map((entry, index) => ({
+      path: requiredString(entry.path, `entries[${index}].path`),
+      contentHash: bytesFromBase64(
+        entry.contentHash,
+        `entries[${index}].contentHash`,
+        32,
+      ),
+      ...(entry.size !== undefined
+        ? { size: requiredNumber(entry.size, `entries[${index}].size`) }
+        : {}),
+      ...(entry.mimeType !== undefined
+        ? {
+            mimeType: requiredString(
+              entry.mimeType,
+              `entries[${index}].mimeType`,
+            ),
+          }
+        : {}),
+      envelope: envelopeToCBOR(entry.envelope),
+    })),
+  };
+}
+
+/**
+ * Convert a decoded CBOR-native MJKSMAP model back to the existing JSON API
+ * shape. The normal MajikSignatureMap validator performs final schema and
+ * entry validation after this conversion.
+ */
+export function mjksMapFromCBOR(input: unknown): MjksMapJSON {
+  const obj = record(input, "MJKSMAP");
+  assertVersionOne(obj.version, "MJKSMAP.version");
+
+  if (!Array.isArray(obj.entries)) {
+    throw new TypeError("MJKSMAP.entries must be an array");
+  }
+
+  const entries: MjksMapEntry[] = obj.entries.map((inputEntry, index) => {
+    const entry = record(inputEntry, `MJKSMAP.entries[${index}]`);
+    const size =
+      entry.size === undefined
+        ? undefined
+        : requiredNumber(entry.size, `entries[${index}].size`);
+    const mimeType = optionalString(
+      entry.mimeType,
+      `entries[${index}].mimeType`,
+    );
+
+    return {
+      path: requiredString(entry.path, `entries[${index}].path`),
+      contentHash: base64FromBytes(
+        entry.contentHash,
+        `entries[${index}].contentHash`,
+        32,
+      ),
+      ...(size !== undefined ? { size } : {}),
+      ...(mimeType !== undefined ? { mimeType } : {}),
+      envelope: envelopeFromCBOR(entry.envelope),
+    };
+  });
+
+  return {
+    version: 1,
+    createdAt: requiredString(obj.createdAt, "MJKSMAP.createdAt"),
+    entries,
   };
 }

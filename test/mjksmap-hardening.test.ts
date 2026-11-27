@@ -2,14 +2,19 @@ import { describe, expect, it } from "vitest";
 
 import {
   MAX_MJKSMAP_BYTES,
+  MAX_MJKSMAP_JSON_BYTES,
   MAX_MJKSMAP_ENTRIES,
   MAX_MJKSMAP_PATH_CHARS,
   MJKSMAP_HEADER_LEN,
   MJKSMAP_MAGIC,
   MJKSMAP_VERSION,
+  MJKSMAP_JSON_VERSION,
+  MJKSMAP_CBOR_VERSION,
+  MJKSMAP_SCHEMA_VERSION,
 } from "../src/core/constants.js";
 import { bytesToBase64 } from "../src/core/hash.js";
 import { MajikSignatureMap } from "../src/core/mjksmap.js";
+import { decodeCBOR } from "../src/core/cbor/cbor.js";
 
 const validHash = bytesToBase64(new Uint8Array(32).fill(0x2a));
 function entry(path = "docs/report.txt") {
@@ -26,7 +31,7 @@ function entry(path = "docs/report.txt") {
 
 function mapJson(entries: ReturnType<typeof entry>[]) {
   return {
-    version: MJKSMAP_VERSION,
+    version: MJKSMAP_SCHEMA_VERSION,
     createdAt: "2026-11-28T00:00:00.000Z",
     entries,
   };
@@ -35,12 +40,13 @@ function mapJson(entries: ReturnType<typeof entry>[]) {
 function container(
   payload: Uint8Array,
   options: { reserved?: number; declaredLength?: number; suffix?: Uint8Array } = {},
+  version = MJKSMAP_VERSION,
 ): Uint8Array {
   const out = new Uint8Array(
     MJKSMAP_HEADER_LEN + payload.byteLength + (options.suffix?.byteLength ?? 0),
   );
   out.set(MJKSMAP_MAGIC, 0);
-  out[MJKSMAP_MAGIC.length] = MJKSMAP_VERSION;
+  out[MJKSMAP_MAGIC.length] = version;
   out[MJKSMAP_MAGIC.length + 1] = options.reserved ?? 0;
   new DataView(out.buffer).setUint32(
     MJKSMAP_MAGIC.length + 2,
@@ -98,7 +104,7 @@ describe("MJKSMAP parser and input hardening", () => {
   });
 
   it("rejects oversized JSON and binary payloads before parsing", async () => {
-    expect(() => MajikSignatureMap.fromJSON(" ".repeat(MAX_MJKSMAP_BYTES + 1))).toThrow(
+    expect(() => MajikSignatureMap.fromJSON(" ".repeat(MAX_MJKSMAP_JSON_BYTES + 1))).toThrow(
       /maximum supported size/i,
     );
     const oversizedBlob = new Blob([new Uint8Array(MAX_MJKSMAP_BYTES + MJKSMAP_HEADER_LEN + 1)]);
@@ -122,11 +128,43 @@ describe("MJKSMAP parser and input hardening", () => {
 
   it("rejects invalid UTF-8 and malformed JSON payloads", async () => {
     await expect(
-      MajikSignatureMap.fromMJKSMAP(container(new Uint8Array([0xff]))),
+      MajikSignatureMap.fromMJKSMAP(container(new Uint8Array([0xff]), {}, MJKSMAP_JSON_VERSION)),
     ).rejects.toThrow(/UTF-8/i);
     await expect(
-      MajikSignatureMap.fromMJKSMAP(container(new TextEncoder().encode("{"))),
+      MajikSignatureMap.fromMJKSMAP(container(new TextEncoder().encode("{"), {}, MJKSMAP_JSON_VERSION)),
     ).rejects.toThrow(/JSON/i);
+  });
+
+  it("writes CBOR v2 with raw byte strings and reads legacy JSON v1", async () => {
+    const map = MajikSignatureMap.empty().withEntry(entry());
+    const current = map.toMJKSMAPBytes();
+
+    expect(current[MJKSMAP_MAGIC.length]).toBe(MJKSMAP_CBOR_VERSION);
+    const payload = current.subarray(MJKSMAP_HEADER_LEN);
+    const decoded = decodeCBOR(payload) as {
+      version: number;
+      entries: Array<{ contentHash: unknown; envelope: Record<string, unknown> }>;
+    };
+    expect(decoded.version).toBe(MJKSMAP_SCHEMA_VERSION);
+    expect(decoded.entries[0]?.contentHash).toBeInstanceOf(Uint8Array);
+    expect((decoded.entries[0]?.contentHash as Uint8Array).byteLength).toBe(32);
+
+    const legacyJson = new TextEncoder().encode(JSON.stringify(map.toJSON()));
+    const legacy = container(legacyJson, {}, MJKSMAP_JSON_VERSION);
+    const restored = await MajikSignatureMap.fromMJKSMAP(legacy);
+    expect(restored.toJSON()).toEqual(map.toJSON());
+  });
+
+  it("rejects trailing CBOR items instead of accepting a valid prefix", async () => {
+    const map = MajikSignatureMap.empty().withEntry(entry());
+    const valid = map.toMJKSMAPBytes();
+    const payload = valid.subarray(MJKSMAP_HEADER_LEN);
+    const appended = new Uint8Array(payload.length + 1);
+    appended.set(payload);
+    appended[appended.length - 1] = 0x00; // CBOR null as a second top-level item
+    await expect(
+      MajikSignatureMap.fromMJKSMAP(container(appended)),
+    ).rejects.toThrow(/CBOR/i);
   });
 
   it("freezes stored entries and returns detached mutable JSON snapshots", () => {

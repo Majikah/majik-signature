@@ -10,7 +10,7 @@
 
 **Majik Signature** is a hybrid post-quantum content signing and verification library for the Majikah ecosystem. Built on top of [**Majik Key**](https://www.npmjs.com/package/@majikah/majik-key), it produces tamper-evident, forgery-resistant digital signatures for any content — plaintext, JSON, PDFs, audio, video, Office documents, or raw binary — using a dual-algorithm architecture that combines classical **Ed25519** with post-quantum **ML-DSA-87** (FIPS-204).
 
-Beyond signing raw bytes, Majik Signature can **embed signatures directly into a file's native format** or produce **detached envelopes** that travel independently of the file. Envelopes can be represented as JSON, the existing Base64 serialization format, CBOR bytes, or a dedicated self-describing binary container (`.mjksig`). The current `.mjksig` writer uses **version 2 with CBOR**, while the reader retains support for legacy version 1 JSON containers. Newly embedded envelopes use a version-marked, Base64-wrapped CBOR representation, while existing files with legacy JSON-encoded embedded envelopes remain readable. The SDK also supports **multi-party signing**, **signing allowlists**, **envelope sealing**, **trusted timestamps (TSA)**, **batch/folder signing** via the `.mjksmap` manifest format, **chronological signing-order verification**, and **blockchain anchor registration**.
+Beyond signing raw bytes, Majik Signature can **embed signatures directly into a file's native format** or produce **detached envelopes** that travel independently of the file. Envelopes can be represented as JSON, the existing Base64 serialization format, CBOR bytes, or a dedicated self-describing binary container (`.mjksig`). The current `.mjksig` writer uses **version 2 with CBOR**, while the reader retains support for legacy version 1 JSON containers. Newly embedded envelopes use a version-marked, Base64-wrapped CBOR representation, while existing files with legacy JSON-encoded embedded envelopes remain readable. New `.mjksmap` containers use **version 2 with CBOR-native byte strings** for content hashes and nested envelope cryptographic fields; the reader continues to accept legacy version 1 JSON manifests. The SDK also supports **multi-party signing**, **signing allowlists**, **envelope sealing**, **trusted timestamps (TSA)**, **batch/folder signing** via the `.mjksmap` manifest format, **chronological signing-order verification**, and **blockchain anchor registration**.
 
 
 
@@ -355,7 +355,7 @@ See [Supported File Formats](#supported-file-formats) for the full handler table
 - **CBOR serialization** — `toCBOR()` / `fromCBOR()` provide binary CBOR serialization for signatures and envelopes.
 - **File-embedded envelopes** — newly written embedded envelopes use a version-marked, Base64-wrapped CBOR payload through the existing file-format handlers. Legacy JSON-encoded embedded envelopes remain readable.
 - **Versioned `.mjksig` containers** — new containers use version 2 with CBOR; version 1 JSON containers remain supported for backward compatibility.
-- **JSON `.mjksmap` manifests** — batch manifests continue to use the existing version 1 JSON payload format.
+- **CBOR `.mjksmap` manifests** — new batch containers use version 2 and store SHA-256 hashes, public keys, signatures, and other binary envelope fields as raw CBOR byte strings; version 1 JSON manifests remain readable.
 - **Self-contained envelopes** — envelopes carry the signer's public keys so verification can run without a separate key registry.
 - **Portable binary containers** — `.mjksig` and `.mjksmap` support detached-envelope and batch-manifest storage as standalone files.
 
@@ -1151,7 +1151,7 @@ The default chunk is 1 MiB. Supported overrides range from 64 KiB to 64 MiB; the
 ### Resource and untrusted-input limits
 
 - Hash workers accept chunk sizes from **64 KiB to 64 MiB**. The default remains 1 MiB. The streaming hash API does not impose an implicit file-size ceiling; set `maxBytes` when the application needs one.
-- MJKSMAP parsing and serialization cap the JSON payload at **16 MiB**, the manifest at **10,000 entries**, and each normalized path at **4,096 UTF-16 code units**. Traversal segments, control/bidirectional override characters, normalized-path collisions, malformed UTF-8, trailing bytes, and nonzero reserved header values are rejected.
+- MJKSMAP v2 CBOR payloads are capped at **16 MiB**; the JSON compatibility API allows up to **24 MiB** to account for Base64 expansion, while legacy v1 JSON containers retain the **16 MiB** wire limit. The manifest is capped at **10,000 entries**, and each normalized path at **4,096 UTF-16 code units**. Traversal segments, control/bidirectional override characters, normalized-path collisions, malformed JSON/CBOR, trailing data, and nonzero reserved header values are rejected.
 - MJKSMAP content hashes must be canonical Base64 SHA-256 digests. Optional sizes must be non-negative safe integers, MIME metadata is bounded and rejects control characters, and every embedded envelope is validated.
 - Envelope JSON/CBOR and MJKSIG inputs retain the **16 MiB** parser ceiling. Builder methods validate the resulting envelope too, so malformed values cannot bypass parser checks by using a `with*()` method.
 
@@ -1524,7 +1524,7 @@ The envelope contains relatively large cryptographic fields, particularly the ML
 - **Use the existing Base64 serialization** when you need a text-compatible representation for systems that cannot handle binary payloads directly.
 - **For embedded signatures**, remember that the CBOR payload is Base64-wrapped to fit the existing handler interfaces. This increases its size compared with raw CBOR, so the full raw-CBOR size reduction does not carry over unchanged.
 
-**Representation note:** The JSON examples above describe the logical signature, envelope, and manifest structures—not the exact bytes of every serialized representation. Direct CBOR serialization and `.mjksig` version 2 use CBOR; `.mjksig` version 1 and `.mjksmap` version 1 continue to use JSON.
+**Representation note:** The JSON examples above describe the logical signature, envelope, and manifest structures—not the exact bytes of every serialized representation. Direct CBOR serialization, `.mjksig` version 2, and `.mjksmap` version 2 use CBOR-native byte strings; `.mjksig` version 1 and `.mjksmap` version 1 remain readable as legacy JSON containers.
 
 ---
 
@@ -1541,11 +1541,12 @@ The payload encoding is selected by the container format and version.
 | ----------------------------- | --------- | -----------: | ------------: | ------- | ---------------------------- |
 | `.mjksig` — detached envelope | `MJKSIG`  |      6 bytes |      12 bytes | `1`     | Legacy JSON                  |
 | `.mjksig` — detached envelope | `MJKSIG`  |      6 bytes |      12 bytes | `2`     | CBOR — current writer format |
-| `.mjksmap` — batch manifest   | `MJKSMAP` |      7 bytes |      13 bytes | `1`     | JSON — current format        |
+| `.mjksmap` — batch manifest   | `MJKSMAP` |      7 bytes |      13 bytes | `1`     | Legacy JSON — read-only      |
+| `.mjksmap` — batch manifest   | `MJKSMAP` |      7 bytes |      13 bytes | `2`     | CBOR — current writer format |
 
 **MJKSIG compatibility:** Newly generated `.mjksig` containers use version 2 with a CBOR payload. The reader supports both version 2 CBOR and version 1 JSON, allowing older detached-envelope files to remain usable.
 
-**MJKSMAP compatibility:** `.mjksmap` continues to use version 1 with a JSON payload. The MJKSIG CBOR migration does not mean that MJKSMAP has migrated to CBOR.
+**MJKSMAP compatibility:** New `.mjksmap` files use version 2 with a CBOR-native manifest. The reader supports both version 2 CBOR and version 1 JSON. The v2 adapter stores entry content hashes and all binary envelope fields as raw CBOR byte strings rather than Base64/hex text; paths, timestamps and MIME types remain text, and sizes remain integers. The logical JSON APIs and manifest schema version 1 remain unchanged.
 
 The parser validates the magic bytes, supported version, and declared payload length before dispatching to the appropriate payload decoder. Depending on the format and version, that decoder parses CBOR or JSON. Truncated, corrupted, or unsupported containers fail with a typed `MajikSignatureSerializationError` rather than relying on an unhandled parsing exception.
 
@@ -1560,7 +1561,7 @@ const restored = await MajikSignatureEnvelope.fromMJKSIG(blob);
 const isMjksig = await MajikSignatureEnvelope.isMJKSIG(blob);
 const version = await MajikSignatureEnvelope.getMJKSIGVersion(blob);
 
-// MJKSMAP — remains version 1 / JSON
+// MJKSMAP — new containers use version 2 / CBOR; version 1 JSON remains readable
 const mapBytes = map.toMJKSMAPBytes();
 const mapBlob = map.toMJKSMAP();
 

@@ -135,15 +135,35 @@ export const MJKSIG_FILE_EXTENSION = ".mjksig" as const;
 
 // ─── MJKSMAP binary format ───────────────────────────────────────────────────
 //
-// Layout: [magic(7)][version(1)][reserved(1)][payloadLen(4, BE u32)][payload JSON]
-// A single manifest file mapping every file in a batch/zip to its detached
-// MajikSignatureEnvelope — one file to track instead of N loose .mjksig files.
-// Header layout mirrors MJKSIG deliberately; only the magic differs.
+// Layout: [magic(7)][version(1)][reserved(1)][payloadLen(4, BE u32)][payload]
+//
+// Version 1: UTF-8 JSON payload (legacy; read-only compatibility).
+// Version 2: CBOR payload (current writer and preferred format).
+//
+// The manifest schema inside both payloads remains version 1. The container
+// version selects only the payload encoding; it does not change map semantics.
 
 export const MJKSMAP_MAGIC = [0x4d, 0x4a, 0x4b, 0x53, 0x4d, 0x41, 0x50]; // "MJKSMAP"
 export const MJKSMAP_MAGIC_LEN = MJKSMAP_MAGIC.length;
-export const MJKSMAP_VERSION = 0x01;
-export const MJKSMAP_SUPPORTED_VERSIONS = [MJKSMAP_VERSION] as const;
+
+/** Legacy MJKSMAP container encoding: UTF-8 JSON. */
+export const MJKSMAP_JSON_VERSION = 0x01 as const;
+
+/** Current MJKSMAP container encoding: CBOR. */
+export const MJKSMAP_CBOR_VERSION = 0x02 as const;
+
+/** Version emitted by new MJKSMAP writers. */
+export const MJKSMAP_VERSION = MJKSMAP_CBOR_VERSION;
+
+/** Schema version stored inside the JSON/CBOR manifest model. */
+export const MJKSMAP_SCHEMA_VERSION = 0x01 as const;
+
+/** Versions accepted by MJKSMAP readers. */
+export const MJKSMAP_SUPPORTED_VERSIONS = [
+  MJKSMAP_JSON_VERSION,
+  MJKSMAP_CBOR_VERSION,
+] as const;
+
 export const MJKSMAP_HEADER_LEN = MJKSMAP_MAGIC_LEN + 1 + 1 + 4; // 13
 
 export const MJKSMAP_MEDIA_TYPE = "application/vnd.majikah.mjksmap";
@@ -155,8 +175,13 @@ export const MJKSMAP_DEFAULT_FILENAME = "signatures.mjksmap";
 
 // ─── Untrusted envelope parsing limits ──────────────────────────────────────
 export const MAX_ENVELOPE_BYTES = 16 * 1024 * 1024;
-/** Maximum serialized MJKSMAP manifest payload (header excluded). */
+/** Maximum serialized MJKSMAP binary payload (header excluded). */
 export const MAX_MJKSMAP_BYTES = 16 * 1024 * 1024;
+/**
+ * Maximum JSON model input size. JSON represents binary values as Base64,
+ * so its compatibility/API representation needs headroom over the CBOR limit.
+ */
+export const MAX_MJKSMAP_JSON_BYTES = 24 * 1024 * 1024;
 /** Maximum entries accepted in one MJKSMAP manifest. */
 export const MAX_MJKSMAP_ENTRIES = 10_000;
 /** Maximum normalized logical path length in UTF-16 code units. */
