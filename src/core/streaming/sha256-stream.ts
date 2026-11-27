@@ -47,6 +47,7 @@ function validateOptions(options: StreamingHashOptions): {
   chunkSize: number;
   thresholdBytes: number;
   maxBytes?: number;
+  totalBytes?: number;
 } {
   const chunkSize = options.chunkSize ?? DEFAULT_HASH_CHUNK_SIZE;
   const thresholdBytes =
@@ -68,8 +69,32 @@ function validateOptions(options: StreamingHashOptions): {
       "maxBytes",
     );
   }
+  if (
+    options.totalBytes !== undefined &&
+    (!Number.isSafeInteger(options.totalBytes) || options.totalBytes < 0)
+  ) {
+    throw new MajikSignatureValidationError(
+      "totalBytes must be a non-negative safe integer",
+      "totalBytes",
+    );
+  }
+  if (
+    options.totalBytes !== undefined &&
+    options.maxBytes !== undefined &&
+    options.totalBytes > options.maxBytes
+  ) {
+    throw new MajikSignatureValidationError(
+      "totalBytes exceeds the configured maximum",
+      "totalBytes",
+    );
+  }
 
-  return { chunkSize, thresholdBytes, maxBytes: options.maxBytes };
+  return {
+    chunkSize,
+    thresholdBytes,
+    maxBytes: options.maxBytes,
+    totalBytes: options.totalBytes,
+  };
 }
 
 function asByteSource(source: StreamingByteSource): void {
@@ -112,7 +137,18 @@ export async function hashSource(
   asByteSource(source);
   const config = validateOptions(options);
   const strategy = detectHashStrategy(source, config.thresholdBytes);
-  const expectedSize = getKnownSourceSize(source);
+  const sourceSize = getKnownSourceSize(source);
+  if (
+    config.totalBytes !== undefined &&
+    sourceSize !== undefined &&
+    sourceSize !== config.totalBytes
+  ) {
+    throw new MajikSignatureValidationError(
+      `Source length mismatch: expected ${config.totalBytes} bytes, source reports ${sourceSize}`,
+      "totalBytes",
+    );
+  }
+  const expectedSize = config.totalBytes ?? sourceSize;
 
   if (
     expectedSize !== undefined &&
@@ -153,6 +189,12 @@ export async function hashSource(
         throw new MajikSignatureValidationError(
           `Input exceeds the configured maximum of ${config.maxBytes} bytes`,
           "maxBytes",
+        );
+      }
+      if (expectedSize !== undefined && next > expectedSize) {
+        throw new MajikSignatureValidationError(
+          `Stream length mismatch: expected ${expectedSize} bytes, received at least ${next}`,
+          "totalBytes",
         );
       }
 
@@ -207,6 +249,12 @@ export async function hashSource(
   }
 
   throwIfAborted(options.signal);
+  if (expectedSize !== undefined && bytesProcessed !== expectedSize) {
+    throw new MajikSignatureValidationError(
+      `Stream length mismatch: expected ${expectedSize} bytes, read ${bytesProcessed}`,
+      "totalBytes",
+    );
+  }
   return {
     digest: stream.digest(),
     bytesProcessed,
