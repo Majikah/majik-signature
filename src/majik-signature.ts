@@ -38,6 +38,8 @@ import type {
   BatchFileInput,
   BatchSignOptions,
   BatchSignFailure,
+  BatchStreamingVerifyOptions,
+  StreamingBatchVerifyInput,
   BatchSignResult,
   BatchStreamingOptions,
   StreamingBatchFileInput,
@@ -1331,6 +1333,128 @@ export class MajikSignature {
     return mode === "map"
       ? { mode: "map", map: map!, mapBlob: map!.toMJKSMAP(), failures }
       : { mode: "separate", signatures, failures };
+  }
+
+  /**
+   * Verify streamed files against a MJKSMAP manifest without materializing
+   * the complete file contents. Inputs are consumed sequentially; the
+   * manifest is resolved by path first and by content hash for relocations.
+   */
+  static async verifyFilesFromMjksMapStream(
+    map: MajikSignatureMap,
+    files: StreamingBatchVerifyInput[],
+    publicKeys: MajikSignerPublicKeys,
+    options?: BatchStreamingVerifyOptions,
+  ): Promise<FileVerifyResult[]> {
+    const results: FileVerifyResult[] = [];
+    const now = options?.now ?? new Date();
+
+    for (let index = 0; index < files.length; index++) {
+      const file = files[index]!;
+      const streamed = await hashSource(file.source, {
+        ...options?.streaming,
+        totalBytes: file.totalBytes,
+        onProgress: (progress) => {
+          options?.onProgress?.({
+            index,
+            totalFiles: files.length,
+            path: file.path,
+            bytesProcessed: progress.bytesProcessed,
+            ...(progress.totalBytes !== undefined
+              ? { totalBytes: progress.totalBytes }
+              : {}),
+          });
+        },
+      });
+      const contentHash = bytesToBase64(streamed.digest);
+
+      // Preserve map resolution order: a path match with different bytes is
+      // tampered, not a relocation candidate.
+      let entry = map.getEntry(file.path);
+      let relocatedFrom: string | undefined;
+      if (entry && entry.contentHash !== contentHash) {
+        results.push({
+          path: file.path,
+          status: "tampered",
+          reason:
+            "File content no longer matches what was signed — it may have been modified after signing.",
+        });
+        continue;
+      }
+
+      if (!entry) {
+        entry = map.entries.find((candidate) => candidate.contentHash === contentHash);
+        if (entry) relocatedFrom = entry.path;
+      }
+
+      if (!entry) {
+        if (options?.requireAllPresent) {
+          throw new MajikSignatureError(
+            `File "${file.path}" was not found in the signature map.`,
+          );
+        }
+        results.push({
+          path: file.path,
+          status: "not_in_map",
+          reason: `No signature entry found for "${file.path}" (checked by path and by content).`,
+        });
+        continue;
+      }
+
+      const envelope = MajikSignatureEnvelope.fromJSON(entry.envelope);
+      const integrity = envelope.verifyAllowlistIntegrity();
+      if (!integrity.valid) {
+        results.push({
+          path: file.path,
+          status: "invalid",
+          reason: integrity.reason,
+          ...(relocatedFrom ? { relocatedFrom } : {}),
+        });
+        continue;
+      }
+
+      const signatures = options?.expectedSignerId
+        ? envelope.signatures.filter(
+            (signature) => signature.signerId === options.expectedSignerId,
+          )
+        : [...envelope.signatures];
+
+      const verifyResults: VerificationResult[] = signatures.length
+        ? signatures.map((signature) =>
+            MajikSignature._verifyDigest(
+              streamed.digest,
+              signature,
+              publicKeys,
+              now,
+            ),
+          )
+        : [
+            {
+              valid: false,
+              reason: options?.expectedSignerId
+                ? `No signature found for signerId "${options.expectedSignerId}"`
+                : "Envelope contains no signatures",
+              timestamp: now.toISOString(),
+            },
+          ];
+
+      const allValid = verifyResults.every((result) => result.valid);
+      results.push({
+        path: file.path,
+        status: allValid ? "verified" : "invalid",
+        results: verifyResults,
+        ...(relocatedFrom ? { relocatedFrom } : {}),
+        ...(relocatedFrom
+          ? {
+              reason: allValid
+                ? `Verified by content match — originally signed as "${relocatedFrom}".`
+                : undefined,
+            }
+          : {}),
+      });
+    }
+
+    return results;
   }
 
   static async verifyFile(
