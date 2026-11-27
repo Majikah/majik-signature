@@ -19,8 +19,8 @@ import {
 } from "./errors.js";
 import { hashContent, bytesToBase64 } from "./hash.js";
 import { MajikSignatureEnvelope } from "./envelope.js";
-import { decodeCBOR, encodeCBOR } from "./cbor.js";
-import { mjksMapFromCBOR, mjksMapToCBOR } from "./cbor-wire.js";
+import { decodeCBOR, encodeCBOR } from "./cbor/cbor.js";
+import { mjksMapFromCBOR, mjksMapToCBOR } from "./cbor/cbor-wire.js";
 import {
   MAX_MJKSMAP_BYTES,
   MAX_MJKSMAP_JSON_BYTES,
