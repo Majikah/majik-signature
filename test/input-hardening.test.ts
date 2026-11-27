@@ -162,6 +162,23 @@ describe("untrusted signature input hardening", () => {
     );
   });
 
+  it("bounds builder-supplied allowlists and seal metadata before processing", () => {
+    const signer = MajikSignature.expectedSignerFromKey(key);
+    const oversizedAllowlist = Array.from(
+      { length: MAX_ALLOWLIST_ENTRIES + 1 },
+      () => signer,
+    );
+    expect(() =>
+      MajikSignatureEnvelope.empty().withAllowlist(
+        oversizedAllowlist,
+        key.fingerprint,
+      ),
+    ).toThrow(/allowlist exceeds/i);
+    expect(() =>
+      MajikSignatureEnvelope.empty().withSeal("x".repeat(257)),
+    ).toThrow(/sealedBy/i);
+  });
+
   it("validates builder-supplied revision metadata and snapshots nested inputs", () => {
     expect(() => MajikSignatureEnvelope.empty().withFileVersion({
       version: 1,
