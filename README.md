@@ -1131,6 +1131,23 @@ Sign a batch of files (e.g. a folder or zip's contents) as detached envelopes.
 | { mode: "separate"; signatures: { path: string; blob: Blob }[]; failures: BatchSignFailure[] }
 ```
 
+#### `MajikSignature.signBatchDetachedStream(files, key, options?)`
+
+Sign a batch of exact byte streams as detached envelopes without materializing each source file. Files are consumed sequentially, so memory use remains bounded by the configured hashing chunk size.
+
+- `files: { path: string; source: StreamingByteSource; totalBytes?: number; mimeType?: string }[]`
+- `source` accepts the same `Uint8Array`, `ArrayBuffer`, `Blob`, `ReadableStream`, or `AsyncIterable<Uint8Array>` inputs as `signStream()`.
+- `totalBytes` optionally validates the exact stream length and detects truncation or overrun.
+- `options?.mode` and `options?.continueOnError` behave like `signBatchDetached()`.
+- `options?.streaming` supplies chunk size, threshold, maximum bytes, and cancellation settings shared by each file.
+- `options?.onProgress` receives `{ index, totalFiles, path, bytesProcessed, totalBytes? }` updates.
+
+This low-level streaming operation signs the exact bytes supplied by each source. It does not parse or remove an embedded signature envelope; supply canonical unsigned bytes when that is required.
+
+The default chunk is 1 MiB. Supported overrides range from 64 KiB to 256 MiB; the default automatic streaming threshold remains 8 MiB.
+
+**Returns:** The same `.mjksmap` or separate `.mjksig` result union as `signBatchDetached()`.
+
 #### `MajikSignature.verifyFilesFromMjksMap(map, files, publicKeys, options?)`
 Verify a batch of extracted files against a `MajikSignatureMap`. Never throws per-file by default — every outcome (missing, tampered, relocated-but-valid, invalid, verified) is reported so you can render a full status table in one pass.
 
