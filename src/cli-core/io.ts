@@ -81,14 +81,17 @@ export function relativePosix(root: string, target: string): string {
   return normalizeSlashes(relative(root, target)).replace(/^\/+/, "").trim();
 }
 
+/** Infer the registered MIME type from a path extension; unknown extensions use the generic fallback. */
 export function mimeTypeForPath(path: string): string {
   return MIME_TYPES[extname(path).toLowerCase()] ?? "application/octet-stream";
 }
 
+/** Check whether a file path uses a Majik Signature artifact extension. */
 export function isMajikArtifact(path: string): boolean {
   return MAJIK_ARTIFACT_EXTENSIONS.has(extname(path).toLowerCase());
 }
 
+/** Return whether a filesystem path currently exists. */
 export async function pathExists(path: string): Promise<boolean> {
   try {
     await access(path);
@@ -98,20 +101,24 @@ export async function pathExists(path: string): Promise<boolean> {
   }
 }
 
+/** Create a directory and its parents when they do not already exist. */
 export async function ensureDirectory(path: string): Promise<void> {
   await mkdir(path, {
     recursive: true,
   });
 }
 
+/** Read a file completely into a Uint8Array. Use streaming helpers for large files. */
 export async function readBytes(path: string): Promise<Uint8Array> {
   return new Uint8Array(await readFile(path));
 }
 
+/** Read a UTF-8 text file completely into memory. */
 export async function readText(path: string): Promise<string> {
   return readFile(path, "utf8");
 }
 
+/** Read a file and return a Blob with MIME metadata inferred from its path. */
 export async function readBlob(path: string): Promise<Blob> {
   const bytes = await readBytes(path);
 
@@ -120,6 +127,7 @@ export async function readBlob(path: string): Promise<Blob> {
   });
 }
 
+/** Read and parse a JSON file, returning the decoded value or throwing on malformed input. */
 export async function readJsonFile<T = unknown>(path: string): Promise<T> {
   const text = await readText(path);
 
@@ -134,6 +142,7 @@ export async function readJsonFile<T = unknown>(path: string): Promise<T> {
   }
 }
 
+/** Write a byte buffer to disk, creating its parent directory as needed. */
 export async function writeBytes(
   path: string,
   bytes: Uint8Array,
@@ -149,6 +158,7 @@ export async function writeBytes(
   await writeFile(path, bytes);
 }
 
+/** Write Blob contents to disk. The complete Blob is materialized for this CLI helper. */
 export async function writeBlob(
   path: string,
   blob: Blob,
@@ -159,6 +169,7 @@ export async function writeBlob(
   await writeBytes(path, bytes, overwrite);
 }
 
+/** Serialize a value as formatted JSON and write it to disk. */
 export async function writeJsonFile(
   path: string,
   value: unknown,
@@ -169,6 +180,7 @@ export async function writeJsonFile(
   await writeText(path, json, overwrite);
 }
 
+/** Write UTF-8 text to disk, creating its parent directory as needed. */
 export async function writeText(
   path: string,
   value: string,
@@ -261,6 +273,7 @@ export async function readFolderFiles(rootPath: string): Promise<FolderFile[]> {
   return result;
 }
 
+/** Classify a filesystem path as a file, directory, missing path, or unsupported kind. */
 export async function getPathKind(
   inputPath: string,
 ): Promise<"file" | "directory"> {
@@ -285,6 +298,7 @@ export async function getPathKind(
   throw new Error(`Unsupported filesystem object: "${target}"`);
 }
 
+/** Resolve a CLI-provided path against the current working directory. */
 export function resolveCliPath(path: string): string {
   if (isAbsolute(path)) {
     return resolve(path);
@@ -293,14 +307,17 @@ export function resolveCliPath(path: string): string {
   return resolve(process.cwd(), path);
 }
 
+/** Derive the default detached-signature output path for an input file. */
 export function outputPathForDetachedFile(inputPath: string): string {
   return `${inputPath}.mjksig`;
 }
 
+/** Derive the default MJKSMAP output path for a directory batch. */
 export function outputPathForMap(inputDirectory: string): string {
   return join(inputDirectory, "signatures.mjksmap");
 }
 
+/** Derive the default MJKSMAP bundle output path for a directory/archive input. */
 export function outputPathForMapBundle(
   inputDirectory: string,
   mapPath: string,
@@ -311,6 +328,7 @@ export function outputPathForMapBundle(
   return join(dirname(mapPath), `${directoryName || mapName}.mjksbundle.zip`);
 }
 
+/** Read the installed package version for CLI version/reporting output. */
 export async function getPackageVersion(): Promise<string> {
   const currentFile = fileURLToPath(import.meta.url);
 
@@ -335,6 +353,7 @@ export async function getPackageVersion(): Promise<string> {
   }
 }
 
+/** Produce a deterministic summary of files selected for a CLI batch operation. */
 export function summarizeFiles(files: FolderFile[]): {
   count: number;
   bytes: number;
