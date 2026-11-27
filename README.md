@@ -612,8 +612,9 @@ const timestamp = await MajikSignature.signTSA(
   { id: 'tsa.majikah.solutions', signerFingerprint: tsaKey.fingerprint },
 );
 
-// Client attaches and validates the timestamp
-signature.addTSA(timestamp, trustedTsaPublicKeys); // pin the TSA identity, as well as checking token/digest
+// Client pins the TSA to an independently trusted key before attaching it
+const trustedTsaPublicKeys = MajikSignature.publicKeysFromMajikKey(tsaKey);
+signature.addTSA(timestamp, trustedTsaPublicKeys); // checks token/digest and expected TSA fingerprint
 
 console.log('Has TSA:', signature.hasTSA);
 console.log('TSA still valid:', signature.verifyTSA().valid);
