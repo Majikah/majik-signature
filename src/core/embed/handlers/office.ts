@@ -82,6 +82,7 @@ function unzipBounded(bytes: Uint8Array): Record<string, Uint8Array> {
   });
 }
 
+/** Handle embedding/extraction of signature metadata in Office/ODF ZIP-based documents. */
 export class OfficeHandler implements FormatHandler {
   readonly name = "Office (DOCX/XLSX/PPTX/ODF)";
 
