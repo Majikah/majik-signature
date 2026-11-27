@@ -17,6 +17,7 @@ import { appendTrailer, extractTrailer } from "../utils.js";
 
 const EBML_MAGIC = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3]);
 
+/** Handle embedding/extraction of signature metadata in Matroska container attachments/tags. */
 export class MkvHandler implements FormatHandler {
   readonly name = "MKV/WebM";
   readonly supportedMimeTypes = [
