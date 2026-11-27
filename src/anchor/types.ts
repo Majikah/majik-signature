@@ -1,6 +1,9 @@
+/** Versioned memo string committed to the external chain. */
 export type MajikChainAnchorMemo = string;
+/** Transaction identifier returned by the chain network. */
 export type MajikChainAnchorTxSignature = string;
 
+/** Chain-neutral description of the seal digest being anchored. */
 export interface MajikChainAnchorPayload {
   chain: string; // e.g. "solana" — plain string, not a literal union: majik-signature
   network: string; // stays chain-agnostic and never needs updating to add a second chain.
@@ -11,6 +14,7 @@ export interface MajikChainAnchorPayload {
   };
 }
 
+/** Stored record of an externally confirmed chain anchor for an envelope seal. */
 export interface MajikChainAnchor {
   version: 1;
   id: string; // internal UUID, matches chain_anchors.id
