@@ -12,6 +12,7 @@ import type { MajikChainAnchor } from "../anchor/types.js";
 import type { ContentType } from "./constants.js";
 import type { MajikSignatureEnvelope } from "./envelope.js";
 import type { MajikSessionSigningContext } from "./session-context.js";
+import type { StreamingByteSource, StreamingHashOptions } from "./streaming/types.js";
 
 /** Standard content-type constants exposed by Majik Signature. */
 export type { ContentType };
@@ -898,6 +899,48 @@ export interface BatchSignOptions {
    * files are retained and failures are returned in the `failures` array.
    */
   continueOnError?: boolean;
+}
+
+/**
+ * One source supplied to a streaming detached batch-signing operation.
+ *
+ * The source must yield the exact canonical bytes to be signed. This low-level
+ * API does not parse or strip an existing embedded signature from the stream.
+ */
+export interface StreamingBatchFileInput {
+  /** Unique relative path within the batch manifest. */
+  path: string;
+  /** One-shot stream, async iterable, Blob, or in-memory byte source. */
+  source: StreamingByteSource;
+  /** Optional expected source length, used to detect truncation or overrun. */
+  totalBytes?: number;
+  /** Optional MIME type recorded in the MJKSMAP entry. */
+  mimeType?: string;
+}
+
+/** Per-file progress reported by a streaming batch-signing operation. */
+export interface BatchStreamingProgress {
+  /** Zero-based input index. */
+  index: number;
+  /** Total number of input files. */
+  totalFiles: number;
+  /** Relative path of the file currently being processed. */
+  path: string;
+  bytesProcessed: number;
+  totalBytes?: number;
+}
+
+/**
+ * Streaming controls for detached batch signing.
+ *
+ * A single bounded streaming policy is applied to each file in sequence.
+ * Per-file totalBytes is supplied on StreamingBatchFileInput.
+ */
+export interface BatchStreamingOptions extends BatchSignOptions {
+  /** Shared hashing settings; progress and expected length are supplied per file. */
+  streaming?: Omit<StreamingHashOptions, "onProgress" | "totalBytes">;
+  /** Batch-aware progress callback. */
+  onProgress?: (progress: BatchStreamingProgress) => void;
 }
 
 /**
