@@ -370,7 +370,7 @@ npm install @majikah/majik-signature
 npm install @majikah/majik-key
 ```
 
-No native bindings. The core API targets modern JavaScript runtimes with standard binary and Web APIs. The CLI is Node.js-only and requires Node.js 22.12 or newer. The CI matrix validates Node.js 22 and 24.
+The core API targets modern JavaScript runtimes that provide the standard binary and Web APIs used by the selected feature. The CLI is Node.js-only and requires Node.js 22.12 or newer. The CI matrix validates Node.js 22 and 24.
 
 ---
 
@@ -1683,7 +1683,7 @@ The identity layer of the Majikah ecosystem, using the same Majik Key + Majik Si
 ## Related Projects
 
 ### [Majik Key](https://www.npmjs.com/package/@majikah/majik-key)
-Seed phrase account library — the required peer dependency for signing.
+Seed phrase account library — installed automatically as a runtime dependency. Install it directly only when your application imports Majik Key itself.
 
 ### [Majik Message](https://message.majikah.solutions)
 Secure messaging platform using Majik Keys and Majik Signatures for identity-bound communication.
