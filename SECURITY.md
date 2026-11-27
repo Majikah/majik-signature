@@ -12,7 +12,7 @@ There is no long-term support branch or contractual patch window. Security maint
 
 Please do not disclose exploitable security issues in public GitHub issues.
 
-Report privately through [GitHub Private Vulnerability Reporting](https://github.com/Majikah/majik-signature/security) or by email to [business@majikah.solutions](mailto:business@majikah.solutions) with `SECURITY` in the subject. For the Rust implementation, use its [repository security page](https://github.com/Majikah/majik-signature-rs/security).
+Report privately through [GitHub Private Vulnerability Reporting](https://github.com/Majikah/majik-signature/security) or by email to [business@majikah.solutions](mailto:business@majikah.solutions) with `SECURITY` in the subject.
 
 Include the affected release/commit, runtime or platform, impact, reproduction steps or a minimal proof of concept, and whether the issue concerns signature verification, parsing, file embedding, streaming, a dependency, or an application integration.
 
@@ -58,7 +58,7 @@ New `.mjksmap` containers use version 2 CBOR with raw binary byte strings; reade
 
 ## Input bounds and streaming
 
-The implementation rejects oversized or malformed envelope/CBOR inputs and applies structural limits to signatures, allowlist entries, TSA nesting, revision metadata, and MJKSMAP entries/paths. MJKSMAP v2 binary payloads are limited to 16 MiB; its JSON compatibility model has a separate 24 MiB input budget for Base64 expansion. The manifest is limited to 10,000 entries, signature arrays and allowlists to 1,024 items, revision arrays to 10,000 entries, and nested TSA signature records to depth 8.
+The implementation rejects oversized or malformed envelope/CBOR inputs and applies structural limits to signatures, allowlist entries, TSA nesting, revision metadata, and MJKSMAP entries/paths. MJKSMAP v2 binary payloads are limited to 16 MiB; its JSON compatibility model has a separate 24 MiB input budget for Base64 expansion. The manifest is limited to 10,000 entries, signature arrays and allowlists to 1,024 items, revision arrays to 10,000 entries, nested TSA signature records to depth 8, and original MJKSMAP path inputs to 4,096 UTF-16 code units before normalization.
 
 Streaming SHA-256 uses a 1 MiB default chunk size, accepts configured chunk sizes from 64 KiB through 64 MiB, and uses an 8 MiB default threshold to select buffered versus streaming work when source size is known. There is no default maximum content-file size: applications processing untrusted or resource-sensitive inputs should set the supported maximum-byte option and use cancellation/progress callbacks as appropriate. Supplying an expected total length enables truncation/overrun detection.
 
