@@ -480,6 +480,12 @@ export class MajikSignatureMap {
         parsed = JSON.parse(serialized);
       }
     } catch (err) {
+      if (
+        err instanceof MajikSignatureSerializationError &&
+        /maximum supported size/i.test(err.message)
+      ) {
+        throw err;
+      }
       throw new MajikSignatureSerializationError(
         "MJKSMAP payload is not valid JSON",
         err,
