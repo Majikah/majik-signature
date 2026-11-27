@@ -183,6 +183,23 @@ describe("streaming detached batch signing", () => {
     expect(tampered[0]?.status).toBe("tampered");
   });
 
+  it("does not continue a batch after explicit cancellation", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const bytes = new TextEncoder().encode("cancelled batch input");
+
+    await expect(
+      MajikSignature.signBatchDetachedStream(
+        [{ path: "cancelled.txt", source: chunks(bytes, 3), totalBytes: bytes.length }],
+        key,
+        {
+          continueOnError: true,
+          streaming: { signal: controller.signal },
+        },
+      ),
+    ).rejects.toThrow(/cancel/i);
+  });
+
   it("continues after per-file failures when requested", async () => {
     const valid = new TextEncoder().encode("valid item");
     const invalid = new TextEncoder().encode("invalid length");
