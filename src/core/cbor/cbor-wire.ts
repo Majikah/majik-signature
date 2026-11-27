@@ -283,6 +283,7 @@ function timestampFromCBOR(input: unknown, depth: number): MajikTimestamp {
 
 // ─── Individual signature ──────────────────────────────────────────────────
 
+/** Convert the public JSON signature model to the versioned CBOR-native field mapping. Binary values become CBOR byte strings. */
 export function signatureToCBOR(
   signature: MajikSignatureJSON,
   depth = 0,
@@ -350,6 +351,7 @@ export function signatureToCBOR(
   };
 }
 
+/** Convert a decoded CBOR signature map back into the JSON-compatible model, validating wire field types and byte lengths. */
 export function signatureFromCBOR(
   input: unknown,
   depth = 0,
@@ -550,6 +552,7 @@ function fileVersionFromCBOR(input: unknown): FileVersion {
 
 // ─── Complete envelope ─────────────────────────────────────────────────────
 
+/** Convert a JSON-compatible multi-signature envelope into the shared CBOR wire representation. */
 export function envelopeToCBOR(
   envelope: MajikSignatureEnvelopeJSON,
 ): MajikSignatureEnvelopeCBOR {
@@ -594,6 +597,7 @@ export function envelopeToCBOR(
   };
 }
 
+/** Convert a decoded CBOR envelope into its JSON-compatible model; structural and cryptographic verification are separate operations. */
 export function envelopeFromCBOR(input: unknown): MajikSignatureEnvelopeJSON {
   const obj = record(input, "envelope");
   assertVersionOne(obj.version, "envelope.version");
