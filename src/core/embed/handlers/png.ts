@@ -26,6 +26,7 @@ const PNG_SIGNATURE = new Uint8Array([
 const ITXT_TYPE = textEncode("iTXt");
 const IEND_TYPE = textEncode("IEND");
 
+/** Handle embedding/extraction of signature metadata in PNG ancillary chunks. */
 export class PngHandler implements FormatHandler {
   readonly name = "PNG";
   readonly supportedMimeTypes = ["image/png"] as const;
