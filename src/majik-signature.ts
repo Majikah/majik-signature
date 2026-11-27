@@ -36,6 +36,9 @@ import { buildSessionContextHash } from "./core/session-context.js";
 import type {
   BatchFileInput,
   BatchSignOptions,
+  BatchSignResult,
+  BatchStreamingOptions,
+  StreamingBatchFileInput,
   BatchVerifyInput,
   BatchVerifyOptions,
   ED25519Signature,
@@ -1216,6 +1219,118 @@ export class MajikSignature {
    * current time. Any signer whose validUntil has passed comes back with
    * valid: false, expired: true, and a reason noting the expiry.
    */
+  /**
+   * Sign a collection of exact byte streams as detached signatures without
+   * materializing their source contents. Files are consumed sequentially so
+   * memory use is bounded by the configured per-stream chunk size.
+   *
+   * Sources must provide the canonical bytes to sign. This low-level API does
+   * not parse or strip an existing embedded envelope from a stream.
+   */
+  static async signBatchDetachedStream(
+    files: StreamingBatchFileInput[],
+    key: MajikKey,
+    options?: BatchStreamingOptions,
+  ): Promise<BatchSignResult> {
+    if (!files || files.length === 0) {
+      throw new MajikSignatureValidationError(
+        "Batch must contain at least one file.",
+        "files",
+      );
+    }
+
+    const seen = new Set<string>();
+    for (const file of files) {
+      if (!file.path || !file.path.trim()) {
+        throw new MajikSignatureValidationError(
+          "Every batch file must have a non-empty path.",
+          "path",
+        );
+      }
+      if (seen.has(file.path)) {
+        throw new MajikSignatureValidationError(
+          `Duplicate path in batch: "${file.path}"`,
+          "path",
+        );
+      }
+      seen.add(file.path);
+    }
+
+    const mode = options?.mode ?? "map";
+    const continueOnError = options?.continueOnError ?? false;
+    const failures: BatchSignFailure[] = [];
+    let map = mode === "map" ? MajikSignatureMap.empty() : undefined;
+    const signatures: { path: string; blob: Blob }[] = [];
+
+    for (let index = 0; index < files.length; index++) {
+      const file = files[index]!;
+      let bytesProcessed = 0;
+      try {
+        const emptyEnvelope = MajikSignatureEnvelope.empty();
+        const allowlistHash = emptyEnvelope.resolveAllowlistHashFor(
+          key,
+          options?.expectedSigners,
+        );
+        const signature = await MajikSignature.signStream(file.source, key, {
+          contentType: options?.contentType,
+          timestamp: options?.timestamp,
+          validUntil: options?.validUntil,
+          allowlistHash,
+          streaming: {
+            ...options?.streaming,
+            totalBytes: file.totalBytes,
+            onProgress: (progress) => {
+              bytesProcessed = progress.bytesProcessed;
+              options?.onProgress?.({
+                index,
+                totalFiles: files.length,
+                path: file.path,
+                bytesProcessed: progress.bytesProcessed,
+                ...(progress.totalBytes !== undefined
+                  ? { totalBytes: progress.totalBytes }
+                  : {}),
+              });
+            },
+          },
+        });
+
+        let envelope = emptyEnvelope;
+        if (options?.expectedSigners?.length) {
+          envelope = envelope.withAllowlist(
+            options.expectedSigners,
+            key.fingerprint,
+          );
+        }
+        envelope = envelope.withSignature(signature.toJSON());
+
+        if (mode === "map") {
+          map = map!.withEntry({
+            path: file.path,
+            contentHash: signature.contentHash,
+            size: bytesProcessed,
+            mimeType: file.mimeType || undefined,
+            envelope: envelope.toJSON(),
+          });
+        } else {
+          signatures.push({ path: file.path, blob: envelope.toMJKSIG() });
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!continueOnError) {
+          throw new MajikSignatureError(
+            `Batch streaming signing failed on "${file.path}": ${message}`,
+            err,
+          );
+        }
+        failures.push({ path: file.path, error: message });
+      }
+    }
+
+    return mode === "map"
+      ? { mode: "map", map: map!, mapBlob: map!.toMJKSMAP(), failures }
+      : { mode: "separate", signatures, failures };
+  }
+
   static async verifyFile(
     file: FileLike,
     keyOrPublicKeys: MajikKey | MajikSignerPublicKeys,
