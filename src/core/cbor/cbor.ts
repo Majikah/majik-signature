@@ -58,7 +58,10 @@ export function decodeCBOR(input: Uint8Array | ArrayBuffer): unknown {
   // Decode all sequential top-level items so a payload containing a valid
   // document followed by arbitrary trailing CBOR is rejected. MJKSMAP and
   // MJKSIG containers each carry exactly one CBOR document.
-  const values = decodeMultiple(bytes);
+  const values: unknown[] = [];
+  decodeMultiple(bytes, (value) => {
+    values.push(value);
+  });
   if (values.length !== 1) {
     throw new TypeError(
       "Malformed CBOR: expected exactly one top-level data item",
