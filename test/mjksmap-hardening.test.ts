@@ -12,15 +12,15 @@ import { bytesToBase64 } from "../src/core/hash.js";
 import { MajikSignatureMap } from "../src/core/mjksmap.js";
 
 const validHash = bytesToBase64(new Uint8Array(32).fill(0x2a));
-const validEnvelope = { version: 1 as const, signatures: [] };
-
 function entry(path = "docs/report.txt") {
   return {
     path,
     contentHash: validHash,
     size: 0,
     mimeType: "text/plain",
-    envelope: validEnvelope,
+    // Each fixture owns its envelope so mutation tests cannot contaminate
+    // later cases through a shared object reference.
+    envelope: { version: 1 as const, signatures: [] },
   };
 }
 
