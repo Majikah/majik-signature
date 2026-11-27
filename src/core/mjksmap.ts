@@ -23,6 +23,7 @@ import { decodeCBOR, encodeCBOR } from "./cbor.js";
 import { mjksMapFromCBOR, mjksMapToCBOR } from "./cbor-wire.js";
 import {
   MAX_MJKSMAP_BYTES,
+  MAX_MJKSMAP_JSON_BYTES,
   MAX_MJKSMAP_ENTRIES,
   MAX_MJKSMAP_PATH_CHARS,
   MJKSMAP_HEADER_LEN,
@@ -109,6 +110,10 @@ export class MajikSignatureMap {
   private readonly _byHash: ReadonlyMap<string, readonly MjksMapEntry[]>;
 
   private constructor(data: MjksMapJSON) {
+    // Enforce the binary-format ceiling against the actual CBOR-native
+    // representation, not the larger Base64 JSON model.
+    encodeCBOR(mjksMapToCBOR(data));
+
     // Clone first so freezing our internal state never freezes caller-owned
     // entry/envelope objects and later caller mutation cannot alter a map.
     const snapshot = JSON.parse(JSON.stringify(data)) as MjksMapJSON;
@@ -329,7 +334,7 @@ export class MajikSignatureMap {
     const payloadCbor = encodeCBOR(mjksMapToCBOR(this.toJSON()));
     if (payloadCbor.byteLength > MAX_MJKSMAP_BYTES) {
       throw new MajikSignatureSerializationError(
-        `MJKSMAP payload exceeds the maximum supported size of ${MAX_MJKSMAP_BYTES} bytes`,
+        `MJKSMAP JSON model exceeds the maximum supported size of ${MAX_MJKSMAP_JSON_BYTES} bytes`,
       );
     }
     const out = new Uint8Array(MJKSMAP_HEADER_LEN + payloadCbor.length);
@@ -491,8 +496,8 @@ export class MajikSignatureMap {
     try {
       if (typeof json === "string") {
         if (
-          json.length > MAX_MJKSMAP_BYTES ||
-          new TextEncoder().encode(json).byteLength > MAX_MJKSMAP_BYTES
+          json.length > MAX_MJKSMAP_JSON_BYTES ||
+          new TextEncoder().encode(json).byteLength > MAX_MJKSMAP_JSON_BYTES
         ) {
           throw new MajikSignatureSerializationError(
             `MJKSMAP payload exceeds the maximum supported size of ${MAX_MJKSMAP_BYTES} bytes`,
@@ -503,7 +508,7 @@ export class MajikSignatureMap {
         const serialized = JSON.stringify(json);
         if (
           typeof serialized !== "string" ||
-          new TextEncoder().encode(serialized).byteLength > MAX_MJKSMAP_BYTES
+          new TextEncoder().encode(serialized).byteLength > MAX_MJKSMAP_JSON_BYTES
         ) {
           throw new MajikSignatureSerializationError(
             `MJKSMAP payload exceeds the maximum supported size of ${MAX_MJKSMAP_BYTES} bytes`,
@@ -578,8 +583,8 @@ export class MajikSignatureMap {
     }
     if (
       typeof serialized !== "string" ||
-      serialized.length > MAX_MJKSMAP_BYTES ||
-      new TextEncoder().encode(serialized).byteLength > MAX_MJKSMAP_BYTES
+      serialized.length > MAX_MJKSMAP_JSON_BYTES ||
+      new TextEncoder().encode(serialized).byteLength > MAX_MJKSMAP_JSON_BYTES
     ) {
       throw new MajikSignatureValidationError(
         `MJKSMAP payload exceeds the maximum supported size of ${MAX_MJKSMAP_BYTES} bytes`,
