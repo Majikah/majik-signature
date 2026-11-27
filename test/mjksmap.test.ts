@@ -9,10 +9,13 @@ import { MajikSignature } from "../src/majik-signature";
 import { MajikSignatureMap } from "../src/core/mjksmap";
 import {
   MJKSMAP_MAGIC,
+  MJKSMAP_HEADER_LEN,
+  MJKSMAP_CBOR_VERSION,
   MAX_MJKSMAP_BYTES,
   MAX_MJKSMAP_ENTRIES,
 } from "../src/core/constants";
 import { bytesToBase64 } from "../src/core/hash";
+import { decodeCBOR } from "../src/core/cbor/cbor";
 
 import { getTestKey } from "./helpers/crypto";
 
@@ -722,6 +725,42 @@ describe("MajikSignatureMap (.mjksmap)", () => {
       await expect(
         MajikSignatureMap.fromMJKSMAP(new Blob([corrupted as BlobPart])),
       ).rejects.toThrow();
+    });
+
+    it("stores manifest and nested envelope digests as raw CBOR bytes and reduces payload size", async () => {
+      const bytes = await blobBytes(signedMapBlob);
+      expect(bytes[MJKSMAP_MAGIC.length]).toBe(MJKSMAP_CBOR_VERSION);
+
+      const payload = bytes.subarray(MJKSMAP_HEADER_LEN);
+      const decoded = decodeCBOR(payload) as {
+        entries: Array<{
+          contentHash: unknown;
+          envelope: {
+            signatures: Array<{
+              signerId: unknown;
+              signerEdPublicKey: unknown;
+              signerMlDsaPublicKey: unknown;
+              contentHash: unknown;
+              edSignature: unknown;
+              mlDsaSignature: unknown;
+            }>;
+          };
+        }>;
+      };
+
+      const first = decoded.entries[0]!;
+      expect(first.contentHash).toBeInstanceOf(Uint8Array);
+      expect((first.contentHash as Uint8Array).byteLength).toBe(32);
+      const signature = first.envelope.signatures[0]!;
+      expect(signature.signerId).toBeInstanceOf(Uint8Array);
+      expect(signature.signerEdPublicKey).toBeInstanceOf(Uint8Array);
+      expect(signature.signerMlDsaPublicKey).toBeInstanceOf(Uint8Array);
+      expect(signature.contentHash).toBeInstanceOf(Uint8Array);
+      expect(signature.edSignature).toBeInstanceOf(Uint8Array);
+      expect(signature.mlDsaSignature).toBeInstanceOf(Uint8Array);
+
+      const legacyJsonBytes = new TextEncoder().encode(JSON.stringify(signedMap.toJSON()));
+      expect(payload.byteLength).toBeLessThan(legacyJsonBytes.byteLength);
     });
 
     it("round-trips the complete map through binary serialization", async () => {
