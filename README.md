@@ -1144,9 +1144,23 @@ Sign a batch of exact byte streams as detached envelopes without materializing e
 
 This low-level streaming operation signs the exact bytes supplied by each source. It does not parse or remove an embedded signature envelope; supply canonical unsigned bytes when that is required.
 
-The default chunk is 1 MiB. Supported overrides range from 64 KiB to 256 MiB; the default automatic streaming threshold remains 8 MiB.
+The default chunk is 1 MiB. Supported overrides range from 64 KiB to 64 MiB; the default automatic streaming threshold remains 8 MiB.
 
 **Returns:** The same `.mjksmap` or separate `.mjksig` result union as `signBatchDetached()`.
+
+### Resource and untrusted-input limits
+
+- Hash workers accept chunk sizes from **64 KiB to 64 MiB**. The default remains 1 MiB. The streaming hash API does not impose an implicit file-size ceiling; set `maxBytes` when the application needs one.
+- MJKSMAP parsing and serialization cap the JSON payload at **16 MiB**, the manifest at **10,000 entries**, and each normalized path at **4,096 UTF-16 code units**. Traversal segments, control/bidirectional override characters, normalized-path collisions, malformed UTF-8, trailing bytes, and nonzero reserved header values are rejected.
+- MJKSMAP content hashes must be canonical Base64 SHA-256 digests. Optional sizes must be non-negative safe integers, MIME metadata is bounded and rejects control characters, and every embedded envelope is validated.
+- Envelope JSON/CBOR and MJKSIG inputs retain the **16 MiB** parser ceiling. Builder methods validate the resulting envelope too, so malformed values cannot bypass parser checks by using a `with*()` method.
+
+The deterministic stress suite hashes a virtual **32 MiB** source under several chunk sizes without creating a full-size allocation. An opt-in 10 GiB virtual-stream test is available for longer local stress runs:
+
+```bash
+npx vitest run test/streaming-stress.test.ts test/mjksmap-hardening.test.ts test/input-hardening.test.ts
+MAJIK_RUN_LARGE_STRESS=1 MAJIK_STRESS_BYTES=10737418240 npx vitest run test/streaming-stress.test.ts
+```
 
 #### `MajikSignature.verifyFilesFromMjksMap(map, files, publicKeys, options?)`
 Verify a batch of extracted files against a `MajikSignatureMap`. Never throws per-file by default — every outcome (missing, tampered, relocated-but-valid, invalid, verified) is reported so you can render a full status table in one pass.
