@@ -115,8 +115,11 @@ function makeGenerator(nEccSymbols: number): Uint8Array {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
+/** Number of payload bytes stored in the fixed Reed-Solomon block. */
 export const RS_DATA_BYTES = 150; // must match STUB_SIZE in stub.ts (150 bytes)
+/** Number of parity bytes added for error correction; corrects at most floor(value/2) byte errors. */
 export const RS_ECC_BYTES = 75; // ~50% overhead → corrects up to 37 byte errors
+/** Total encoded block length, equal to payload bytes plus parity bytes. */
 export const RS_TOTAL_BYTES = RS_DATA_BYTES + RS_ECC_BYTES; // 225 bytes total
 
 /**
