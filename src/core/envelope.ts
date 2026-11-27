@@ -217,15 +217,49 @@ export class MajikSignatureEnvelope {
   private readonly _fileVersions?: readonly FileVersion[];
 
   private constructor(data: MajikSignatureEnvelopeJSON) {
-    this._version = data.version;
-    this._signatures = data.signatures;
-    this._allowlist = data.allowlist;
-    this._allowlistSignerId = data.allowlistSignerId;
-    this._sealHash = data.sealHash;
-    this._sealTimestamp = data.sealTimestamp;
-    this._sealedBy = data.sealedBy;
-    this._chainAnchors = data.chainAnchors;
-    this._fileVersions = data.fileVersions;
+    let serialized: string;
+    try {
+      serialized = JSON.stringify(data);
+    } catch (error) {
+      throw new MajikSignatureSerializationError(
+        "Envelope payload cannot be safely serialized",
+        error,
+      );
+    }
+    if (
+      typeof serialized !== "string" ||
+      exceedsUtf8ByteLimit(serialized, MAX_ENVELOPE_BYTES)
+    ) {
+      throw new MajikSignatureSerializationError(
+        `Embedded signature payload exceeds the maximum supported size of ${MAX_ENVELOPE_BYTES} bytes`,
+      );
+    }
+
+    let snapshot: MajikSignatureEnvelopeJSON;
+    try {
+      snapshot = JSON.parse(serialized) as MajikSignatureEnvelopeJSON;
+    } catch (error) {
+      throw new MajikSignatureSerializationError(
+        "Envelope payload could not be normalized",
+        error,
+      );
+    }
+    // The private constructor is the common boundary for every immutable
+    // builder, not just deserialization. Validate there so with*() methods
+    // cannot create invalid or oversized envelopes.
+    MajikSignatureEnvelope.#validateShape(
+      snapshot as unknown as Record<string, unknown>,
+    );
+
+    this._version = snapshot.version;
+    this._signatures = snapshot.signatures;
+    this._allowlist = snapshot.allowlist;
+    this._allowlistSignerId = snapshot.allowlistSignerId;
+    this._sealHash = snapshot.sealHash;
+    this._sealTimestamp = snapshot.sealTimestamp;
+    this._sealedBy = snapshot.sealedBy;
+    this._chainAnchors = snapshot.chainAnchors;
+    this._fileVersions = snapshot.fileVersions;
   }
 
   // ── Getters ─────────────────────────────────────────────────────────────────
@@ -1755,7 +1789,6 @@ export class MajikSignatureEnvelope {
             );
           })();
 
-    MajikSignatureEnvelope.#validateShape(promoted);
     return new MajikSignatureEnvelope(
       promoted as unknown as MajikSignatureEnvelopeJSON,
     );
