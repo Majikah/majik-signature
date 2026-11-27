@@ -1,7 +1,7 @@
 /** Tunable defaults for streaming content hashes. */
 export const DEFAULT_HASH_CHUNK_SIZE = 1024 * 1024;
 export const MIN_HASH_CHUNK_SIZE = 64 * 1024;
-export const MAX_HASH_CHUNK_SIZE = 8 * 1024 * 1024;
+export const MAX_HASH_CHUNK_SIZE = 256 * 1024 * 1024;
 export const DEFAULT_HASH_STREAMING_THRESHOLD = 8 * 1024 * 1024;
 
 export function validateHashChunkSize(value: number): void {
