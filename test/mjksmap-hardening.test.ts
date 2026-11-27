@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   MAX_MJKSMAP_BYTES,
+  MAX_MJKSMAP_JSON_BYTES,
   MAX_MJKSMAP_ENTRIES,
   MAX_MJKSMAP_PATH_CHARS,
   MJKSMAP_HEADER_LEN,
@@ -103,7 +104,7 @@ describe("MJKSMAP parser and input hardening", () => {
   });
 
   it("rejects oversized JSON and binary payloads before parsing", async () => {
-    expect(() => MajikSignatureMap.fromJSON(" ".repeat(MAX_MJKSMAP_BYTES + 1))).toThrow(
+    expect(() => MajikSignatureMap.fromJSON(" ".repeat(MAX_MJKSMAP_JSON_BYTES + 1))).toThrow(
       /maximum supported size/i,
     );
     const oversizedBlob = new Blob([new Uint8Array(MAX_MJKSMAP_BYTES + MJKSMAP_HEADER_LEN + 1)]);
