@@ -43,6 +43,17 @@ import { hashContent, bytesToBase64 } from "./hash.js";
 import { MajikSignatureValidator } from "./validator.js";
 
 /** Count UTF-8 bytes without allocating a second full-size encoded copy. */
+/** Recursively freeze JSON snapshots so getters cannot expose mutable internals. */
+function deepFreezeJson<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const child of Object.values(value as Record<string, unknown>)) {
+      deepFreezeJson(child);
+    }
+    Object.freeze(value);
+  }
+  return value;
+}
+
 function exceedsUtf8ByteLimit(value: string, maxBytes: number): boolean {
   let bytes = 0;
   for (let i = 0; i < value.length; i++) {
@@ -252,16 +263,17 @@ export class MajikSignatureEnvelope {
     MajikSignatureEnvelope.#validateShape(
       snapshot as unknown as Record<string, unknown>,
     );
+    const immutable = deepFreezeJson(snapshot);
 
-    this._version = snapshot.version;
-    this._signatures = snapshot.signatures;
-    this._allowlist = snapshot.allowlist;
-    this._allowlistSignerId = snapshot.allowlistSignerId;
-    this._sealHash = snapshot.sealHash;
-    this._sealTimestamp = snapshot.sealTimestamp;
-    this._sealedBy = snapshot.sealedBy;
-    this._chainAnchors = snapshot.chainAnchors;
-    this._fileVersions = snapshot.fileVersions;
+    this._version = immutable.version;
+    this._signatures = immutable.signatures;
+    this._allowlist = immutable.allowlist;
+    this._allowlistSignerId = immutable.allowlistSignerId;
+    this._sealHash = immutable.sealHash;
+    this._sealTimestamp = immutable.sealTimestamp;
+    this._sealedBy = immutable.sealedBy;
+    this._chainAnchors = immutable.chainAnchors;
+    this._fileVersions = immutable.fileVersions;
   }
 
   // ── Getters ─────────────────────────────────────────────────────────────────
@@ -1293,7 +1305,7 @@ export class MajikSignatureEnvelope {
    * and revision history are omitted when they are not present.
    */
   toJSON(): MajikSignatureEnvelopeJSON {
-    return {
+    const snapshot: MajikSignatureEnvelopeJSON = {
       version: this._version,
       signatures: [...this._signatures],
       ...(this._allowlist ? { allowlist: [...this._allowlist] } : {}),
@@ -1306,6 +1318,9 @@ export class MajikSignatureEnvelope {
       ...(this._chainAnchors ? { chainAnchors: [...this._chainAnchors] } : {}),
       ...(this._fileVersions ? { fileVersions: [...this._fileVersions] } : {}),
     };
+    // Return a detached JSON tree; callers may edit it without changing this
+    // immutable envelope or encountering frozen nested references.
+    return JSON.parse(JSON.stringify(snapshot)) as MajikSignatureEnvelopeJSON;
   }
 
   /**
