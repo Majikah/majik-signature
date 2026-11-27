@@ -7,8 +7,7 @@
 export class MajikSignatureError extends Error {
   /** Original lower-level error, when one was wrapped. */
   cause?: unknown;
-  /** @param message Human-readable error description. @param cause Optional underlying failure. */
-  /** @param message Verification failure description. @param cause Optional underlying failure. */
+  /** @param message Human-readable error description. @param cause Optional lower-level failure. */
   constructor(message: string, cause?: unknown) {
     super(message);
     this.name = "MajikSignatureError";
@@ -29,6 +28,7 @@ export class MajikSignatureValidationError extends MajikSignatureError {
 
 /** Raised when a verification operation fails unexpectedly rather than returning an invalid result. */
 export class MajikSignatureVerificationError extends MajikSignatureError {
+  /** @param message Verification failure description. @param cause Optional underlying failure. */
   constructor(message: string, cause?: unknown) {
     super(message, cause);
     this.name = "MajikSignatureVerificationError";
@@ -37,6 +37,7 @@ export class MajikSignatureVerificationError extends MajikSignatureError {
 
 /** Raised when a required signing key or public-key representation is missing or unusable. */
 export class MajikSignatureKeyError extends MajikSignatureError {
+  /** @param message Key failure description. @param cause Optional lower-level failure. */
   constructor(message: string, cause?: unknown) {
     super(message, cause);
     this.name = "MajikSignatureKeyError";
@@ -45,6 +46,7 @@ export class MajikSignatureKeyError extends MajikSignatureError {
 
 /** Raised when JSON, Base64, CBOR, MJKSIG, or MJKSMAP input cannot be decoded or encoded. */
 export class MajikSignatureSerializationError extends MajikSignatureError {
+  /** @param message Serialization failure description. @param cause Optional decoder/encoder failure. */
   constructor(message: string, cause?: unknown) {
     super(message, cause);
     this.name = "MajikSignatureSerializationError";
@@ -52,11 +54,10 @@ export class MajikSignatureSerializationError extends MajikSignatureError {
 }
 
 /**
- * Thrown when a signer attempts to sign a file that has an allowlist
- * and their key (fingerprint + edPublicKey + mlDsaPublicKey) is not on it.
- * Raised before any cryptographic operation — the key is never used.
+ * Raised when a signer attempts to sign an envelope with an allowlist and
+ * their fingerprint and public keys are not included. The normal signing
+ * APIs reject the key before using its secret material.
  */
-/** Raised when a signer is not authorized by the envelope's established allowlist. */
 export class MajikSignatureAllowlistError extends MajikSignatureError {
   /** The fingerprint of the signer that was rejected. */
   readonly signerId: string;
