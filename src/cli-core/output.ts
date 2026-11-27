@@ -30,6 +30,7 @@ function printField(label: string, value: unknown): void {
   console.log(`${label.padEnd(18)} ${stringifyValue(value)}`);
 }
 
+/** Render a structured CLI result as human-readable terminal output. */
 export function printResult(result: CliResult): void {
   if (!result.ok) {
     console.error(`✘ ${result.message}`);
@@ -98,10 +99,12 @@ export function printResult(result: CliResult): void {
   }
 }
 
+/** Render a CLI result as JSON for scripts and machine consumers. */
 export function printJsonResult(result: CliResult): void {
   console.log(JSON.stringify(result, null, 2));
 }
 
+/** Render an operation failure to stderr without exposing secret key material. */
 export function printFailure(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
 
