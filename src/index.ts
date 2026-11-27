@@ -4,10 +4,13 @@
  */
 
 // ── Main class ────────────────────────────────────────────────────────────────
+/** Main high-level signing, verification, embedding, and batch API. */
 export { MajikSignature } from "./majik-signature.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+/** Public signature, envelope, batch, and verification data contracts. */
 export type * from "./core/types.js";
+/** Public file-handler and file-embedding option/result contracts. */
 export type * from "./core/embed/types.js";
 
 // ── Errors ────────────────────────────────────────────────────────────────────
@@ -30,6 +33,7 @@ export * from "./core/mjksmap.js";
 export * from "./core/order.js";
 
 // ── Chain Anchor ─────────────────────────────────────────────────────────────────
+/** Public chain-anchor metadata types. */
 export type * from "./anchor/types.js";
 
 // ── CBOR ─────────────────────────────────────────────────────────────────

@@ -21,6 +21,7 @@ export async function normalizeToBytes(input: FileLike): Promise<Uint8Array> {
   );
 }
 
+/** Normalize a byte-like input into a Blob with the supplied MIME hint. */
 export function normalizeToBlob(
   input: FileLike,
   mimeType: string = "application/octet-stream",
@@ -37,14 +38,17 @@ export function normalizeToBlob(
 
 // ─── Encoding ─────────────────────────────────────────────────────────────────
 
+/** Encode UTF-8 text into an owned byte array. */
 export function textEncode(str: string): Uint8Array {
   return new TextEncoder().encode(str);
 }
 
+/** Decode UTF-8 bytes into text using the module's text-decoding policy. */
 export function textDecode(bytes: Uint8Array): string {
   return new TextDecoder().decode(bytes);
 }
 
+/** Concatenate byte arrays in argument order. */
 export function concatBytes(...arrays: Uint8Array[]): Uint8Array {
   const total = arrays.reduce((n, a) => n + a.length, 0);
   const out = new Uint8Array(total);
@@ -123,11 +127,13 @@ export function readUint32LE(bytes: Uint8Array, offset: number): number {
 
 // ─── Blob / Uint8Array Conversion ─────────────────────────────────────────────
 
+/** Materialize a Blob completely into a Uint8Array; this helper is not streaming. */
 export async function blobToBytes(blob: Blob): Promise<Uint8Array> {
   const buf = await blob.arrayBuffer();
   return new Uint8Array(buf);
 }
 
+/** Wrap bytes in a Blob with the caller-supplied MIME type. */
 export function bytesToBlob(bytes: Uint8Array, mimeType: string): Blob {
   return new Blob([bytes as BlobPart], { type: mimeType });
 }
@@ -284,6 +290,7 @@ export function extractTrailer(
   return { signatureJson, original };
 }
 
+/** Compare byte arrays for exact equality. */
 export function bufferEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
@@ -306,6 +313,7 @@ const CRC_TABLE = (() => {
   return table;
 })();
 
+/** Calculate the CRC-32 checksum used by selected container formats; this is not cryptographic. */
 export function crc32(data: Uint8Array): number {
   let crc = 0xffffffff;
   for (const byte of data) {
@@ -314,6 +322,7 @@ export function crc32(data: Uint8Array): number {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
+/** Convert a filename-to-bytes record to the shape accepted by the ZIP writer. */
 export function toZippable(files: Record<string, Uint8Array>) {
   const out: Record<string, [Uint8Array, { mtime: Date }]> = {};
   for (const name of Object.keys(files)) {
@@ -323,12 +332,14 @@ export function toZippable(files: Record<string, Uint8Array>) {
 }
 
 
+/** Check whether a byte pattern matches at an exact offset without allocating. */
 export function matchesAt(bytes: Uint8Array, pattern: Uint8Array, offset: number): boolean {
   if (offset < 0 || offset + pattern.length > bytes.length) return false;
   for (let i = 0; i < pattern.length; i++) if (bytes[offset + i] !== pattern[i]) return false;
   return true;
 }
 
+/** Check whether a byte pattern occurs anywhere in the supplied byte array. */
 export function includesBytes(bytes: Uint8Array, pattern: Uint8Array): boolean {
   if (pattern.length === 0) return true;
   const first = pattern[0];

@@ -33,8 +33,10 @@ import type {
 
 // ─── Public types ──────────────────────────────────────────────────────────
 
+/** Identifies whether an effective signing-order timestamp came from a TSA or the signer's own clock. */
 export type TimestampSource = "tsa" | "self-reported";
 
+/** Verification and ordering status for one expected signer. */
 export interface SignerOrderStatus {
   signerId: string;
   expectedPosition: number;
@@ -47,6 +49,7 @@ export interface SignerOrderStatus {
   timestampSource?: TimestampSource;
 }
 
+/** Pair of valid signers whose effective timestamps contradict the required order. */
 export interface OrderViolation {
   /** signerId expected to have signed earlier */
   earlier: string;
@@ -56,12 +59,14 @@ export interface OrderViolation {
   laterTimestamp: string;
 }
 
+/** Warning that two signers share the same effective timestamp and cannot be ordered by time. */
 export interface SoftTieWarning {
   a: string;
   b: string;
   timestamp: string;
 }
 
+/** Complete result of chronological signing-order verification. */
 export interface SignatureOrderResult {
   /** True only when everyone expected signed, every signature is valid,
    *  the order was respected, AND (in strict mode) no extra signers exist. */
@@ -85,6 +90,7 @@ export interface SignatureOrderResult {
   reason?: string;
 }
 
+/** Options controlling the treatment of signers not listed in the expected order. */
 export interface VerifySignatureOrderOptions {
   /** When true, any signer present in the envelope but absent from
    *  expectedOrder is reported and fails the overall result. */
@@ -135,6 +141,7 @@ export function normalizeExpectedOrder(
 
 // ─── Timestamp resolution ───────────────────────────────────────────────────
 
+/** Prefer a server-attested TSA timestamp; otherwise return the signer's signed, self-reported timestamp. */
 export function resolveEffectiveTimestamp(sig: MajikSignatureJSON): {
   timestamp: string;
   source: TimestampSource;

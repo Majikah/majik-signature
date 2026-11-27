@@ -64,6 +64,7 @@ const SNIFF_ENTRIES = new Set([
 
 const MAX_SIGNATURE_ENTRY_BYTES = 8 * 1024 * 1024;
 
+/** Maximum aggregate uncompressed ZIP size accepted by the Office/ODF handler. */
 export const MAX_UNZIPPED_BYTES = 512 * 1024 * 1024;
 
 function unzipBounded(bytes: Uint8Array): Record<string, Uint8Array> {
@@ -82,6 +83,7 @@ function unzipBounded(bytes: Uint8Array): Record<string, Uint8Array> {
   });
 }
 
+/** Handle embedding/extraction of signature metadata in Office/ODF ZIP-based documents. */
 export class OfficeHandler implements FormatHandler {
   readonly name = "Office (DOCX/XLSX/PPTX/ODF)";
 

@@ -19,6 +19,7 @@ const JPEG_SOI = new Uint8Array([0xff, 0xd8]);
 const APP15_MARKER = new Uint8Array([0xff, 0xef]);
 const MAJIK_IDENTIFIER = textEncode("MAJIK\0");
 
+/** Handle embedding/extraction of signature metadata in JPEG application segments. */
 export class JpegHandler implements FormatHandler {
   readonly name = "JPEG";
   readonly supportedMimeTypes = ["image/jpeg", "image/jpg"] as const;

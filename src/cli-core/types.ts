@@ -10,6 +10,7 @@
 
 export type SignMode = "embedded" | "detached" | "map" | "cosign-map";
 
+/** Parsed inputs and policies for the CLI sign operation. */
 export interface SignCliOptions {
   input: string;
   keyPath: string;
@@ -66,6 +67,7 @@ export interface SignCliOptions {
   cosignMapPath?: string;
 }
 
+/** Parsed inputs and verification requirements for the CLI verify operation. */
 export interface VerifyCliOptions {
   input: string;
 
@@ -100,6 +102,7 @@ export interface VerifyCliOptions {
   json: boolean;
 }
 
+/** Parsed inputs for sealing an existing embedded envelope. */
 export interface SealCliOptions {
   input: string;
   keyPath: string;
@@ -109,17 +112,20 @@ export interface SealCliOptions {
   json: boolean;
 }
 
+/** Parsed inputs for checking whether a key can sign a target file. */
 export interface CanSignCliOptions {
   input: string;
   keyPath: string;
   json: boolean;
 }
 
+/** Parsed inputs for non-verifying inspection of an embedded envelope. */
 export interface InspectCliOptions {
   input: string;
   json: boolean;
 }
 
+/** Machine-readable result returned by a CLI operation before it is rendered for the terminal. */
 export interface CliResult {
   ok: boolean;
   command: string;
@@ -128,6 +134,7 @@ export interface CliResult {
   [key: string]: unknown;
 }
 
+/** File discovered during recursive folder selection for a batch CLI command. */
 export interface FolderFile {
   absolutePath: string;
   relativePath: string;
@@ -136,6 +143,7 @@ export interface FolderFile {
   mimeType: string;
 }
 
+/** CLI-level per-file verification summary, including paths and verification status. */
 export interface VerificationFileResult {
   path: string;
   status: "verified" | "invalid" | "tampered" | "not_in_map";

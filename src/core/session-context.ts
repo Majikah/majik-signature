@@ -3,6 +3,7 @@
  */
 import { bytesToBase64, base64ToBytes, sha256Bytes } from "./hash.js";
 
+/** Authoritative session, one-time challenge, and immutable policy identifiers committed by a SignRoom participant. */
 export interface MajikSessionSigningContext {
   /** Stable session identifier assigned by the session service. */
   sessionId: string;
@@ -12,10 +13,15 @@ export interface MajikSessionSigningContext {
   policyHash: string;
 }
 
+/** Domain separator for the version-1 SignRoom session-context hash. Changing it breaks existing session-bound signatures. */
 export const MAJIK_SESSION_CONTEXT_DOMAIN =
   "majik-signature-session-context-v1:" as const;
 
-function validateIdentifier(value: unknown, field: string): asserts value is string {
+/** Validate identifiers using ECMAScript String.prototype.trim() whitespace semantics. */
+function validateIdentifier(
+  value: unknown,
+  field: string,
+): asserts value is string {
   if (
     typeof value !== "string" ||
     value.length === 0 ||
@@ -38,7 +44,9 @@ function validatePolicyHash(value: unknown): asserts value is string {
       throw new TypeError("non-canonical digest");
     }
   } catch {
-    throw new TypeError("policyHash must be a canonical base64-encoded SHA-256 digest");
+    throw new TypeError(
+      "policyHash must be a canonical base64-encoded SHA-256 digest",
+    );
   }
 }
 
@@ -47,7 +55,9 @@ function validatePolicyHash(value: unknown): asserts value is string {
  * Use this helper on both the signing client and the server; the prefix and
  * canonical property order are protocol constants.
  */
-export function buildSessionContextHash(context: MajikSessionSigningContext): string {
+export function buildSessionContextHash(
+  context: MajikSessionSigningContext,
+): string {
   if (!context || typeof context !== "object") {
     throw new TypeError("session signing context must be an object");
   }

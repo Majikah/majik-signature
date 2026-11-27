@@ -18,6 +18,7 @@ export class Sha256Stream {
   private readonly hasher = new SHA256();
   private finalized = false;
 
+  /** Append one chunk to the same logical SHA-256 message; chunk boundaries do not reset the hash. */
   update(chunk: Uint8Array): void {
     if (this.finalized) {
       throw new MajikSignatureError("SHA-256 stream has already been finalized");
@@ -28,6 +29,7 @@ export class Sha256Stream {
     if (chunk.byteLength > 0) this.hasher.update(chunk);
   }
 
+  /** Finalize the hash once and return the 32-byte SHA-256 digest. Further updates/finalization throw. */
   digest(): Uint8Array {
     if (this.finalized) {
       throw new MajikSignatureError("SHA-256 stream has already been finalized");

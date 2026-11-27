@@ -67,6 +67,7 @@ const MAX_ROWS = 32; // sanity limit — 10KB / (600px * 3B) = ~6 rows max
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
+/** Modified RGBA buffer and dimensions after appending the full envelope's pixel rows. */
 export interface PixelRowEmbedResult {
   /** Modified pixel data with appended rows */
   pixels: Uint8ClampedArray;
@@ -77,6 +78,7 @@ export interface PixelRowEmbedResult {
   rowsAdded: number;
 }
 
+/** Extracted JSON envelope and original pixel buffer/dimensions after stripping the appended rows. */
 export interface PixelRowExtractResult {
   /** The full MajikSignatureJSON as a string */
   signatureJson: string;

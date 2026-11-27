@@ -25,6 +25,7 @@ import {
   writeUint32BE,
 } from "../utils.js";
 
+/** Handle embedding/extraction of signature metadata in MP4/ISO-BMFF metadata. */
 export class Mp4Handler implements FormatHandler {
   readonly name = "MP4/MOV";
   readonly supportedMimeTypes = [

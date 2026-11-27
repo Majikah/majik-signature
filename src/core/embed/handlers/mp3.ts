@@ -18,6 +18,7 @@ import { FormatHandler } from "../types.js";
 import { ID3_TXXX_DESCRIPTION } from "../constants.js";
 import { concatBytes, textDecode, textEncode } from "../utils.js";
 
+/** Handle embedding/extraction of signature metadata in MP3 ID3 metadata. */
 export class Mp3Handler implements FormatHandler {
   readonly name = "MP3";
   readonly supportedMimeTypes = ["audio/mpeg", "audio/mp3"] as const;

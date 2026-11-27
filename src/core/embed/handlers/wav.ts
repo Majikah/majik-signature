@@ -28,6 +28,7 @@ const LIST_TYPE = textEncode("LIST");
 const INFO_TYPE = textEncode("INFO");
 const ISIG_TYPE = textEncode("ISIG");
 
+/** Handle embedding/extraction of signature metadata in WAV INFO/metadata chunks. */
 export class WavHandler implements FormatHandler {
   readonly name = "WAV";
   readonly supportedMimeTypes = [

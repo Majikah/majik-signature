@@ -45,4 +45,5 @@ export const MKV_TAG_NAME = "MAJIK_SIGNATURE";
 // DOS zip date/time format only supports 1980-2099 — new Date(0) (1970)
 // throws "Date not in range 1980 - 2099". Any fixed date in range works;
 // what matters is that it's *constant*, not what it actually is.
+/** Fixed ZIP-entry timestamp used to keep canonical Office/ODF package output deterministic. */
 export const CANONICAL_MTIME = new Date(Date.UTC(1995, 9, 26, 0, 0, 0));

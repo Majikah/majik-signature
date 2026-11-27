@@ -1,7 +1,7 @@
 {
   "name": "@majikah/majik-signature",
   "type": "module",
-  "description": "Majik Signature is a hybrid post-quantum content signing and verification library for the Majikah ecosystem. Built on top of Majik Key, it provides tamper-proof, forgery-resistant digital signatures for any content format — using a dual-algorithm architecture that combines classical Ed25519 with post-quantum ML-DSA-87 (FIPS-204).",
+  "description": "Hybrid post-quantum content signing and verification for the Majikah ecosystem, combining Ed25519 and ML-DSA-87 (FIPS 204) with file embedding, detached envelopes, and batch manifests.",
   "version": "1.6.0",
   "license": "Apache-2.0",
   "author": "Zelijah",
@@ -96,5 +96,8 @@
     "@types/node": "^26.6.11",
     "typescript": "^7.0.2",
     "vitest": "^5.1.2"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }

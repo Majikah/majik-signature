@@ -65,6 +65,7 @@ export interface MajikSignatureJSON {
   mlDsaSignature: string;
 }
 
+/** Public-key material supplied to the image-stamp verification adapter. */
 export interface MajikSignerPublicKeys {
   signerId: string;
   edPublicKey: Uint8Array;
@@ -112,8 +113,10 @@ import type { ImageSignatureStub, ImageSignOptions } from "./core/types.js";
 
 // ─── Result types ─────────────────────────────────────────────────────────────
 
+/** Image-stamp proof layer(s) found by verification. */
 export type VerificationLayer = "both" | "pixel-row" | "dct-only";
 
+/** Verification output for the experimental dual-layer image-stamp format. Presence of a layer alone is not validity. */
 export interface ImageVerificationResult {
   valid: boolean;
   reason?: string;
@@ -131,6 +134,7 @@ export interface ImageVerificationResult {
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
 
+/** Base error for experimental image-stamp encoding, parsing, and verification operations. */
 export class MajikImageSignatureError extends Error {
   constructor(message: string, cause?: unknown) {
     super(message);
@@ -139,6 +143,7 @@ export class MajikImageSignatureError extends Error {
   }
 }
 
+/** Raised when an image does not have enough DCT coefficient capacity for the compact proof. */
 export class MajikImageCapacityError extends MajikImageSignatureError {
   constructor(
     width: number,
@@ -157,6 +162,16 @@ export class MajikImageCapacityError extends MajikImageSignatureError {
 
 // ─── MajikImageSignature ──────────────────────────────────────────────────────
 
+/**
+ * Experimental dual-layer image-stamp implementation.
+ *
+ * The pixel-row layer stores the full Ed25519 + ML-DSA-87 envelope; the DCT
+ * fallback stores a compact Ed25519-only proof. The helper requires browser
+ * image APIs (createImageBitmap and OffscreenCanvas). It is distinct from the
+ * standard embedded/detached file-signature workflows. Embedded public keys
+ * must still be authenticated externally before treating the signer identity
+ * as trusted. inspect()/isSigned() only detect layer presence.
+ */
 export class MajikImageSignature {
   /**
    * Sign an image with dual-layer embedding.
