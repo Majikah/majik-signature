@@ -58,7 +58,7 @@ function normalizePath(path: unknown): string {
 /** Recursively freeze JSON snapshots before exposing manifest entry references. */
 function deepFreezeJson<T>(value: T): T {
   if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-    for (const child of Object.values(value as Record<string, unknown>)) {
+    for (const child of Object.values(value as unknown as Record<string, unknown>)) {
       deepFreezeJson(child);
     }
     Object.freeze(value);
