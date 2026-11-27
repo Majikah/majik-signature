@@ -276,6 +276,7 @@ export interface MjksMapCBOR {
 
 
 
+/** CBOR-native chain-anchor payload; digest values are byte strings, while names/identifiers remain text. */
 export interface MajikChainAnchorPayloadCBOR {
   chain: string;
   network: string;
@@ -286,6 +287,7 @@ export interface MajikChainAnchorPayloadCBOR {
   };
 }
 
+/** CBOR-native chain-anchor metadata stored inside a MJKSMAP/MJKSIG envelope. */
 export interface MajikChainAnchorCBOR {
   version: 1;
   id: string;
