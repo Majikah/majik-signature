@@ -48,14 +48,18 @@ export const CONTENT_TYPES = {
   WEBP: "image/webp",
 } as const;
 
+/** Content type labels accepted by the built-in format/signing helpers. */
 export type ContentType =
   | (typeof CONTENT_TYPES)[keyof typeof CONTENT_TYPES]
   | string;
 
 /** Minimum base64 length sanity checks */
 export const MIN_ED_PUBLIC_KEY_B64_LEN = 40; // 32 bytes → 44 chars; give 4 slack
+/** Minimum Base64 character floor used for ML-DSA-87 public-key input preflight. */
 export const MIN_DSA_PUBLIC_KEY_B64_LEN = 100; // 2592 bytes → 3456 chars; sanity floor
+/** Minimum Base64 character floor used for signature input preflight. */
 export const MIN_SIGNATURE_B64_LEN = 80; // 64-byte Ed sig → 88 chars; floor
+/** Required Base64 length of a canonical 32-byte SHA-256 digest. */
 export const CONTENT_HASH_B64_LEN = 44; // SHA-256 → always 44 chars base64
 
 /**
@@ -72,25 +76,40 @@ export const ALLOWLIST_HASH_B64_LEN = 44; // 44 chars
 export const SEAL_HASH_HEX_LEN = 128;
 
 // ─── Input-hardening limits (validation only; raw content size is not capped) ──
+/** Raw Ed25519 public-key length in bytes. */
 export const ED25519_PUBLIC_KEY_BYTES = 32;
+/** Raw Ed25519 signature length in bytes. */
 export const ED25519_SIGNATURE_BYTES = 64;
+/** Raw ML-DSA-87 public-key length in bytes (FIPS 204 parameter set 87). */
 export const ML_DSA_87_PUBLIC_KEY_BYTES = 2592;
+/** Raw ML-DSA-87 signature length in bytes (FIPS 204 parameter set 87). */
 export const ML_DSA_87_SIGNATURE_BYTES = 4627;
+/** SHA-256 digest length in bytes. */
 export const SHA256_DIGEST_BYTES = 32;
 
+/** Maximum UTF-16 code-unit length accepted for signer identifiers. */
 export const MAX_SIGNER_ID_CHARS = 256;
+/** Maximum UTF-16 code-unit length accepted for advisory content-type metadata. */
 export const MAX_CONTENT_TYPE_CHARS = 1024;
+/** Maximum UTF-16 code-unit length accepted for ISO timestamp strings. */
 export const MAX_TIMESTAMP_CHARS = 64;
+/** Maximum UTF-16 code-unit length accepted for TSA identity/metadata fields. */
 export const MAX_TSA_FIELD_CHARS = 256;
+/** Maximum per-signer records accepted in one multi-signature envelope. */
 export const MAX_SIGNATURES_PER_ENVELOPE = 1024;
+/** Maximum number of signer public-key entries accepted in an allowlist. */
 export const MAX_ALLOWLIST_ENTRIES = 1024;
 
 
+/** Version of the timestamp-token payload schema. */
 export const MAJIK_TIMESTAMP_VERSION = 1 as const;
+/** Domain separator included in canonical TSA-signed payload bytes. */
 export const MAJIK_TSA_DOMAIN =
   `majikah-tsa-v-${MAJIK_TIMESTAMP_VERSION}:` as const;
 
+/** Version marker for Majik Notary memo records. */
 export const MAJIK_NOTARY_VERSION = 1 as const;
+/** Domain prefix for Majik Notary chain memo records. */
 export const MAJIK_NOTARY_MEMO_DOMAIN =
   `majik-notary-v-${MAJIK_NOTARY_VERSION}:` as const;
 
@@ -104,8 +123,10 @@ export const MAJIK_NOTARY_MEMO_DOMAIN =
 // Header length is fixed at 12 bytes across versions. The version byte
 // determines how the payload is decoded.
 
+/** Six-byte MJKSIG container magic prefix. */
 export const MJKSIG_MAGIC = [0x4d, 0x4a, 0x4b, 0x53, 0x49, 0x47] as const; // "MJKSIG"
 
+/** Length of the MJKSIG magic prefix in bytes. */
 export const MJKSIG_MAGIC_LEN = MJKSIG_MAGIC.length;
 
 /** Legacy MJKSIG container encoding: UTF-8 JSON. */
@@ -131,6 +152,7 @@ export const MJKSIG_HEADER_LEN = MJKSIG_MAGIC_LEN + 1 + 1 + 4; // 12
  */
 export const MJKSIG_MEDIA_TYPE = "application/vnd.majikah.mjksig" as const;
 
+/** Conventional file extension for the MJKSIG detached envelope container. */
 export const MJKSIG_FILE_EXTENSION = ".mjksig" as const;
 
 // ─── MJKSMAP binary format ───────────────────────────────────────────────────
@@ -143,7 +165,9 @@ export const MJKSIG_FILE_EXTENSION = ".mjksig" as const;
 // The manifest schema inside both payloads remains version 1. The container
 // version selects only the payload encoding; it does not change map semantics.
 
+/** Seven-byte MJKSMAP container magic prefix. */
 export const MJKSMAP_MAGIC = [0x4d, 0x4a, 0x4b, 0x53, 0x4d, 0x41, 0x50]; // "MJKSMAP"
+/** Length of the MJKSMAP magic prefix in bytes. */
 export const MJKSMAP_MAGIC_LEN = MJKSMAP_MAGIC.length;
 
 /** Legacy MJKSMAP container encoding: UTF-8 JSON. */
@@ -164,9 +188,12 @@ export const MJKSMAP_SUPPORTED_VERSIONS = [
   MJKSMAP_CBOR_VERSION,
 ] as const;
 
+/** Length of the fixed MJKSMAP header, including its 32-bit payload length. */
 export const MJKSMAP_HEADER_LEN = MJKSMAP_MAGIC_LEN + 1 + 1 + 4; // 13
 
+/** Registered media type for MJKSMAP manifest containers. */
 export const MJKSMAP_MEDIA_TYPE = "application/vnd.majikah.mjksmap";
+/** Conventional file extension for MJKSMAP batch manifests. */
 export const MJKSMAP_FILE_EXTENSION = ".mjksmap";
 
 /** Conventional name/location when packaged in a signed batch zip. */
@@ -174,6 +201,7 @@ export const MJKSMAP_DEFAULT_FILENAME = "signatures.mjksmap";
 
 
 // ─── Untrusted envelope parsing limits ──────────────────────────────────────
+/** Maximum serialized envelope/CBOR payload size accepted by the parser. */
 export const MAX_ENVELOPE_BYTES = 16 * 1024 * 1024;
 /** Maximum serialized MJKSMAP binary payload (header excluded). */
 export const MAX_MJKSMAP_BYTES = 16 * 1024 * 1024;
@@ -186,9 +214,14 @@ export const MAX_MJKSMAP_JSON_BYTES = 24 * 1024 * 1024;
 export const MAX_MJKSMAP_ENTRIES = 10_000;
 /** Maximum input path length before normalization, measured in UTF-16 code units. */
 export const MAX_MJKSMAP_PATH_CHARS = 4_096;
+/** Maximum CBOR input/output size shared by envelope CBOR decoding and encoding. */
 export const MAX_CBOR_INPUT_BYTES = MAX_ENVELOPE_BYTES;
+/** Maximum number of external chain-anchor metadata records stored in an envelope. */
 export const MAX_CHAIN_ANCHORS = 256;
+/** Maximum number of metadata-only revision entries accepted in an envelope. */
 export const MAX_FILE_VERSIONS = 10_000;
+/** Maximum UTF-16 code-unit length accepted for a revision message. */
 export const MAX_FILE_VERSION_MESSAGE_CHARS = 4_096;
 
+/** Maximum nested TSA signature-record depth accepted by recursive validation. */
 export const MAX_TSA_SIGNATURE_NESTING = 8;
