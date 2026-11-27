@@ -1737,22 +1737,9 @@ export class MajikSignatureEnvelope {
       );
     }
     try {
-      if (typeof json === "string") {
-        parsed = JSON.parse(json);
-      } else {
-        const serialized = JSON.stringify(json);
-        if (
-          typeof serialized !== "string" ||
-          exceedsUtf8ByteLimit(serialized, MAX_ENVELOPE_BYTES)
-        ) {
-          throw new MajikSignatureSerializationError(
-            `Embedded signature payload exceeds the maximum supported size of ${MAX_ENVELOPE_BYTES} bytes`,
-          );
-        }
-        // Normalize to inert JSON data so getters/proxies cannot change shape
-        // between the byte-budget check and structural validation.
-        parsed = JSON.parse(serialized);
-      }
+      // Object inputs are normalized, size-limited, snapshotted, and
+      // structurally validated by the private constructor shared by builders.
+      parsed = typeof json === "string" ? JSON.parse(json) : json;
     } catch (err) {
       if (
         err instanceof MajikSignatureSerializationError &&
