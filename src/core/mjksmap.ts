@@ -61,7 +61,7 @@ function validateAndNormalizePath(path: unknown, field: string): string {
   }
   if (
     path.length > MAX_MJKSMAP_PATH_CHARS ||
-    /[\\u0000-\\u001f\\u007f\\u202a-\\u202e\\u2066-\\u2069]/u.test(path)
+    /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u.test(path)
   ) {
     throw new MajikSignatureValidationError(
       `${field} exceeds the supported path length or contains unsafe control characters`,
