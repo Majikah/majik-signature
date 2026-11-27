@@ -129,6 +129,24 @@ describe("MJKSMAP parser and input hardening", () => {
     ).rejects.toThrow(/JSON/i);
   });
 
+  it("freezes stored entries and returns detached mutable JSON snapshots", () => {
+    const source = entry("docs/immutable.txt");
+    const map = MajikSignatureMap.empty().withEntry(source);
+
+    source.path = "docs/changed-after-build.txt";
+    source.envelope.signatures.push({} as any);
+
+    const stored = map.getEntry("docs/immutable.txt");
+    expect(stored).toBeDefined();
+    expect(Object.isFrozen(stored)).toBe(true);
+    expect(Object.isFrozen(stored?.envelope)).toBe(true);
+    expect(stored?.envelope.signatures).toHaveLength(0);
+
+    const jsonCopy = map.toJSON();
+    jsonCopy.entries[0]!.path = "docs/changed-json-copy.txt";
+    expect(map.getEntry("docs/immutable.txt")).toBeDefined();
+  });
+
   it("preserves valid maps and path normalization", async () => {
     const map = MajikSignatureMap.empty().withEntry(entry("C:\\docs\\report.txt"));
     const bytes = map.toMJKSMAPBytes();
