@@ -423,7 +423,7 @@ describe("MajikSignatureMap (.mjksmap)", () => {
       });
 
       expect(map.size).toBe(1);
-      expect(map.getEntry("docs/a.txt")?.contentHash).toBe("hash-2");
+      expect(map.getEntry("docs/a.txt")?.contentHash).toBe(fakeHash(2));
     });
 
     it("removes an entry without affecting unrelated entries", () => {
