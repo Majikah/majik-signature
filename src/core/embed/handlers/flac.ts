@@ -33,6 +33,7 @@ interface MetadataBlock {
   raw: Uint8Array;
 }
 
+/** Handle embedding/extraction of signature metadata in FLAC audio metadata blocks. */
 export class FlacHandler implements FormatHandler {
   readonly name = "FLAC";
   readonly supportedMimeTypes = ["audio/flac", "audio/x-flac"] as const;
