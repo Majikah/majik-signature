@@ -23,7 +23,6 @@ import {
   MAX_MJKSMAP_BYTES,
   MAX_MJKSMAP_ENTRIES,
   MAX_MJKSMAP_PATH_CHARS,
-  MAX_CONTENT_TYPE_CHARS,
   MJKSMAP_HEADER_LEN,
   MJKSMAP_MAGIC,
   MJKSMAP_MAGIC_LEN,
@@ -53,6 +52,31 @@ function normalizePath(path: string): string {
   p = p.replace(/^[a-zA-Z]:/, ""); // strip drive letters (C:, D:, ...)
   p = p.replace(/^\/+/, ""); // strip leading slashes
   return p;
+}
+
+/** Validate untrusted logical paths before using them as manifest keys. */
+function validateAndNormalizePath(path: unknown, field: string): string {
+  if (typeof path !== "string" || path.trim().length === 0) {
+    throw new MajikSignatureValidationError(`${field} must be a non-empty string`, field);
+  }
+  if (
+    path.length > MAX_MJKSMAP_PATH_CHARS ||
+    /[\\u0000-\\u001f\\u007f\\u202a-\\u202e\\u2066-\\u2069]/u.test(path)
+  ) {
+    throw new MajikSignatureValidationError(
+      `${field} exceeds the supported path length or contains unsafe control characters`,
+      field,
+    );
+  }
+
+  const normalized = normalizePath(path);
+  if (!normalized || normalized.split("/").some((segment) => segment === "..")) {
+    throw new MajikSignatureValidationError(
+      `${field} must resolve to a non-traversing relative path`,
+      field,
+    );
+  }
+  return normalized;
 }
 
 // ─── MajikSignatureMap ─────────────────────────────────────────────────────────
@@ -221,23 +245,28 @@ export class MajikSignatureMap {
    * as the same key rather than silently duplicating.
    */
   withEntry(entry: MjksMapEntry): MajikSignatureMap {
-    if (!entry.path || !entry.path.trim()) {
-      throw new MajikSignatureValidationError(
-        "Entry must have a non-empty path.",
-        "path",
-      );
-    }
-    if (!entry.contentHash || !entry.contentHash.trim()) {
-      throw new MajikSignatureValidationError(
-        "Entry must have a non-empty contentHash.",
-        "contentHash",
-      );
-    }
-
     const normalized: MjksMapEntry = {
       ...entry,
-      path: normalizePath(entry.path),
+      path: validateAndNormalizePath(entry.path, "path"),
     };
+    MajikSignatureValidator.validateCanonicalBase64(
+      normalized.contentHash,
+      "contentHash",
+      32,
+    );
+    if (
+      normalized.size !== undefined &&
+      (!Number.isSafeInteger(normalized.size) || normalized.size < 0)
+    ) {
+      throw new MajikSignatureValidationError(
+        "size must be a non-negative safe integer when present",
+        "size",
+      );
+    }
+    if (normalized.mimeType !== undefined) {
+      MajikSignatureValidator.validateContentType(normalized.mimeType, "mimeType");
+    }
+    MajikSignatureEnvelope.fromJSON(normalized.envelope);
 
     const filtered = this._entries.filter((e) => e.path !== normalized.path);
 
