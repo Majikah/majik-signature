@@ -146,6 +146,22 @@ describe("untrusted signature input hardening", () => {
     )).toThrow(/maximum supported size/i);
   });
 
+  it("rejects oversized in-memory envelopes and base64 before decoding", () => {
+    const oversizedObject = {
+      version: 1,
+      signatures: [],
+      untrustedPadding: "x".repeat(MAX_ENVELOPE_BYTES + 1),
+    };
+    expect(() => MajikSignatureEnvelope.fromJSON(oversizedObject as any)).toThrow(
+      /maximum supported size/i,
+    );
+
+    const maxEncodedLength = Math.ceil(MAX_ENVELOPE_BYTES / 3) * 4;
+    expect(() => MajikSignatureEnvelope.deserialize("A".repeat(maxEncodedLength + 1))).toThrow(
+      /maximum supported encoded size/i,
+    );
+  });
+
   it("rejects Ed25519 scalar-malleated signatures", () => {
     const mutated = json.edSignature;
     const bytes = base64ToBytes(mutated);
