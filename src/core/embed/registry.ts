@@ -9,6 +9,7 @@
 import { FormatHandler } from "./types.js";
 import { FallbackHandler } from "./fallback.js";
 
+/** Registry that selects an embedding handler by MIME hint and content sniffing. */
 export class FormatHandlerRegistry {
   private readonly _handlers: FormatHandler[] = [];
   private readonly _fallback: FallbackHandler = new FallbackHandler();
