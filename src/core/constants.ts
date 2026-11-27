@@ -175,8 +175,13 @@ export const MJKSMAP_DEFAULT_FILENAME = "signatures.mjksmap";
 
 // ─── Untrusted envelope parsing limits ──────────────────────────────────────
 export const MAX_ENVELOPE_BYTES = 16 * 1024 * 1024;
-/** Maximum serialized MJKSMAP manifest payload (header excluded). */
+/** Maximum serialized MJKSMAP binary payload (header excluded). */
 export const MAX_MJKSMAP_BYTES = 16 * 1024 * 1024;
+/**
+ * Maximum JSON model input size. JSON represents binary values as Base64,
+ * so its compatibility/API representation needs headroom over the CBOR limit.
+ */
+export const MAX_MJKSMAP_JSON_BYTES = 24 * 1024 * 1024;
 /** Maximum entries accepted in one MJKSMAP manifest. */
 export const MAX_MJKSMAP_ENTRIES = 10_000;
 /** Maximum normalized logical path length in UTF-16 code units. */
