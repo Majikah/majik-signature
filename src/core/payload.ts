@@ -249,6 +249,7 @@ export function buildSignatureAttestationBytes(signature: MajikSignatureJSON): U
   return out;
 }
 
+/** Build the canonical domain-separated bytes signed by a timestamp authority. */
 export function buildTSACanonicalBytes(payload: MajikTSAPayload): Uint8Array {
   const meta = JSON.stringify({
     digest: {
