@@ -1,25 +1,27 @@
 /**
  * image-utils.ts — Cross-platform image pixel I/O
  *
- * Handles the messy job of getting RGBA pixel data in and out of images,
- * across browser (Canvas API) and Node.js (sharp or canvas package) contexts.
+ * Converts image Blobs to/from RGBA pixel arrays using browser Canvas APIs.
+ * This experimental stamping helper requires createImageBitmap and OffscreenCanvas;
+ * it does not provide a Node.js sharp/canvas adapter in this package.
  *
- * All functions accept/return Blob in browser and Buffer/Blob in Node.
- *
- * Minimum image dimensions we enforce: 600×600 px.
+ * Minimum image dimensions enforced by the image-stamp algorithm: 640×640 px.
  * Smaller images are padded with white before embedding.
  */
 
+/** Minimum width and height in pixels required by the experimental image-stamp algorithm. */
 export const MIN_DIMENSION = 640;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+/** Decoded image pixels in RGBA order with their actual pixel dimensions. */
 export interface ImagePixels {
   pixels: Uint8ClampedArray;
   width: number;
   height: number;
 }
 
+/** Output encoding hint for the browser Canvas-based image encoder. */
 export interface ImageEncodeOptions {
   mimeType?: "image/png" | "image/jpeg" | "image/webp";
   quality?: number; // 0-1 for JPEG/WebP, default 0.92
@@ -37,7 +39,7 @@ export async function decodeImage(blob: Blob): Promise<ImagePixels> {
   if (typeof createImageBitmap === "undefined") {
     throw new Error(
       "decodeImage requires a browser environment with createImageBitmap. " +
-        "In Node.js, use decodeImageNode() with the sharp package.",
+        "This image-stamp helper requires a host with createImageBitmap and OffscreenCanvas.",
     );
   }
 
@@ -75,7 +77,7 @@ export async function encodeImage(
   if (typeof OffscreenCanvas === "undefined") {
     throw new Error(
       "encodeImage requires a browser environment with OffscreenCanvas. " +
-        "In Node.js, use encodeImageNode() with the sharp package.",
+        "This image-stamp helper requires a host with OffscreenCanvas.",
     );
   }
 
