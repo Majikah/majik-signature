@@ -21,6 +21,7 @@ const MAGIC = new TextEncoder().encode("\n%%MajikSig%%\n");
 
 const STRICT_UTF8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
+/** Handle embedding/extraction of signature metadata in PDF document metadata. */
 export class PdfHandler implements FormatHandler {
   readonly name = "PDF";
   readonly supportedMimeTypes = ["application/pdf"] as const;
