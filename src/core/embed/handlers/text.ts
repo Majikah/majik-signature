@@ -75,6 +75,7 @@ function isBase64Byte(b: number): boolean {
   );
 }
 
+/** Handle embedding/extraction of signature metadata in supported text formats. */
 export class TextHandler implements FormatHandler {
   readonly name = "Text/Markup/Source";
   readonly supportedMimeTypes = TEXT_MIME_TYPES as unknown as readonly string[];
