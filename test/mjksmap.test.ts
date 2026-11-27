@@ -406,7 +406,7 @@ describe("MajikSignatureMap (.mjksmap)", () => {
     it("treats differently formatted versions of the same path as one key", () => {
       let map = MajikSignatureMap.empty().withEntry({
         path: "C:\\docs\\a.txt",
-        contentHash: "hash-1",
+        contentHash: fakeHash(1),
         envelope: {
           version: 1,
           signatures: [],
@@ -415,7 +415,7 @@ describe("MajikSignatureMap (.mjksmap)", () => {
 
       map = map.withEntry({
         path: "docs/a.txt",
-        contentHash: "hash-2",
+        contentHash: fakeHash(2),
         envelope: {
           version: 1,
           signatures: [],
