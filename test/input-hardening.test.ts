@@ -193,6 +193,12 @@ describe("untrusted signature input hardening", () => {
     expect(envelope.signatures[0]?.contentType).not.toBe(
       "application/x-mutated-after-build",
     );
+    expect(Object.isFrozen(envelope.signatures)).toBe(true);
+    expect(Object.isFrozen(envelope.signatures[0])).toBe(true);
+
+    const jsonCopy = envelope.toJSON();
+    jsonCopy.signatures[0]!.signerId = "mutated-export-copy";
+    expect(envelope.signatures[0]?.signerId).not.toBe("mutated-export-copy");
   });
 
   it("rejects Ed25519 scalar-malleated signatures", () => {
