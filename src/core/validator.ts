@@ -40,9 +40,15 @@ import type {
   MultiSigEnvelope,
 } from "./types.js";
 
+/**
+ * Shared structural and cryptographic-input validation rules for the public API.
+ * These helpers validate shape and bounds; they do not establish trust in a
+ * signer or independently verify a signature.
+ */
 export class MajikSignatureValidator {
   // ── Assertions ──────────────────────────────────────────────────────────────
 
+  /** Throw a field-aware validation error when an arbitrary condition is false. */
   static assert(
     condition: unknown,
     message: string,
@@ -51,6 +57,7 @@ export class MajikSignatureValidator {
     if (!condition) throw new MajikSignatureValidationError(message, field);
   }
 
+  /** Assert that a required value is neither `null` nor `undefined`. */
   static assertDefined<T>(
     value: T | undefined | null,
     field: string,
@@ -62,6 +69,7 @@ export class MajikSignatureValidator {
       );
   }
 
+  /** Assert that a value is a non-empty string after trimming. */
   static assertNonEmptyString(
     value: unknown,
     field: string,
@@ -73,6 +81,7 @@ export class MajikSignatureValidator {
       );
   }
 
+  /** Assert that a value is a Uint8Array and, when supplied, has the exact byte length. */
   static assertUint8Array(
     value: unknown,
     field: string,
@@ -90,6 +99,7 @@ export class MajikSignatureValidator {
       );
   }
 
+  /** Validate that an untrusted string is non-empty, within its character limit, and safe for metadata use. */
   static validateBoundedString(
     value: unknown,
     field: string,
@@ -108,6 +118,7 @@ export class MajikSignatureValidator {
     }
   }
 
+  /** Validate canonical padded Base64 text and its expected decoded byte length. */
   static validateCanonicalBase64(
     value: unknown,
     field: string,
@@ -138,6 +149,7 @@ export class MajikSignatureValidator {
     }
   }
 
+  /** Validate the canonical timestamp representation accepted by the protocol. */
   static validateTimestamp(
     value: unknown,
     field = "timestamp",
@@ -157,6 +169,7 @@ export class MajikSignatureValidator {
 
   // ── Content validators ───────────────────────────────────────────────────────
 
+  /** Validate raw signable content and reject unsupported or empty input. */
   static validateContent(
     content: Uint8Array | string,
     field = "content",
@@ -183,6 +196,7 @@ export class MajikSignatureValidator {
     );
   }
 
+  /** Validate an optional advisory content-type string; it is not an access-control policy. */
   static validateContentType(
     contentType: unknown,
     field = "contentType",
@@ -202,6 +216,7 @@ export class MajikSignatureValidator {
 
   // ── Key validators ───────────────────────────────────────────────────────────
 
+  /** Validate the signer fingerprint and exact Ed25519/ML-DSA-87 public-key sizes. */
   static validateSignerPublicKeys(keys: MajikSignerPublicKeys): void {
     MajikSignatureValidator.assertNonEmptyString(keys.signerId, "signerId");
 
@@ -222,6 +237,7 @@ export class MajikSignatureValidator {
       );
   }
 
+  /** Validate the expected Ed25519 secret-key byte length before signing. */
   static validateEdSecretKey(key: Uint8Array): void {
     if (!(key instanceof Uint8Array) || key.length !== 64)
       throw new MajikSignatureKeyError(
@@ -229,6 +245,7 @@ export class MajikSignatureValidator {
       );
   }
 
+  /** Validate the expected ML-DSA-87 secret-key byte length before signing. */
   static validateMlDsaSecretKey(key: Uint8Array): void {
     if (!(key instanceof Uint8Array) || key.length !== 4896)
       throw new MajikSignatureKeyError(
@@ -238,6 +255,7 @@ export class MajikSignatureValidator {
 
   // ── Per-signer envelope validator ────────────────────────────────────────────
 
+  /** Validate the required and optional fields of a per-signer JSON record, including nested TSA limits. */
   static validateJSON(json: unknown, depth = 0): asserts json is MajikSignatureJSON {
     if (depth > MAX_TSA_SIGNATURE_NESTING) {
       throw new MajikSignatureValidationError(
@@ -347,6 +365,7 @@ export class MajikSignatureValidator {
 
   // ── ExpectedSigner validator ─────────────────────────────────────────────────
 
+  /** Validate one allowlist entry and its encoded signer public keys. */
   static validateExpectedSigner(
     entry: unknown,
     index?: number,
@@ -436,6 +455,7 @@ export class MajikSignatureValidator {
       );
   }
 
+  /** Validate the expected 128-character hexadecimal SHA3-512 seal digest. */
   static validateSealHash(hash: string): void {
     if (
       typeof hash !== "string" ||
@@ -448,6 +468,7 @@ export class MajikSignatureValidator {
       );
   }
 
+  /** Assert that a supplied SignRoom session-context commitment is canonical Base64 SHA-256. */
   static validateSessionContextHash(value: unknown): asserts value is string {
     MajikSignatureValidator.validateCanonicalBase64(
       value,
@@ -456,6 +477,7 @@ export class MajikSignatureValidator {
     );
   }
 
+  /** Validate an optional ISO 8601 expiry timestamp before it enters the signed payload. */
   static validateValidUntil(value: ISODateString | undefined): void {
     if (value === undefined) return;
     if (
@@ -472,6 +494,7 @@ export class MajikSignatureValidator {
 
   // ── MultiSigEnvelope validator ───────────────────────────────────────────────
 
+  /** Validate an entire envelope, including signature/allowlist counts and optional metadata consistency. */
   static validateMultiSigEnvelope(
     env: unknown,
   ): asserts env is MultiSigEnvelope {
@@ -556,6 +579,7 @@ export class MajikSignatureValidator {
     MajikSignatureValidator.validateSeal(env as MultiSigEnvelope);
   }
 
+  /** Validate the payload inside a trusted-timestamp token, including digest scope and signer metadata. */
   static validateMajikTSAPayload(
     payload: unknown,
   ): asserts payload is MajikTSAPayload {
@@ -602,6 +626,7 @@ export class MajikSignatureValidator {
     );
   }
 
+  /** Validate a timestamp token recursively while enforcing the configured nesting ceiling. */
   static validateMajikTimestamp(
     tsa: unknown,
     depth = 0,
