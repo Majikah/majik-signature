@@ -22,6 +22,7 @@
 import type { FormatHandler } from "./types.js";
 import { bufferEqual } from "./utils.js";
 
+/** Canonical unsigned file bytes and handler metadata prepared for a signing or verification operation. */
 export type CanonicalResult =
   | { ok: true; original: Uint8Array }
   | { ok: false; reason: string };
@@ -62,6 +63,7 @@ export async function assertCanonical(
   return { ok: true, original };
 }
 
+/** Format and canonicalization hints for preparing bytes that will be signed in a detached envelope. */
 export interface DetachedPrepareOptions {
   /**
    * Also require a file WITHOUT an embedded envelope to already be in the
