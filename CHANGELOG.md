@@ -8,5 +8,6 @@
 - Add `MajikSignature.signBatchDetachedStream()` for sequential, bounded-memory detached batch signing into `.mjksmap` or separate `.mjksig` outputs.
 - Add per-file progress reporting and per-file failure collection for streaming batch signing.
 - Add `MajikSignature.verifyFilesFromMjksMapStream()` with single-pass hashing, path-first tamper detection, and content-hash relocation.
+- Cover both `.mjksmap` and separate `.mjksig` output modes in streaming batch signing tests.
 - Add regression tests for declared stream lengths, maximum chunk configuration, cross-path verification, and streaming batch results.
 
