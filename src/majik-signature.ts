@@ -1320,7 +1320,7 @@ export class MajikSignature {
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        if (!continueOnError) {
+        if (!continueOnError || options?.streaming?.signal?.aborted) {
           throw new MajikSignatureError(
             `Batch streaming signing failed on "${file.path}": ${message}`,
             err,
