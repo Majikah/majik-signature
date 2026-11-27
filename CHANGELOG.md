@@ -2,6 +2,10 @@
 
 ## 1.6.0 - 2026-11-28
 
+- Make MJKSMAP container version 2 with CBOR the default binary output; continue reading legacy version 1 JSON containers.
+- Encode MJKSMAP entry content hashes and nested envelope binary fields (keys, signatures, signer IDs, digests, hashes, and anchors) as raw CBOR byte strings instead of Base64/hex text.
+- Preserve the public version-1 `MjksMapJSON` schema and `toJSON()` / `fromJSON()` compatibility APIs.
+- Keep the 16 MiB limit on binary payloads; allow a 24 MiB JSON model input budget for Base64 expansion while preserving the legacy v1 container's 16 MiB limit.
 - Align the TypeScript core release with `majik-signature-rs` 1.6.0.
 - Cap the supported streaming hash chunk override at 64 MiB while retaining the 1 MiB default and 8 MiB automatic threshold.
 - Add `StreamingHashOptions.totalBytes` to validate exact stream length and detect truncated or overlong sources.
