@@ -127,6 +127,7 @@ export class MajikSignatureMap {
     }
     this._byPath = byPath;
     this._byHash = byHash;
+    Object.freeze(this);
   }
 
   // ── Getters ─────────────────────────────────────────────────────────────────
