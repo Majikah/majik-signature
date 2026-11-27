@@ -13,6 +13,8 @@ export interface StreamingHashOptions {
   thresholdBytes?: number;
   /** Optional upper bound for untrusted or externally supplied streams. */
   maxBytes?: number;
+  /** Expected complete source length; rejects truncated or overlong streams. */
+  totalBytes?: number;
   /** Stops processing between chunks. */
   signal?: AbortSignal;
   /** Called after each non-empty chunk has been incorporated. */

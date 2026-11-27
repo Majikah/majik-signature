@@ -12,6 +12,7 @@ import type { MajikChainAnchor } from "../anchor/types.js";
 import type { ContentType } from "./constants.js";
 import type { MajikSignatureEnvelope } from "./envelope.js";
 import type { MajikSessionSigningContext } from "./session-context.js";
+import type { StreamingByteSource, StreamingHashOptions } from "./streaming/types.js";
 
 /** Standard content-type constants exposed by Majik Signature. */
 export type { ContentType };
@@ -901,6 +902,48 @@ export interface BatchSignOptions {
 }
 
 /**
+ * One source supplied to a streaming detached batch-signing operation.
+ *
+ * The source must yield the exact canonical bytes to be signed. This low-level
+ * API does not parse or strip an existing embedded signature from the stream.
+ */
+export interface StreamingBatchFileInput {
+  /** Unique relative path within the batch manifest. */
+  path: string;
+  /** One-shot stream, async iterable, Blob, or in-memory byte source. */
+  source: StreamingByteSource;
+  /** Optional expected source length, used to detect truncation or overrun. */
+  totalBytes?: number;
+  /** Optional MIME type recorded in the MJKSMAP entry. */
+  mimeType?: string;
+}
+
+/** Per-file progress reported by a streaming batch-signing operation. */
+export interface BatchStreamingProgress {
+  /** Zero-based input index. */
+  index: number;
+  /** Total number of input files. */
+  totalFiles: number;
+  /** Relative path of the file currently being processed. */
+  path: string;
+  bytesProcessed: number;
+  totalBytes?: number;
+}
+
+/**
+ * Streaming controls for detached batch signing.
+ *
+ * A single bounded streaming policy is applied to each file in sequence.
+ * Per-file totalBytes is supplied on StreamingBatchFileInput.
+ */
+export interface BatchStreamingOptions extends BatchSignOptions {
+  /** Shared hashing settings; progress and expected length are supplied per file. */
+  streaming?: Omit<StreamingHashOptions, "onProgress" | "totalBytes">;
+  /** Batch-aware progress callback. */
+  onProgress?: (progress: BatchStreamingProgress) => void;
+}
+
+/**
  * Per-file failure captured by a batch-signing operation when continuation is enabled.
  */
 export interface BatchSignFailure {
@@ -948,6 +991,28 @@ export interface BatchVerifyInput {
   path: string;
   /** File contents to resolve and verify against the manifest. */
   blob: Blob;
+}
+
+/**
+ * One file supplied to streaming MJKSMAP verification.
+ *
+ * The byte source is consumed once and is never materialized as a complete file.
+ */
+export interface StreamingBatchVerifyInput {
+  /** Current path of the file; may differ from the original manifest path. */
+  path: string;
+  /** Stream or in-memory byte source for the exact canonical unsigned content. */
+  source: StreamingByteSource;
+  /** Optional expected length for truncation/overrun detection. */
+  totalBytes?: number;
+}
+
+/** Options for streaming batch verification against an MJKSMAP manifest. */
+export interface BatchStreamingVerifyOptions extends BatchVerifyOptions {
+  /** Hashing options shared by each file; totalBytes and progress are per-file. */
+  streaming?: Omit<StreamingHashOptions, "onProgress" | "totalBytes">;
+  /** Batch-aware per-file streaming progress callback. */
+  onProgress?: (progress: BatchStreamingProgress) => void;
 }
 
 /**

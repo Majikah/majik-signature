@@ -146,6 +146,64 @@ describe("untrusted signature input hardening", () => {
     )).toThrow(/maximum supported size/i);
   });
 
+  it("rejects oversized in-memory envelopes and base64 before decoding", () => {
+    const oversizedObject = {
+      version: 1,
+      signatures: [],
+      untrustedPadding: "x".repeat(MAX_ENVELOPE_BYTES + 1),
+    };
+    expect(() => MajikSignatureEnvelope.fromJSON(oversizedObject as any)).toThrow(
+      /maximum supported size/i,
+    );
+
+    const maxEncodedLength = Math.ceil(MAX_ENVELOPE_BYTES / 3) * 4;
+    expect(() => MajikSignatureEnvelope.deserialize("A".repeat(maxEncodedLength + 1))).toThrow(
+      /maximum supported encoded size/i,
+    );
+  });
+
+  it("bounds builder-supplied allowlists and seal metadata before processing", () => {
+    const signer = MajikSignature.expectedSignerFromKey(key);
+    const oversizedAllowlist = Array.from(
+      { length: MAX_ALLOWLIST_ENTRIES + 1 },
+      () => signer,
+    );
+    expect(() =>
+      MajikSignatureEnvelope.empty().withAllowlist(
+        oversizedAllowlist,
+        key.fingerprint,
+      ),
+    ).toThrow(/allowlist exceeds/i);
+    expect(() =>
+      MajikSignatureEnvelope.empty().withSeal("x".repeat(257)),
+    ).toThrow(/sealedBy/i);
+  });
+
+  it("validates builder-supplied revision metadata and snapshots nested inputs", () => {
+    expect(() => MajikSignatureEnvelope.empty().withFileVersion({
+      version: 1,
+      timestamp: json.timestamp,
+      contentHash: json.contentHash,
+      message: "x".repeat(4_097),
+    })).toThrow(/message exceeds/i);
+
+    const signatureInput = { ...json };
+    const envelope = MajikSignatureEnvelope.empty().withSignature(signatureInput);
+    signatureInput.contentType = "application/x-mutated-after-build";
+    expect(envelope.signatures[0]?.contentType).not.toBe(
+      "application/x-mutated-after-build",
+    );
+    expect(Object.isFrozen(envelope)).toBe(true);
+    expect(Object.isFrozen(envelope.signatures)).toBe(true);
+    expect(Object.isFrozen(envelope.signatures[0])).toBe(true);
+
+    const jsonCopy = envelope.toJSON();
+    jsonCopy.signatures[0]!.contentType = "application/x-mutated-json-copy";
+    expect(envelope.signatures[0]?.contentType).not.toBe(
+      "application/x-mutated-json-copy",
+    );
+  });
+
   it("rejects Ed25519 scalar-malleated signatures", () => {
     const mutated = json.edSignature;
     const bytes = base64ToBytes(mutated);

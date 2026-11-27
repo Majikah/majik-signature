@@ -20,6 +20,9 @@ import {
 import { hashContent, bytesToBase64 } from "./hash.js";
 import { MajikSignatureEnvelope } from "./envelope.js";
 import {
+  MAX_MJKSMAP_BYTES,
+  MAX_MJKSMAP_ENTRIES,
+  MAX_MJKSMAP_PATH_CHARS,
   MJKSMAP_HEADER_LEN,
   MJKSMAP_MAGIC,
   MJKSMAP_MAGIC_LEN,
@@ -27,6 +30,7 @@ import {
   MJKSMAP_SUPPORTED_VERSIONS,
   MJKSMAP_VERSION,
 } from "./constants.js";
+import { MajikSignatureValidator } from "./validator.js";
 import type {
   MajikSignatureEnvelopeJSON,
   MjksMapEntry,
@@ -43,11 +47,48 @@ import type {
  * fs:scope globs (backslashes silently fail) — applied here proactively
  * rather than waiting to hit it again in batch workflows.
  */
-function normalizePath(path: string): string {
+function normalizePath(path: unknown): string {
+  if (typeof path !== "string") return "";
   let p = path.replace(/\\/g, "/").trim();
   p = p.replace(/^[a-zA-Z]:/, ""); // strip drive letters (C:, D:, ...)
   p = p.replace(/^\/+/, ""); // strip leading slashes
   return p;
+}
+
+/** Recursively freeze JSON snapshots before exposing manifest entry references. */
+function deepFreezeJson<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const child of Object.values(value as unknown as Record<string, unknown>)) {
+      deepFreezeJson(child);
+    }
+    Object.freeze(value);
+  }
+  return value;
+}
+
+/** Validate untrusted logical paths before using them as manifest keys. */
+function validateAndNormalizePath(path: unknown, field: string): string {
+  if (typeof path !== "string" || path.trim().length === 0) {
+    throw new MajikSignatureValidationError(`${field} must be a non-empty string`, field);
+  }
+  if (
+    path.length > MAX_MJKSMAP_PATH_CHARS ||
+    /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u.test(path)
+  ) {
+    throw new MajikSignatureValidationError(
+      `${field} exceeds the supported path length or contains unsafe control characters`,
+      field,
+    );
+  }
+
+  const normalized = normalizePath(path);
+  if (!normalized || normalized.split("/").some((segment) => segment === "..")) {
+    throw new MajikSignatureValidationError(
+      `${field} must resolve to a non-traversing relative path`,
+      field,
+    );
+  }
+  return normalized;
 }
 
 // ─── MajikSignatureMap ─────────────────────────────────────────────────────────
@@ -64,16 +105,21 @@ export class MajikSignatureMap {
   private readonly _byHash: ReadonlyMap<string, readonly MjksMapEntry[]>;
 
   private constructor(data: MjksMapJSON) {
-    this._version = data.version;
-    this._createdAt = data.createdAt;
-    this._entries = data.entries.map((e) => ({
-      ...e,
-      path: normalizePath(e.path),
-    }));
+    // Clone first so freezing our internal state never freezes caller-owned
+    // entry/envelope objects and later caller mutation cannot alter a map.
+    const snapshot = JSON.parse(JSON.stringify(data)) as MjksMapJSON;
+    this._version = snapshot.version;
+    this._createdAt = snapshot.createdAt;
+    this._entries = deepFreezeJson(
+      snapshot.entries.map((entry) => ({
+        ...entry,
+        path: normalizePath(entry.path),
+      })),
+    );
 
     const byPath = new Map<string, MjksMapEntry>();
     const byHash = new Map<string, MjksMapEntry[]>();
-    for (const entry of data.entries) {
+    for (const entry of this._entries) {
       byPath.set(entry.path, entry);
       const existing = byHash.get(entry.contentHash);
       if (existing) existing.push(entry);
@@ -81,6 +127,7 @@ export class MajikSignatureMap {
     }
     this._byPath = byPath;
     this._byHash = byHash;
+    Object.freeze(this);
   }
 
   // ── Getters ─────────────────────────────────────────────────────────────────
@@ -216,31 +263,37 @@ export class MajikSignatureMap {
    * as the same key rather than silently duplicating.
    */
   withEntry(entry: MjksMapEntry): MajikSignatureMap {
-    if (!entry.path || !entry.path.trim()) {
-      throw new MajikSignatureValidationError(
-        "Entry must have a non-empty path.",
-        "path",
-      );
-    }
-    if (!entry.contentHash || !entry.contentHash.trim()) {
-      throw new MajikSignatureValidationError(
-        "Entry must have a non-empty contentHash.",
-        "contentHash",
-      );
-    }
-
     const normalized: MjksMapEntry = {
       ...entry,
-      path: normalizePath(entry.path),
+      path: validateAndNormalizePath(entry.path, "path"),
     };
+    MajikSignatureValidator.validateCanonicalBase64(
+      normalized.contentHash,
+      "contentHash",
+      32,
+    );
+    if (
+      normalized.size !== undefined &&
+      (!Number.isSafeInteger(normalized.size) || normalized.size < 0)
+    ) {
+      throw new MajikSignatureValidationError(
+        "size must be a non-negative safe integer when present",
+        "size",
+      );
+    }
+    if (normalized.mimeType !== undefined) {
+      MajikSignatureValidator.validateContentType(normalized.mimeType, "mimeType");
+    }
+    MajikSignatureEnvelope.fromJSON(normalized.envelope);
 
     const filtered = this._entries.filter((e) => e.path !== normalized.path);
-
-    return new MajikSignatureMap({
+    const data: MjksMapJSON = {
       version: this._version,
       createdAt: this._createdAt,
       entries: [...filtered, normalized],
-    });
+    };
+    MajikSignatureMap.#validateShape(data as unknown as Record<string, unknown>);
+    return new MajikSignatureMap(data);
   }
 
   withoutEntry(path: string): MajikSignatureMap {
@@ -255,11 +308,12 @@ export class MajikSignatureMap {
   // ── Serialization ─────────────────────────────────────────────────────────────
 
   toJSON(): MjksMapJSON {
-    return {
+    const snapshot: MjksMapJSON = {
       version: this._version,
       createdAt: this._createdAt,
       entries: [...this._entries],
     };
+    return JSON.parse(JSON.stringify(snapshot)) as MjksMapJSON;
   }
 
   // ── MJKSMAP binary format ─────────────────────────────────────────────────
@@ -271,6 +325,11 @@ export class MajikSignatureMap {
 
   toMJKSMAPBytes(): Uint8Array {
     const payloadJson = new TextEncoder().encode(JSON.stringify(this.toJSON()));
+    if (payloadJson.byteLength > MAX_MJKSMAP_BYTES) {
+      throw new MajikSignatureSerializationError(
+        `MJKSMAP payload exceeds the maximum supported size of ${MAX_MJKSMAP_BYTES} bytes`,
+      );
+    }
     const out = new Uint8Array(MJKSMAP_HEADER_LEN + payloadJson.length);
 
     out.set(MJKSMAP_MAGIC, 0);
@@ -295,12 +354,33 @@ export class MajikSignatureMap {
   static async fromMJKSMAP(
     input: Blob | Uint8Array,
   ): Promise<MajikSignatureMap> {
+    if (
+      input instanceof Blob &&
+      input.size > MAX_MJKSMAP_BYTES + MJKSMAP_HEADER_LEN
+    ) {
+      throw new MajikSignatureSerializationError(
+        `MJKSMAP input exceeds the maximum supported size of ${MAX_MJKSMAP_BYTES + MJKSMAP_HEADER_LEN} bytes`,
+      );
+    }
+    if (
+      input instanceof Uint8Array &&
+      input.byteLength > MAX_MJKSMAP_BYTES + MJKSMAP_HEADER_LEN
+    ) {
+      throw new MajikSignatureSerializationError(
+        `MJKSMAP input exceeds the maximum supported size of ${MAX_MJKSMAP_BYTES + MJKSMAP_HEADER_LEN} bytes`,
+      );
+    }
     const raw =
       input instanceof Blob ? new Uint8Array(await input.arrayBuffer()) : input;
     return MajikSignatureMap.#parseMJKSMAPBytes(raw);
   }
 
   static #parseMJKSMAPBytes(raw: Uint8Array): MajikSignatureMap {
+    if (raw.byteLength > MAX_MJKSMAP_BYTES + MJKSMAP_HEADER_LEN) {
+      throw new MajikSignatureSerializationError(
+        `MJKSMAP input exceeds the maximum supported size of ${MAX_MJKSMAP_BYTES + MJKSMAP_HEADER_LEN} bytes`,
+      );
+    }
     if (raw.length < MJKSMAP_HEADER_LEN + 1) {
       throw new MajikSignatureSerializationError(
         "Malformed MJKSMAP: too short to contain a valid header",
@@ -322,6 +402,13 @@ export class MajikSignatureMap {
       );
     }
 
+    const reserved = raw[MJKSMAP_MAGIC_LEN + 1];
+    if (reserved !== 0x00) {
+      throw new MajikSignatureSerializationError(
+        `Malformed MJKSMAP: reserved byte must be 0x00, got 0x${reserved.toString(16).padStart(2, "0")}`,
+      );
+    }
+
     const lenOffset = MJKSMAP_MAGIC_LEN + 2;
     const payloadLen =
       (raw[lenOffset] << 24) |
@@ -329,9 +416,9 @@ export class MajikSignatureMap {
       (raw[lenOffset + 2] << 8) |
       raw[lenOffset + 3];
 
-    if (payloadLen <= 0) {
+    if (payloadLen <= 0 || payloadLen > MAX_MJKSMAP_BYTES) {
       throw new MajikSignatureSerializationError(
-        "Malformed MJKSMAP: invalid payload length",
+        "Malformed MJKSMAP: invalid or oversized payload length",
       );
     }
 
@@ -342,8 +429,23 @@ export class MajikSignatureMap {
         "Malformed MJKSMAP: declared payload length exceeds buffer",
       );
     }
+    if (payloadEnd !== raw.length) {
+      throw new MajikSignatureSerializationError(
+        "Malformed MJKSMAP: trailing bytes after the declared payload",
+      );
+    }
 
-    const json = new TextDecoder().decode(raw.slice(payloadStart, payloadEnd));
+    let json: string;
+    try {
+      json = new TextDecoder("utf-8", { fatal: true }).decode(
+        raw.subarray(payloadStart, payloadEnd),
+      );
+    } catch (error) {
+      throw new MajikSignatureSerializationError(
+        "Malformed MJKSMAP: payload is not valid UTF-8",
+        error,
+      );
+    }
     return MajikSignatureMap.fromJSON(json);
   }
 
@@ -373,8 +475,35 @@ export class MajikSignatureMap {
   static fromJSON(json: MjksMapJSON | string): MajikSignatureMap {
     let parsed: unknown;
     try {
-      parsed = typeof json === "string" ? JSON.parse(json) : json;
+      if (typeof json === "string") {
+        if (
+          json.length > MAX_MJKSMAP_BYTES ||
+          new TextEncoder().encode(json).byteLength > MAX_MJKSMAP_BYTES
+        ) {
+          throw new MajikSignatureSerializationError(
+            `MJKSMAP payload exceeds the maximum supported size of ${MAX_MJKSMAP_BYTES} bytes`,
+          );
+        }
+        parsed = JSON.parse(json);
+      } else {
+        const serialized = JSON.stringify(json);
+        if (
+          typeof serialized !== "string" ||
+          new TextEncoder().encode(serialized).byteLength > MAX_MJKSMAP_BYTES
+        ) {
+          throw new MajikSignatureSerializationError(
+            `MJKSMAP payload exceeds the maximum supported size of ${MAX_MJKSMAP_BYTES} bytes`,
+          );
+        }
+        parsed = JSON.parse(serialized);
+      }
     } catch (err) {
+      if (
+        err instanceof MajikSignatureSerializationError &&
+        /maximum supported size/i.test(err.message)
+      ) {
+        throw err;
+      }
       throw new MajikSignatureSerializationError(
         "MJKSMAP payload is not valid JSON",
         err,
@@ -424,6 +553,26 @@ export class MajikSignatureMap {
   // ── Private validation ───────────────────────────────────────────────────────
 
   static #validateShape(obj: Record<string, unknown>): void {
+    let serialized: string | undefined;
+    try {
+      serialized = JSON.stringify(obj);
+    } catch (error) {
+      throw new MajikSignatureSerializationError(
+        "MJKSMAP payload cannot be safely serialized",
+        error,
+      );
+    }
+    if (
+      typeof serialized !== "string" ||
+      serialized.length > MAX_MJKSMAP_BYTES ||
+      new TextEncoder().encode(serialized).byteLength > MAX_MJKSMAP_BYTES
+    ) {
+      throw new MajikSignatureValidationError(
+        `MJKSMAP payload exceeds the maximum supported size of ${MAX_MJKSMAP_BYTES} bytes`,
+        "payload",
+      );
+    }
+
     if (obj.version !== MJKSMAP_VERSION) {
       throw new MajikSignatureValidationError(
         `Unsupported MJKSMAP schema version: ${String(obj.version)}`,
@@ -443,13 +592,25 @@ export class MajikSignatureMap {
       );
     }
 
+    if ((obj.entries as unknown[]).length > MAX_MJKSMAP_ENTRIES) {
+      throw new MajikSignatureValidationError(
+        `MJKSMAP entries exceeds the limit of ${MAX_MJKSMAP_ENTRIES}`,
+        "entries",
+      );
+    }
+
+    MajikSignatureValidator.validateTimestamp(obj.createdAt, "createdAt");
+
     const seenPaths = new Set<string>();
     for (const [i, entry] of (obj.entries as unknown[]).entries()) {
       MajikSignatureMap.#validateEntry(entry, i);
-      const path = (entry as MjksMapEntry).path;
+      const path = validateAndNormalizePath(
+        (entry as MjksMapEntry).path,
+        `entries[${i}].path`,
+      );
       if (seenPaths.has(path)) {
         throw new MajikSignatureValidationError(
-          `Duplicate path in entries: "${path}"`,
+          `Duplicate normalized path in entries: "${path}"`,
           "path",
         );
       }
@@ -465,16 +626,33 @@ export class MajikSignatureMap {
       );
     }
     const obj = entry as Record<string, unknown>;
-    if (typeof obj.path !== "string" || !obj.path.trim()) {
+    validateAndNormalizePath(obj.path, `entries[${index}].path`);
+    MajikSignatureValidator.validateCanonicalBase64(
+      obj.contentHash,
+      `entries[${index}].contentHash`,
+      32,
+    );
+    if (
+      obj.size !== undefined &&
+      (typeof obj.size !== "number" ||
+        !Number.isSafeInteger(obj.size) ||
+        obj.size < 0)
+    ) {
       throw new MajikSignatureValidationError(
-        `entries[${index}].path must be a non-empty string`,
-        "path",
+        `entries[${index}].size must be a non-negative safe integer when present`,
+        "size",
       );
     }
-    if (typeof obj.contentHash !== "string" || !obj.contentHash.trim()) {
-      throw new MajikSignatureValidationError(
-        `entries[${index}].contentHash must be a non-empty string`,
-        "contentHash",
+    if (obj.mimeType !== undefined) {
+      if (obj.mimeType === null) {
+        throw new MajikSignatureValidationError(
+          `entries[${index}].mimeType must be a string when present`,
+          "mimeType",
+        );
+      }
+      MajikSignatureValidator.validateContentType(
+        obj.mimeType,
+        `entries[${index}].mimeType`,
       );
     }
     if (obj.envelope === null || typeof obj.envelope !== "object") {

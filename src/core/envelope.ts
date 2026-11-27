@@ -29,6 +29,8 @@ import {
   MAX_FILE_VERSIONS,
   MAX_FILE_VERSION_MESSAGE_CHARS,
   MAX_TIMESTAMP_CHARS,
+  MAX_SIGNER_ID_CHARS,
+  SHA256_DIGEST_BYTES,
 } from "./constants.js";
 import {
   MajikSignatureAllowlistError,
@@ -41,6 +43,17 @@ import { hashContent, bytesToBase64 } from "./hash.js";
 import { MajikSignatureValidator } from "./validator.js";
 
 /** Count UTF-8 bytes without allocating a second full-size encoded copy. */
+/** Recursively freeze JSON snapshots so getters cannot expose mutable internals. */
+function deepFreezeJson<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const child of Object.values(value as unknown as Record<string, unknown>)) {
+      deepFreezeJson(child);
+    }
+    Object.freeze(value);
+  }
+  return value;
+}
+
 function exceedsUtf8ByteLimit(value: string, maxBytes: number): boolean {
   let bytes = 0;
   for (let i = 0; i < value.length; i++) {
@@ -217,15 +230,51 @@ export class MajikSignatureEnvelope {
   private readonly _fileVersions?: readonly FileVersion[];
 
   private constructor(data: MajikSignatureEnvelopeJSON) {
-    this._version = data.version;
-    this._signatures = data.signatures;
-    this._allowlist = data.allowlist;
-    this._allowlistSignerId = data.allowlistSignerId;
-    this._sealHash = data.sealHash;
-    this._sealTimestamp = data.sealTimestamp;
-    this._sealedBy = data.sealedBy;
-    this._chainAnchors = data.chainAnchors;
-    this._fileVersions = data.fileVersions;
+    let serialized: string;
+    try {
+      serialized = JSON.stringify(data);
+    } catch (error) {
+      throw new MajikSignatureSerializationError(
+        "Envelope payload cannot be safely serialized",
+        error,
+      );
+    }
+    if (
+      typeof serialized !== "string" ||
+      exceedsUtf8ByteLimit(serialized, MAX_ENVELOPE_BYTES)
+    ) {
+      throw new MajikSignatureSerializationError(
+        `Embedded signature payload exceeds the maximum supported size of ${MAX_ENVELOPE_BYTES} bytes`,
+      );
+    }
+
+    let snapshot: MajikSignatureEnvelopeJSON;
+    try {
+      snapshot = JSON.parse(serialized) as MajikSignatureEnvelopeJSON;
+    } catch (error) {
+      throw new MajikSignatureSerializationError(
+        "Envelope payload could not be normalized",
+        error,
+      );
+    }
+    // The private constructor is the common boundary for every immutable
+    // builder, not just deserialization. Validate there so with*() methods
+    // cannot create invalid or oversized envelopes.
+    MajikSignatureEnvelope.#validateShape(
+      snapshot as unknown as Record<string, unknown>,
+    );
+    const immutable = deepFreezeJson(snapshot);
+
+    this._version = immutable.version;
+    this._signatures = immutable.signatures;
+    this._allowlist = immutable.allowlist;
+    this._allowlistSignerId = immutable.allowlistSignerId;
+    this._sealHash = immutable.sealHash;
+    this._sealTimestamp = immutable.sealTimestamp;
+    this._sealedBy = immutable.sealedBy;
+    this._chainAnchors = immutable.chainAnchors;
+    this._fileVersions = immutable.fileVersions;
+    Object.freeze(this);
   }
 
   // ── Getters ─────────────────────────────────────────────────────────────────
@@ -870,12 +919,26 @@ export class MajikSignatureEnvelope {
         "An allowlist can only be established by the first signer on a file.",
       );
     }
-    if (!allowlist || allowlist.length === 0) {
+    if (!Array.isArray(allowlist) || allowlist.length === 0) {
       throw new MajikSignatureValidationError(
         "Allowlist must contain at least one entry.",
         "allowlist",
       );
     }
+    if (allowlist.length > MAX_ALLOWLIST_ENTRIES) {
+      throw new MajikSignatureValidationError(
+        `Allowlist exceeds the limit of ${MAX_ALLOWLIST_ENTRIES}`,
+        "allowlist",
+      );
+    }
+    for (let index = 0; index < allowlist.length; index += 1) {
+      MajikSignatureValidator.validateExpectedSigner(allowlist[index], index);
+    }
+    MajikSignatureValidator.validateCanonicalBase64(
+      signerId,
+      "allowlistSignerId",
+      SHA256_DIGEST_BYTES,
+    );
 
     return new MajikSignatureEnvelope({
       ...this.toJSON(),
@@ -919,6 +982,12 @@ export class MajikSignatureEnvelope {
     }
 
     const ts = sealTimestamp ?? new Date().toISOString();
+    MajikSignatureValidator.validateBoundedString(
+      sealedBy,
+      "sealedBy",
+      MAX_SIGNER_ID_CHARS,
+    );
+    MajikSignatureValidator.validateTimestamp(ts, "sealTimestamp");
     const sealHash = this.computeSealHash(ts);
 
     return new MajikSignatureEnvelope({
@@ -1237,7 +1306,7 @@ export class MajikSignatureEnvelope {
    * and revision history are omitted when they are not present.
    */
   toJSON(): MajikSignatureEnvelopeJSON {
-    return {
+    const snapshot: MajikSignatureEnvelopeJSON = {
       version: this._version,
       signatures: [...this._signatures],
       ...(this._allowlist ? { allowlist: [...this._allowlist] } : {}),
@@ -1250,6 +1319,9 @@ export class MajikSignatureEnvelope {
       ...(this._chainAnchors ? { chainAnchors: [...this._chainAnchors] } : {}),
       ...(this._fileVersions ? { fileVersions: [...this._fileVersions] } : {}),
     };
+    // Return a detached JSON tree; callers may edit it without changing this
+    // immutable envelope or encountering frozen nested references.
+    return JSON.parse(JSON.stringify(snapshot)) as MajikSignatureEnvelopeJSON;
   }
 
   /**
@@ -1290,6 +1362,12 @@ export class MajikSignatureEnvelope {
    * has an invalid envelope shape.
    */
   static deserialize(base64: string): MajikSignatureEnvelope {
+    const maxEncodedLength = Math.ceil(MAX_ENVELOPE_BYTES / 3) * 4;
+    if (typeof base64 !== "string" || base64.length > maxEncodedLength) {
+      throw new MajikSignatureSerializationError(
+        `Base64 envelope exceeds the maximum supported encoded size of ${maxEncodedLength} characters`,
+      );
+    }
     try {
       const binary = atob(base64);
       const bytes = new Uint8Array(binary.length);
@@ -1697,8 +1775,16 @@ export class MajikSignatureEnvelope {
       );
     }
     try {
+      // Object inputs are normalized, size-limited, snapshotted, and
+      // structurally validated by the private constructor shared by builders.
       parsed = typeof json === "string" ? JSON.parse(json) : json;
     } catch (err) {
+      if (
+        err instanceof MajikSignatureSerializationError &&
+        /maximum supported size/i.test(err.message)
+      ) {
+        throw err;
+      }
       throw new MajikSignatureSerializationError(
         "Embedded signature payload is not valid JSON",
         err,
@@ -1728,7 +1814,6 @@ export class MajikSignatureEnvelope {
             );
           })();
 
-    MajikSignatureEnvelope.#validateShape(promoted);
     return new MajikSignatureEnvelope(
       promoted as unknown as MajikSignatureEnvelopeJSON,
     );

@@ -23,7 +23,7 @@ describe("streaming SHA-256", () => {
   it("uses bounded chunk defaults", () => {
     expect(DEFAULT_HASH_CHUNK_SIZE).toBe(MIB);
     expect(MIN_HASH_CHUNK_SIZE).toBe(64 * 1024);
-    expect(MAX_HASH_CHUNK_SIZE).toBe(8 * MIB);
+    expect(MAX_HASH_CHUNK_SIZE).toBe(64 * MIB);
   });
 
   it("selects buffered and streaming strategies from known sizes", () => {
@@ -74,6 +74,42 @@ describe("streaming SHA-256", () => {
     ).rejects.toThrow(/cancel/i);
   });
 
+  it("validates expected total bytes for unknown-length streams", async () => {
+    const bytes = new Uint8Array(4097);
+    const exact = await hashSource(chunks(bytes, 113), {
+      totalBytes: bytes.byteLength,
+    });
+    expect(exact.bytesProcessed).toBe(bytes.byteLength);
+    expect(exact.totalBytes).toBe(bytes.byteLength);
+
+    await expect(
+      hashSource(chunks(bytes, 113), { totalBytes: bytes.byteLength - 1 }),
+    ).rejects.toThrow(/length mismatch/i);
+
+    async function* truncated(): AsyncGenerator<Uint8Array> {
+      yield bytes.subarray(0, 1000);
+    }
+    await expect(
+      hashSource(truncated(), { totalBytes: bytes.byteLength }),
+    ).rejects.toThrow(/length mismatch/i);
+  });
+
+  it("rejects a declared size that disagrees with a known source", async () => {
+    const bytes = new Uint8Array(32);
+    await expect(
+      hashSource(bytes, { totalBytes: bytes.byteLength + 1 }),
+    ).rejects.toThrow(/source length mismatch/i);
+  });
+
+  it("accepts the aligned maximum chunk-size override", async () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    const result = await hashSource(chunks(bytes, 2), {
+      chunkSize: MAX_HASH_CHUNK_SIZE,
+      totalBytes: bytes.byteLength,
+    });
+    expect(result.bytesProcessed).toBe(bytes.byteLength);
+  });
+
   it("hashes Blob inputs incrementally when they exceed the threshold", async () => {
     const bytes = new Uint8Array(9 * MIB);
     for (let i = 0; i < bytes.length; i++) bytes[i] = i & 0xff;
@@ -83,6 +119,123 @@ describe("streaming SHA-256", () => {
       bytesToBase64(hashContent(bytes)),
     );
     expect(streamed.strategy).toBe("streaming");
+  });
+});
+
+describe("streaming detached batch signing", () => {
+  let key: MajikKey;
+
+  beforeAll(async () => {
+    key = await getTestKey();
+  }, 120000);
+
+  it("signs multiple streams into a compatible MJKSMAP manifest", async () => {
+    const first = new TextEncoder().encode("first streamed batch file");
+    const second = new TextEncoder().encode("second streamed batch file");
+    const result = await MajikSignature.signBatchDetachedStream(
+      [
+        { path: "docs/first.txt", source: chunks(first, 3), totalBytes: first.length, mimeType: "text/plain" },
+        { path: "docs/second.txt", source: chunks(second, 5), totalBytes: second.length, mimeType: "text/plain" },
+      ],
+      key,
+      {
+        mode: "map",
+        onProgress: (progress) => {
+          expect(progress.totalFiles).toBe(2);
+          expect(progress.path.startsWith("docs/")).toBe(true);
+        },
+      },
+    );
+
+    expect(result.mode).toBe("map");
+    if (result.mode !== "map") throw new Error("Expected map mode");
+    expect(result.map.size).toBe(2);
+    expect(result.map.getEntry("docs/first.txt")?.contentHash).toBe(
+      bytesToBase64(hashContent(first)),
+    );
+    expect(result.map.getEntry("docs/second.txt")?.size).toBe(second.length);
+
+    const signature = result.map.getEntry("docs/first.txt")!.envelope.signatures[0]!;
+    const verified = await MajikSignature.verifyStream(
+      chunks(first, 2),
+      signature,
+      MajikSignature.publicKeysFromMajikKey(key),
+    );
+    expect(verified.valid).toBe(true);
+
+    const mapResults = await MajikSignature.verifyFilesFromMjksMapStream(
+      result.map,
+      [
+        { path: "docs/first.txt", source: chunks(first, 4), totalBytes: first.length },
+        { path: "moved/second.txt", source: chunks(second, 7), totalBytes: second.length },
+      ],
+      MajikSignature.publicKeysFromMajikKey(key),
+    );
+    expect(mapResults.map((item) => item.status)).toEqual(["verified", "verified"]);
+    expect(mapResults[1]?.relocatedFrom).toBe("docs/second.txt");
+
+    const modified = new TextEncoder().encode("modified content");
+    const tampered = await MajikSignature.verifyFilesFromMjksMapStream(
+      result.map,
+      [{ path: "docs/first.txt", source: chunks(modified, 3), totalBytes: modified.length }],
+      MajikSignature.publicKeysFromMajikKey(key),
+    );
+    expect(tampered[0]?.status).toBe("tampered");
+  });
+
+  it("emits separate MJKSIG blobs when requested", async () => {
+    const first = new TextEncoder().encode("separate streamed result one");
+    const second = new TextEncoder().encode("separate streamed result two");
+    const result = await MajikSignature.signBatchDetachedStream(
+      [
+        { path: "one.txt", source: chunks(first, 4), totalBytes: first.length },
+        { path: "two.txt", source: chunks(second, 6), totalBytes: second.length },
+      ],
+      key,
+      { mode: "separate" },
+    );
+
+    expect(result.mode).toBe("separate");
+    if (result.mode !== "separate") throw new Error("Expected separate mode");
+    expect(result.signatures).toHaveLength(2);
+    expect(result.signatures.map((item) => item.path)).toEqual(["one.txt", "two.txt"]);
+    expect(result.signatures.every((item) => item.blob.size > 0)).toBe(true);
+  });
+
+  it("does not continue a batch after explicit cancellation", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const bytes = new TextEncoder().encode("cancelled batch input");
+
+    await expect(
+      MajikSignature.signBatchDetachedStream(
+        [{ path: "cancelled.txt", source: chunks(bytes, 3), totalBytes: bytes.length }],
+        key,
+        {
+          continueOnError: true,
+          streaming: { signal: controller.signal },
+        },
+      ),
+    ).rejects.toThrow(/cancel/i);
+  });
+
+  it("continues after per-file failures when requested", async () => {
+    const valid = new TextEncoder().encode("valid item");
+    const invalid = new TextEncoder().encode("invalid length");
+    const result = await MajikSignature.signBatchDetachedStream(
+      [
+        { path: "valid.txt", source: chunks(valid, 2), totalBytes: valid.length },
+        { path: "invalid.txt", source: chunks(invalid, 2), totalBytes: invalid.length + 1 },
+      ],
+      key,
+      { continueOnError: true },
+    );
+
+    expect(result.mode).toBe("map");
+    if (result.mode !== "map") throw new Error("Expected map mode");
+    expect(result.map.size).toBe(1);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]?.path).toBe("invalid.txt");
   });
 });
 

@@ -22,6 +22,7 @@ import {
   MajikSignatureKeyError,
   MajikSignatureVerificationError,
   MajikSignatureSerializationError,
+  MajikSignatureValidationError,
 } from "./core/errors.js";
 import { MajikSignatureValidator } from "./core/validator.js";
 import {
@@ -36,6 +37,12 @@ import { buildSessionContextHash } from "./core/session-context.js";
 import type {
   BatchFileInput,
   BatchSignOptions,
+  BatchSignFailure,
+  BatchStreamingVerifyOptions,
+  StreamingBatchVerifyInput,
+  BatchSignResult,
+  BatchStreamingOptions,
+  StreamingBatchFileInput,
   BatchVerifyInput,
   BatchVerifyOptions,
   ED25519Signature,
@@ -1216,6 +1223,240 @@ export class MajikSignature {
    * current time. Any signer whose validUntil has passed comes back with
    * valid: false, expired: true, and a reason noting the expiry.
    */
+  /**
+   * Sign a collection of exact byte streams as detached signatures without
+   * materializing their source contents. Files are consumed sequentially so
+   * memory use is bounded by the configured per-stream chunk size.
+   *
+   * Sources must provide the canonical bytes to sign. This low-level API does
+   * not parse or strip an existing embedded envelope from a stream.
+   */
+  static async signBatchDetachedStream(
+    files: StreamingBatchFileInput[],
+    key: MajikKey,
+    options?: BatchStreamingOptions,
+  ): Promise<BatchSignResult> {
+    if (!files || files.length === 0) {
+      throw new MajikSignatureValidationError(
+        "Batch must contain at least one file.",
+        "files",
+      );
+    }
+
+    const seen = new Set<string>();
+    for (const file of files) {
+      if (!file.path || !file.path.trim()) {
+        throw new MajikSignatureValidationError(
+          "Every batch file must have a non-empty path.",
+          "path",
+        );
+      }
+      if (seen.has(file.path)) {
+        throw new MajikSignatureValidationError(
+          `Duplicate path in batch: "${file.path}"`,
+          "path",
+        );
+      }
+      seen.add(file.path);
+    }
+
+    const mode = options?.mode ?? "map";
+    const continueOnError = options?.continueOnError ?? false;
+    const failures: BatchSignFailure[] = [];
+    let map = mode === "map" ? MajikSignatureMap.empty() : undefined;
+    const signatures: { path: string; blob: Blob }[] = [];
+
+    for (let index = 0; index < files.length; index++) {
+      const file = files[index]!;
+      let bytesProcessed = 0;
+      try {
+        const emptyEnvelope = MajikSignatureEnvelope.empty();
+        const allowlistHash = emptyEnvelope.resolveAllowlistHashFor(
+          key,
+          options?.expectedSigners,
+        );
+        const signature = await MajikSignature.signStream(file.source, key, {
+          contentType: options?.contentType,
+          timestamp: options?.timestamp,
+          validUntil: options?.validUntil,
+          allowlistHash,
+          streaming: {
+            ...options?.streaming,
+            totalBytes: file.totalBytes,
+            onProgress: (progress) => {
+              bytesProcessed = progress.bytesProcessed;
+              options?.onProgress?.({
+                index,
+                totalFiles: files.length,
+                path: file.path,
+                bytesProcessed: progress.bytesProcessed,
+                ...(progress.totalBytes !== undefined
+                  ? { totalBytes: progress.totalBytes }
+                  : {}),
+              });
+            },
+          },
+        });
+
+        let envelope = emptyEnvelope;
+        if (options?.expectedSigners?.length) {
+          envelope = envelope.withAllowlist(
+            options.expectedSigners,
+            key.fingerprint,
+          );
+        }
+        envelope = envelope.withSignature(signature.toJSON());
+
+        if (mode === "map") {
+          map = map!.withEntry({
+            path: file.path,
+            contentHash: signature.contentHash,
+            size: bytesProcessed,
+            mimeType: file.mimeType || undefined,
+            envelope: envelope.toJSON(),
+          });
+        } else {
+          signatures.push({ path: file.path, blob: envelope.toMJKSIG() });
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!continueOnError || options?.streaming?.signal?.aborted) {
+          throw new MajikSignatureError(
+            `Batch streaming signing failed on "${file.path}": ${message}`,
+            err,
+          );
+        }
+        failures.push({ path: file.path, error: message });
+      }
+    }
+
+    return mode === "map"
+      ? { mode: "map", map: map!, mapBlob: map!.toMJKSMAP(), failures }
+      : { mode: "separate", signatures, failures };
+  }
+
+  /**
+   * Verify streamed files against a MJKSMAP manifest without materializing
+   * the complete file contents. Inputs are consumed sequentially; the
+   * manifest is resolved by path first and by content hash for relocations.
+   */
+  static async verifyFilesFromMjksMapStream(
+    map: MajikSignatureMap,
+    files: StreamingBatchVerifyInput[],
+    publicKeys: MajikSignerPublicKeys,
+    options?: BatchStreamingVerifyOptions,
+  ): Promise<FileVerifyResult[]> {
+    const results: FileVerifyResult[] = [];
+    const now = options?.now ?? new Date();
+
+    for (let index = 0; index < files.length; index++) {
+      const file = files[index]!;
+      const streamed = await hashSource(file.source, {
+        ...options?.streaming,
+        totalBytes: file.totalBytes,
+        onProgress: (progress) => {
+          options?.onProgress?.({
+            index,
+            totalFiles: files.length,
+            path: file.path,
+            bytesProcessed: progress.bytesProcessed,
+            ...(progress.totalBytes !== undefined
+              ? { totalBytes: progress.totalBytes }
+              : {}),
+          });
+        },
+      });
+      const contentHash = bytesToBase64(streamed.digest);
+
+      // Preserve map resolution order: a path match with different bytes is
+      // tampered, not a relocation candidate.
+      let entry = map.getEntry(file.path);
+      let relocatedFrom: string | undefined;
+      if (entry && entry.contentHash !== contentHash) {
+        results.push({
+          path: file.path,
+          status: "tampered",
+          reason:
+            "File content no longer matches what was signed — it may have been modified after signing.",
+        });
+        continue;
+      }
+
+      if (!entry) {
+        entry = map.entries.find((candidate) => candidate.contentHash === contentHash);
+        if (entry) relocatedFrom = entry.path;
+      }
+
+      if (!entry) {
+        if (options?.requireAllPresent) {
+          throw new MajikSignatureError(
+            `File "${file.path}" was not found in the signature map.`,
+          );
+        }
+        results.push({
+          path: file.path,
+          status: "not_in_map",
+          reason: `No signature entry found for "${file.path}" (checked by path and by content).`,
+        });
+        continue;
+      }
+
+      const envelope = MajikSignatureEnvelope.fromJSON(entry.envelope);
+      const integrity = envelope.verifyAllowlistIntegrity();
+      if (!integrity.valid) {
+        results.push({
+          path: file.path,
+          status: "invalid",
+          reason: integrity.reason,
+          ...(relocatedFrom ? { relocatedFrom } : {}),
+        });
+        continue;
+      }
+
+      const signatures = options?.expectedSignerId
+        ? envelope.signatures.filter(
+            (signature) => signature.signerId === options.expectedSignerId,
+          )
+        : [...envelope.signatures];
+
+      const verifyResults: VerificationResult[] = signatures.length
+        ? signatures.map((signature) =>
+            MajikSignature._verifyDigest(
+              streamed.digest,
+              signature,
+              publicKeys,
+              now,
+            ),
+          )
+        : [
+            {
+              valid: false,
+              reason: options?.expectedSignerId
+                ? `No signature found for signerId "${options.expectedSignerId}"`
+                : "Envelope contains no signatures",
+              timestamp: now.toISOString(),
+            },
+          ];
+
+      const allValid = verifyResults.every((result) => result.valid);
+      results.push({
+        path: file.path,
+        status: allValid ? "verified" : "invalid",
+        results: verifyResults,
+        ...(relocatedFrom ? { relocatedFrom } : {}),
+        ...(relocatedFrom
+          ? {
+              reason: allValid
+                ? `Verified by content match — originally signed as "${relocatedFrom}".`
+                : undefined,
+            }
+          : {}),
+      });
+    }
+
+    return results;
+  }
+
   static async verifyFile(
     file: FileLike,
     keyOrPublicKeys: MajikKey | MajikSignerPublicKeys,

@@ -47,7 +47,39 @@ function validateOptions(options: StreamingHashOptions): {
   chunkSize: number;
   thresholdBytes: number;
   maxBytes?: number;
+  totalBytes?: number;
 } {
+  if (
+    typeof options !== "object" ||
+    options === null ||
+    Array.isArray(options)
+  ) {
+    throw new MajikSignatureValidationError(
+      "options must be an object",
+      "options",
+    );
+  }
+  if (
+    options.onProgress !== undefined &&
+    typeof options.onProgress !== "function"
+  ) {
+    throw new MajikSignatureValidationError(
+      "onProgress must be a function when provided",
+      "onProgress",
+    );
+  }
+  if (
+    options.signal !== undefined &&
+    (typeof options.signal !== "object" ||
+      options.signal === null ||
+      typeof options.signal.aborted !== "boolean")
+  ) {
+    throw new MajikSignatureValidationError(
+      "signal must be an AbortSignal-like object when provided",
+      "signal",
+    );
+  }
+
   const chunkSize = options.chunkSize ?? DEFAULT_HASH_CHUNK_SIZE;
   const thresholdBytes =
     options.thresholdBytes ?? DEFAULT_HASH_STREAMING_THRESHOLD;
@@ -68,8 +100,32 @@ function validateOptions(options: StreamingHashOptions): {
       "maxBytes",
     );
   }
+  if (
+    options.totalBytes !== undefined &&
+    (!Number.isSafeInteger(options.totalBytes) || options.totalBytes < 0)
+  ) {
+    throw new MajikSignatureValidationError(
+      "totalBytes must be a non-negative safe integer",
+      "totalBytes",
+    );
+  }
+  if (
+    options.totalBytes !== undefined &&
+    options.maxBytes !== undefined &&
+    options.totalBytes > options.maxBytes
+  ) {
+    throw new MajikSignatureValidationError(
+      "totalBytes exceeds the configured maximum",
+      "totalBytes",
+    );
+  }
 
-  return { chunkSize, thresholdBytes, maxBytes: options.maxBytes };
+  return {
+    chunkSize,
+    thresholdBytes,
+    maxBytes: options.maxBytes,
+    totalBytes: options.totalBytes,
+  };
 }
 
 function asByteSource(source: StreamingByteSource): void {
@@ -112,7 +168,18 @@ export async function hashSource(
   asByteSource(source);
   const config = validateOptions(options);
   const strategy = detectHashStrategy(source, config.thresholdBytes);
-  const expectedSize = getKnownSourceSize(source);
+  const sourceSize = getKnownSourceSize(source);
+  if (
+    config.totalBytes !== undefined &&
+    sourceSize !== undefined &&
+    sourceSize !== config.totalBytes
+  ) {
+    throw new MajikSignatureValidationError(
+      `Source length mismatch: expected ${config.totalBytes} bytes, source reports ${sourceSize}`,
+      "totalBytes",
+    );
+  }
+  const expectedSize = config.totalBytes ?? sourceSize;
 
   if (
     expectedSize !== undefined &&
@@ -128,7 +195,7 @@ export async function hashSource(
   const stream = new Sha256Stream();
   let bytesProcessed = 0;
 
-  const consume = (chunk: Uint8Array): void => {
+  const consume = async (chunk: Uint8Array): Promise<void> => {
     if (!(chunk instanceof Uint8Array)) {
       throw new MajikSignatureValidationError(
         "Stream yielded a non-Uint8Array chunk",
@@ -155,6 +222,12 @@ export async function hashSource(
           "maxBytes",
         );
       }
+      if (expectedSize !== undefined && next > expectedSize) {
+        throw new MajikSignatureValidationError(
+          `Stream length mismatch: expected ${expectedSize} bytes, received at least ${next}`,
+          "totalBytes",
+        );
+      }
 
       stream.update(part);
       bytesProcessed = next;
@@ -162,17 +235,25 @@ export async function hashSource(
         bytesProcessed,
         ...(expectedSize !== undefined ? { totalBytes: expectedSize } : {}),
       });
+
+      // A custom iterable/stream can yield a single huge Uint8Array. Yield
+      // between bounded slices so timers and cancellation events can run.
+      if (offset + config.chunkSize < chunk.byteLength) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      }
     }
   };
 
   const processBuffer = async (bytes: Uint8Array): Promise<void> => {
     if (strategy === "buffered") {
-      consume(bytes);
+      await consume(bytes);
       return;
     }
 
     for (let offset = 0; offset < bytes.byteLength; offset += config.chunkSize) {
-      consume(bytes.subarray(offset, Math.min(offset + config.chunkSize, bytes.byteLength)));
+      await consume(
+        bytes.subarray(offset, Math.min(offset + config.chunkSize, bytes.byteLength)),
+      );
       // Yield so a large already-materialized buffer does not monopolize the UI thread.
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
     }
@@ -202,11 +283,17 @@ export async function hashSource(
     );
   } else {
     for await (const chunk of source as AsyncIterable<Uint8Array>) {
-      consume(chunk);
+      await consume(chunk);
     }
   }
 
   throwIfAborted(options.signal);
+  if (expectedSize !== undefined && bytesProcessed !== expectedSize) {
+    throw new MajikSignatureValidationError(
+      `Stream length mismatch: expected ${expectedSize} bytes, read ${bytesProcessed}`,
+      "totalBytes",
+    );
+  }
   return {
     digest: stream.digest(),
     bytesProcessed,
@@ -217,7 +304,7 @@ export async function hashSource(
 
 async function consumeReadableStream(
   source: ReadableStream<Uint8Array>,
-  consume: (chunk: Uint8Array) => void,
+  consume: (chunk: Uint8Array) => Promise<void>,
   signal?: AbortSignal,
 ): Promise<void> {
   const reader = source.getReader();
@@ -226,7 +313,7 @@ async function consumeReadableStream(
       throwIfAborted(signal);
       const result = await reader.read();
       if (result.done) break;
-      consume(result.value);
+      await consume(result.value);
     }
   } catch (error) {
     try {

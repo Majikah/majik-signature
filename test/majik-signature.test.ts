@@ -13,9 +13,14 @@ import { MajikSignatureMap } from "../src/core/mjksmap";
 import type { MajikTimestamp } from "../src/core/types";
 import { MajikSignatureEmbed } from "../src/core/embed/majik-embed";
 import { MJKSIG_VERSION } from "../src/core/constants";
+import { bytesToBase64 } from "../src/core/hash";
 
 const __currentDir = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(__currentDir, "fixtures");
+
+function testHash(byte: number): string {
+  return bytesToBase64(new Uint8Array(32).fill(byte));
+}
 
 interface FileFixture {
   label: string;
@@ -1130,7 +1135,7 @@ describe("MajikSignature Class Unit Tests", () => {
       it("normalizes backslash paths and drive letters to the same key", () => {
         const map = MajikSignatureMap.empty().withEntry({
           path: "C:\\docs\\a.pdf",
-          contentHash: "deadbeef",
+          contentHash: testHash(1),
           envelope: { version: 1, signatures: [] } as any,
         });
 
@@ -1141,23 +1146,23 @@ describe("MajikSignature Class Unit Tests", () => {
       it("replaces an entry on re-add at the same path (withEntry upsert)", () => {
         let map = MajikSignatureMap.empty().withEntry({
           path: "a.txt",
-          contentHash: "hash1",
+          contentHash: testHash(2),
           envelope: { version: 1, signatures: [] } as any,
         });
         map = map.withEntry({
           path: "a.txt",
-          contentHash: "hash2",
+          contentHash: testHash(3),
           envelope: { version: 1, signatures: [] } as any,
         });
 
         expect(map.size).toBe(1);
-        expect(map.getEntry("a.txt")?.contentHash).toBe("hash2");
+        expect(map.getEntry("a.txt")?.contentHash).toBe(testHash(3));
       });
 
       it("removes an entry via withoutEntry", () => {
         let map = MajikSignatureMap.empty().withEntry({
           path: "a.txt",
-          contentHash: "hash1",
+          contentHash: testHash(2),
           envelope: { version: 1, signatures: [] } as any,
         });
         map = map.withoutEntry("a.txt");
