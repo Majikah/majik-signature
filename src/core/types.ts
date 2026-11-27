@@ -280,6 +280,7 @@ export interface MajikSignatureCompactJSON {
  */
 export type TSADigestScope = "content" | "signature";
 
+/** Digest descriptor attested by a timestamp authority; `scope` distinguishes legacy content-only tokens from signature-record attestations. */
 export interface TSADigest {
   /** Hash function used for the digest. */
   algorithm: "SHA-256";
